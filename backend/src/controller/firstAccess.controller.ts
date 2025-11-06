@@ -10,8 +10,8 @@ export class FirstAccessController {
     try {
       // 1. Consultar Asaas por assinatura
       const { verificarAssinaturaPorCpf } = await import('../services/asaas.service.js');
-      const assinaturaOk = await verificarAssinaturaPorCpf(cpf);
-      if (!assinaturaOk) {
+        const resultado = await verificarAssinaturaPorCpf(cpf);
+        if (!resultado.assinaturaOk) {
         return res.status(403).json({ error: 'Assinatura não encontrada ou inválida.' });
       }
 
@@ -24,7 +24,7 @@ export class FirstAccessController {
 
       return res.status(200).json({
         message: 'CPF validado com sucesso.',
-        beneficiario,
+          usuario: resultado.cliente,
       });
     } catch (error) {
       return res.status(500).json({ error: 'Erro interno ao validar CPF.' });

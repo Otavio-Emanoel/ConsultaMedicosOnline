@@ -5,7 +5,7 @@ configDotenv();
 const ASAAS_API_URL = process.env.ASAAS_BASE_URL;
 const ASAAS_API_KEY = process.env.ASAAS_API_KEY;
 
-export async function verificarAssinaturaPorCpf(cpf: string): Promise<boolean> {
+export async function verificarAssinaturaPorCpf(cpf: string): Promise<{ assinaturaOk: boolean, cliente?: { id: string, nome: string } }> {
   if (!ASAAS_API_KEY) throw new Error('Chave da API Asaas não configurada');
 
   // Buscar cliente pelo CPF
@@ -14,7 +14,7 @@ export async function verificarAssinaturaPorCpf(cpf: string): Promise<boolean> {
     headers: { access_token: ASAAS_API_KEY },
   });
   const clientes = clientesResp.data.data;
-  if (!clientes || clientes.length === 0) return false;
+    if (!clientes || clientes.length === 0) return { assinaturaOk: false };
 
   // Buscar assinaturas do cliente
   const clienteId = clientes[0].id;
@@ -24,5 +24,13 @@ export async function verificarAssinaturaPorCpf(cpf: string): Promise<boolean> {
   });
   const assinaturas = assinaturasResp.data.data;
   // Verifica se existe assinatura ativa
-  return assinaturas.some((a: any) => a.status === 'ACTIVE');
+    const assinaturaOk = assinaturas.some((a: any) => a.status === 'ACTIVE');
+    if (!assinaturaOk) return { assinaturaOk: false };
+    return {
+      assinaturaOk: true,
+      cliente: {
+        id: clientes[0].id,
+        nome: clientes[0].name
+      }
+    };
 }
