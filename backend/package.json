@@ -1,0 +1,40 @@
+{
+  "name": "backend",
+  "version": "1.0.0",
+  "description": "Backend do projeto ConsultaMedicosOnline, desenvolvido em NodeJS com TS, firebase, as APIs Rapidoc e Asaas. Pelos devs da beyond, Otavio, Gustavo e Maykon.",
+  "keywords": [
+    "nodejs",
+    "telemedicina",
+    "pagamento",
+    "ts",
+    "rapidoc",
+    "asaas"
+  ],
+  "license": "ISC",
+  "author": "Otavio",
+  "type": "module",
+  "main": "index.ts",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "build": "tsc",
+    "build:watch": "tsc -w",
+    "start": "node dist/index.js",
+    "dev": "concurrently -k \"tsc -w\" \"nodemon --watch dist --ext js --exec node dist/index.js\"",
+    "dev:tsnode": "ts-node --esm index.ts",
+    "dev:node": "node --loader ts-node/esm index.ts"
+  },
+  "devDependencies": {
+    "@types/express": "^5.0.5",
+    "@types/node": "^24.10.0",
+    "concurrently": "^8.2.0",
+    "nodemon": "^3.0.1",
+    "ts-node": "^10.9.2",
+    "ts-node-dev": "^2.0.0",
+    "typescript": "^5.9.3"
+  },
+  "dependencies": {
+    "dotenv": "^16.6.1",
+    "express": "^5.1.0",
+    "firebase-admin": "^12.6.0"
+  }
+}
