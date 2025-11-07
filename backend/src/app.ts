@@ -13,7 +13,7 @@ app.use(express.json());
 
 // Rota raiz simples
 app.get('/', (_req, res) => {
-	res.send('Hello, World!');
+	res.send('Essa é a API do Consulta Médicos Online.');
 });
 
 // Agrupa rotas da API
