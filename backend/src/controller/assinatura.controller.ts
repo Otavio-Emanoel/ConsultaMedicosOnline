@@ -54,4 +54,14 @@ export class AssinaturaController {
             return res.status(500).json({ error: error.message || 'Erro ao salvar assinatura.' });
         }
     }
+    static async listar(req: Request, res: Response) {
+        try {
+            const admin = await import('firebase-admin');
+            const snapshot = await admin.default.firestore().collection('assinaturas').get();
+            const assinaturas = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+            return res.status(200).json(assinaturas);
+        } catch (error: any) {
+            return res.status(500).json({ error: error.message || 'Erro ao listar assinaturas.' });
+        }
+    }
 }
