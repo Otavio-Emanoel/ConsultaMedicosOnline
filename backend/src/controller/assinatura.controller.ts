@@ -29,7 +29,7 @@ export class AssinaturaController {
                 return res.status(402).json({ error: 'Assinatura não está paga.' });
             }
 
-            // Verifica se tem conta no Rapidoc (simples: busca por CPF)
+            // Verifica se tem conta no Rapidoc
             let rapidocContaExiste = false;
             try {
                 const resp = await axios.get(`${process.env.RAPIDOC_BASE_URL}/${assinatura.cpfUsuario}`, {

@@ -8,7 +8,7 @@ export class FirstAccessController {
     }
 
     try {
-      // 1. Consultar Asaas por assinatura
+      // Consultar Asaas por assinatura
       const { verificarAssinaturaPorCpf } = await import('../services/asaas.service.js');
         const resultado = await verificarAssinaturaPorCpf(cpf);
         if (!resultado.assinaturaOk) {
@@ -17,13 +17,6 @@ export class FirstAccessController {
             message: 'CPF não validado. Você pode se cadastrar para iniciar sua assinatura.'
           });
         }
-
-      // 2. Validar/obter beneficiário Rapidoc
-      // TODO: Implementar integração Rapidoc
-      const beneficiario = { id: 'rapidoc-id', nome: 'Nome Exemplo' }; // Simulação
-
-      // 3. Sincronizar mapeamentos e dados locais
-      // TODO: Implementar sincronização de dados locais
 
       return res.status(200).json({
         message: 'CPF validado com sucesso.',
