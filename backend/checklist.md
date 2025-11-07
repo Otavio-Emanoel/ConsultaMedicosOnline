@@ -14,10 +14,10 @@
 - [x] Integração com Asaas (criação de cliente, assinatura, consulta de pagamento)
 - [x] Integração com Rapidoc (cadastro de beneficiário)
 - [x] Validação de campos obrigatórios em todos os fluxos
+- [x] Persistência dos dados no banco (Firestore ou outro)
 
 ## 🚧 Faltando / Melhorias
 
-- [ ] Persistência dos dados no banco (Firestore ou outro)
 - [ ] Integração com Firebase Authentication (login, autenticação, recuperação)
 - [ ] Sincronização e registro local da relação Assinante ↔ Rapidoc UID ↔ Asaas Customer ID
 - [ ] Dashboard do assinante (resumo, atendimentos, faturas, dependentes)
