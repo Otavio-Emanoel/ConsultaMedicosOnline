@@ -1,5 +1,6 @@
 import adminRoutes from './routes/admin.routes.js';
 import express from 'express';
+import cors from 'cors';
 import healthRoutes from './routes/health.routes.js';
 import diagnosticsRoutes from './routes/diagnostics.routes.js';
 import firstAccessRoutes from './routes/firstAccess.routes.js';
@@ -11,6 +12,7 @@ import usuarioRoutes from './routes/usuario.routes.js';
 import planosRoutes from './routes/planos.routes.js';
 
 const app = express();
+app.use(cors());
 
 // Middlewares globais
 app.use(express.json());
