@@ -83,12 +83,36 @@ export class UsuarioController {
             if (!usuarioDoc.exists) return res.status(404).json({ error: 'Usuário não encontrado.' });
             await usuarioRef.set(updateData, { merge: true });
 
-            // Atualiza no Rapidoc (se necessário)
+            // Atualiza no Rapidoc 
             if (process.env.RAPIDOC_BASE_URL && process.env.RAPIDOC_TOKEN) {
                 try {
+                    // Busca dados atuais do beneficiário
+                    const getResp = await axios.get(`${process.env.RAPIDOC_BASE_URL}/${cpf}`,
+                        {
+                            headers: {
+                                Authorization: `Bearer ${process.env.RAPIDOC_TOKEN}`,
+                                clientId: process.env.RAPIDOC_CLIENT_ID,
+                                'Content-Type': 'application/vnd.rapidoc.tema-v2+json',
+                            },
+                        }
+                    );
+                    const atual = getResp.data && getResp.data.beneficiary ? getResp.data.beneficiary : {};
+                    // Monta payload completo, mesclando alterações
+                    const rapidocData: Record<string, any> = {
+                        name: nome !== undefined ? nome : atual.name,
+                        email: email !== undefined ? email : atual.email,
+                        phone: telefone !== undefined ? telefone : atual.phone,
+                        birthday: atual.birthday,
+                        zipCode: atual.zipCode,
+                        paymentType: atual.paymentType,
+                        serviceType: atual.serviceType,
+                        holder: atual.holder,
+                        isActive: atual.isActive,
+                        clientId: atual.clientId,
+                    };
                     await axios.patch(
                         `${process.env.RAPIDOC_BASE_URL}/${cpf}`,
-                        { name: nome, email, phone: telefone },
+                        rapidocData,
                         {
                             headers: {
                                 Authorization: `Bearer ${process.env.RAPIDOC_TOKEN}`,
