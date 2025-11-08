@@ -75,7 +75,7 @@ export default function Page() {
           <button
             type="button"
             className="bg-green-600 hover:bg-green-700 text-white rounded py-2 font-semibold mt-4"
-            onClick={() => router.push("/cadastro")}
+            onClick={() => router.push("/planos")}
           >
             Cadastrar
           </button>
