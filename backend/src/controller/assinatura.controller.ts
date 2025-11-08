@@ -16,6 +16,17 @@ export class AssinaturaController {
             if (!assinatura.cpfUsuario) {
                 return res.status(400).json({ error: 'cpfUsuario é obrigatório.' });
             }
+            if (!assinatura.planoId) {
+                return res.status(400).json({ error: 'planoId é obrigatório.' });
+            }
+
+            // Buscar dados do plano
+            const db = (await import('firebase-admin')).default.firestore();
+            const planoDoc = await db.collection('planos').doc(assinatura.planoId).get();
+            if (!planoDoc.exists) {
+                return res.status(404).json({ error: 'Plano não encontrado.' });
+            }
+            const plano = planoDoc.data();
 
             // Verifica se existe assinatura no Asaas
             const assinaturaCheck = await verificarAssinaturaPorCpf(assinatura.cpfUsuario);
@@ -48,7 +59,16 @@ export class AssinaturaController {
                 return res.status(404).json({ error: 'Usuário não possui conta no Rapidoc.' });
             }
 
-            const result = await salvarAssinatura(assinatura);
+            // Salva assinatura incluindo snapshot do plano
+            const assinaturaComPlano = {
+                ...assinatura,
+                planoTipo: plano?.tipo,
+                planoPeriodicidade: plano?.periodicidade,
+                planoDescricao: plano?.descricao,
+                planoEspecialidades: plano?.especialidades,
+                planoPreco: plano?.preco,
+            };
+            const result = await salvarAssinatura(assinaturaComPlano);
             return res.status(201).json({ message: 'Assinatura salva com sucesso.', id: result.id });
         } catch (error: any) {
             return res.status(500).json({ error: error.message || 'Erro ao salvar assinatura.' });
