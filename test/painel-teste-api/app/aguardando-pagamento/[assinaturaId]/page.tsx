@@ -96,29 +96,62 @@ export default function AguardandoPagamentoPage() {
   };
 
   const finalizar = async () => {
-    // Cria usuário no banco após pagamento confirmado
+    // 1. Cadastra beneficiário no Rapidoc
+    let rapidocOk = false;
     try {
       const draftRaw = localStorage.getItem("assinaturaDraft");
       if (draftRaw) {
         const draftObj = JSON.parse(draftRaw);
         const dados = draftObj?.dados || {};
-        const body = {
-          cpf: dados.cpf,
+        const assinaturaId = draftObj?.assinaturaId;
+        const bodyRapidoc = {
+          assinaturaId,
           nome: dados.nome,
           email: dados.email,
-          telefone: dados.telefone,
-          dataNascimento: dados.birthday || dados.dataNascimento,
+          cpf: dados.cpf,
+          birthday: dados.birthday || dados.dataNascimento,
+          phone: dados.telefone,
+          zipCode: dados.zipCode,
+          paymentType: dados.billingType,
+          serviceType: dados.serviceType,
+          holder: dados.cpf,
+          general: dados.general,
         };
-        // Só envia se tiver todos os campos obrigatórios
-        if (body.cpf && body.nome && body.email && body.telefone && body.dataNascimento) {
-          await fetch("http://localhost:3000/api/usuarios", {
+        if (bodyRapidoc.assinaturaId && bodyRapidoc.nome && bodyRapidoc.email && bodyRapidoc.cpf && bodyRapidoc.birthday) {
+          const resp = await fetch("http://localhost:3000/api/subscription/rapidoc-beneficiary", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(body),
+            body: JSON.stringify(bodyRapidoc),
           });
+          rapidocOk = resp.ok;
         }
       }
     } catch {}
+
+    // 2. Se Rapidoc OK, cria usuário no banco
+    if (rapidocOk) {
+      try {
+        const draftRaw = localStorage.getItem("assinaturaDraft");
+        if (draftRaw) {
+          const draftObj = JSON.parse(draftRaw);
+          const dados = draftObj?.dados || {};
+          const body = {
+            cpf: dados.cpf,
+            nome: dados.nome,
+            email: dados.email,
+            telefone: dados.telefone,
+            dataNascimento: dados.birthday || dados.dataNascimento,
+          };
+          if (body.cpf && body.nome && body.email && body.telefone && body.dataNascimento) {
+            await fetch("http://localhost:3000/api/usuarios", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify(body),
+            });
+          }
+        }
+      } catch {}
+    }
     try { localStorage.removeItem("assinaturaDraft"); } catch {}
     // Ir para tela de Primeiro Acesso (usar CPF se disponível)
     const cpfField = draft?.dados && typeof draft.dados["cpf"] === "string" ? String(draft.dados["cpf"]) : undefined;
