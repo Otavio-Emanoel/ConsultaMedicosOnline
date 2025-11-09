@@ -110,6 +110,24 @@ export default function CadastroPage() {
       const data = await resp.json();
       if (resp.ok) {
         const assinaturaId = data.assinaturaId;
+        // Persistir rascunho local para próxima tela
+        try {
+          localStorage.setItem(
+            "assinaturaDraft",
+            JSON.stringify({
+              createdAt: Date.now(),
+              assinaturaId,
+              clienteId: data.clienteId,
+              plano: {
+                id: plano?.id,
+                tipo: plano?.tipo,
+                preco: plano?.preco,
+                periodicidade: plano?.periodicidade,
+              },
+              dados: body,
+            })
+          );
+        } catch {}
         router.push(`/aguardando-pagamento/${assinaturaId}`);
       } else {
         setMensagem(data.error || "Erro ao criar assinatura.");
