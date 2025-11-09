@@ -101,7 +101,13 @@ export default function LoginPage() {
         )}
 
         <div className="flex justify-between items-center mt-2">
-          <button type="button" className="text-sm underline" onClick={() => router.push("/verificar-cpf")}>Primeiro acesso</button>
+          <button
+            type="button"
+            className="text-sm underline"
+            onClick={() => router.push(`/primeiro-acesso${email ? `?cpf=${email}` : ""}`)}
+          >
+            Primeiro acesso
+          </button>
           <button type="button" className="text-sm underline" onClick={() => router.push("/")}>Voltar ao início</button>
         </div>
       </form>

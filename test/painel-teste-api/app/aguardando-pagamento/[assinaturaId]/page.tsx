@@ -95,13 +95,34 @@ export default function AguardandoPagamentoPage() {
     return null;
   };
 
-  const finalizar = () => {
-    // Limpa draft e segue para próxima etapa (ex: dashboard placeholder)
+  const finalizar = async () => {
+    // Cria usuário no banco após pagamento confirmado
+    try {
+      const draftRaw = localStorage.getItem("assinaturaDraft");
+      if (draftRaw) {
+        const draftObj = JSON.parse(draftRaw);
+        const dados = draftObj?.dados || {};
+        const body = {
+          cpf: dados.cpf,
+          nome: dados.nome,
+          email: dados.email,
+          telefone: dados.telefone,
+          dataNascimento: dados.birthday || dados.dataNascimento,
+        };
+        // Só envia se tiver todos os campos obrigatórios
+        if (body.cpf && body.nome && body.email && body.telefone && body.dataNascimento) {
+          await fetch("http://localhost:3000/api/usuarios", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(body),
+          });
+        }
+      }
+    } catch {}
     try { localStorage.removeItem("assinaturaDraft"); } catch {}
     // Ir para tela de Primeiro Acesso (usar CPF se disponível)
-  // Extração segura do CPF sem usar 'any'
-  const cpfField = draft?.dados && typeof draft.dados["cpf"] === "string" ? String(draft.dados["cpf"]) : undefined;
-  const cpf = cpfField;
+    const cpfField = draft?.dados && typeof draft.dados["cpf"] === "string" ? String(draft.dados["cpf"]) : undefined;
+    const cpf = cpfField;
     if (cpf) {
       router.push(`/verificar-cpf?cpf=${encodeURIComponent(cpf)}`);
     } else {
