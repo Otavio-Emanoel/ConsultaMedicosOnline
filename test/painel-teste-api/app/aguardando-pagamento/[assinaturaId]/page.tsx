@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Image from "next/image";
 import { useParams, useRouter } from "next/navigation";
 
 type BillingType = "BOLETO" | "PIX" | "CREDIT_CARD";
@@ -17,6 +18,17 @@ type Draft = {
   clienteId?: string;
   plano?: { id?: string; tipo?: string; preco?: number; periodicidade?: string };
   dados?: Dados;
+};
+
+type PaymentDetails = {
+  bankSlipUrl?: string;
+  invoiceUrl?: string;
+  dueDate?: string;
+  value?: number;
+  pixQrCode?: string; // texto copia e cola
+  encodedImage?: string; // base64 image
+  qrCode?: string; // fallback
+  [k: string]: unknown;
 };
 
 export default function AguardandoPagamentoPage() {
@@ -64,6 +76,10 @@ export default function AguardandoPagamentoPage() {
   }, [assinaturaId, polling]);
 
   const billingType = draft?.dados?.billingType;
+  const pagamento = (status?.pagamento as PaymentDetails) || undefined;
+  const boletoUrl = pagamento?.bankSlipUrl || pagamento?.invoiceUrl;
+  const pixText = pagamento?.pixQrCode || pagamento?.qrCode;
+  const pixImage = pagamento?.encodedImage as string | undefined;
 
   const instrucoes = () => {
     if (!billingType) return null;
@@ -105,6 +121,53 @@ export default function AguardandoPagamentoPage() {
           <div className="text-sm mb-4">
             <div className="font-medium mb-2">Status: pagamento pendente</div>
             <p className="text-zinc-700 dark:text-zinc-200">{instrucoes()}</p>
+            {/* Detalhes de pagamento conforme método */}
+            {billingType === "BOLETO" && (
+              <div className="mt-3 space-y-2">
+                {boletoUrl ? (
+                  <a
+                    href={String(boletoUrl)}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-block px-4 py-2 rounded bg-blue-600 hover:bg-blue-700 text-white text-xs"
+                  >
+                    Abrir Boleto
+                  </a>
+                ) : (
+                  <div className="text-xs text-zinc-600">Gerando link do boleto...</div>
+                )}
+                {pagamento?.dueDate && (
+                  <div className="text-xs">Vencimento: {new Date(pagamento.dueDate).toLocaleDateString()}</div>
+                )}
+                {typeof pagamento?.value === 'number' && (
+                  <div className="text-xs">Valor: R$ {pagamento.value.toFixed(2)}</div>
+                )}
+              </div>
+            )}
+            {billingType === "PIX" && (
+              <div className="mt-3 space-y-2">
+                {pixText ? (
+                  <div className="text-xs break-all p-2 border rounded bg-zinc-50 dark:bg-zinc-800">
+                    {pixText}
+                  </div>
+                ) : (
+                  <div className="text-xs text-zinc-600">Gerando código PIX...</div>
+                )}
+                {pixImage && (
+                  <Image
+                    alt="QR Code PIX"
+                    src={`data:image/png;base64,${pixImage}`}
+                    width={160}
+                    height={160}
+                    className="mt-2 mx-auto w-40 h-40 object-contain"
+                    unoptimized
+                  />
+                )}
+                {typeof pagamento?.value === 'number' && (
+                  <div className="text-xs">Valor: R$ {pagamento.value.toFixed(2)}</div>
+                )}
+              </div>
+            )}
           </div>
         )}
         {status?.pago && (
