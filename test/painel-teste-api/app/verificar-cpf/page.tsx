@@ -1,7 +1,7 @@
 "use client";
 
-import { useState } from "react";
-import { useRouter } from "next/navigation";
+import { useState, useEffect } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 
 export default function Page() {
 
@@ -11,6 +11,22 @@ export default function Page() {
   const [podeCadastrar, setPodeCadastrar] = useState<null | boolean>(null);
   const [usuario, setUsuario] = useState<Record<string, unknown> | null>(null);
   const router = useRouter();
+  const searchParams = useSearchParams();
+
+  // Prefill CPF vindo da URL (?cpf=123...)
+  useEffect(() => {
+    const paramCpf = searchParams.get("cpf");
+    if (paramCpf && !cpf) {
+      // normaliza para formato ###.###.###-## se vier só números
+      const onlyNums = paramCpf.replace(/\D/g, "");
+      if (onlyNums.length === 11) {
+        const masked = `${onlyNums.slice(0,3)}.${onlyNums.slice(3,6)}.${onlyNums.slice(6,9)}-${onlyNums.slice(9,11)}`;
+        setCpf(masked);
+      } else {
+        setCpf(paramCpf);
+      }
+    }
+  }, [searchParams, cpf]);
 
   const handleVerificar = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -59,6 +75,7 @@ export default function Page() {
           onChange={e => setCpf(e.target.value)}
           className="border rounded px-4 py-2"
           maxLength={14}
+          inputMode="numeric"
         />
         <button
           type="submit"
