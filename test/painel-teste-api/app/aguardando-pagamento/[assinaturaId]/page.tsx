@@ -98,7 +98,15 @@ export default function AguardandoPagamentoPage() {
   const finalizar = () => {
     // Limpa draft e segue para próxima etapa (ex: dashboard placeholder)
     try { localStorage.removeItem("assinaturaDraft"); } catch {}
-    router.push("/dashboard"); // futura rota protegida
+    // Ir para tela de Primeiro Acesso (usar CPF se disponível)
+  // Extração segura do CPF sem usar 'any'
+  const cpfField = draft?.dados && typeof draft.dados["cpf"] === "string" ? String(draft.dados["cpf"]) : undefined;
+  const cpf = cpfField;
+    if (cpf) {
+      router.push(`/verificar-cpf?cpf=${encodeURIComponent(cpf)}`);
+    } else {
+      router.push("/verificar-cpf");
+    }
   };
 
   return (
