@@ -101,7 +101,10 @@ export default function Page() {
           <button
             type="button"
             className="bg-blue-600 hover:bg-blue-700 text-white rounded py-2 font-semibold mt-4"
-            onClick={() => router.push("/login")}
+            onClick={() => {
+              const digits = cpf.replace(/\D/g, "");
+              router.push(`/login?cpf=${digits}`);
+            }}
           >
             Ir para Login
           </button>
