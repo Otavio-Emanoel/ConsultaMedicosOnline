@@ -73,6 +73,42 @@ Respostas:
 { "pago": true, "pagamento": { ... } }
 ```
 
+### GET /subscription/payment-details/:assinaturaId
+Retorna detalhes do primeiro pagamento (boleto ou PIX) para exibir instruções de pagamento ou comprovante.
+Respostas:
+```json
+{
+	"assinaturaId": "sub_xxx",
+	"encontrado": true,
+	"pagamento": {
+		"paymentId": "pay_yyy",
+		"billingType": "BOLETO",
+		"status": "PENDING",
+		"value": 79.9,
+		"dueDate": "2025-01-10",
+		"bankSlipUrl": "https://...",
+		"invoiceUrl": "https://..."
+	}
+}
+```
+Ou para PIX:
+```json
+{
+	"assinaturaId": "sub_xxx",
+	"encontrado": true,
+	"pagamento": {
+		"paymentId": "pay_zzz",
+		"billingType": "PIX",
+		"status": "PENDING",
+		"value": 79.9,
+		"dueDate": "2025-01-10",
+		"pixQrCode": "data:image/png;base64,...",
+		"pixCode": "0002012658...",
+		"qrCode": "000201..."
+	}
+}
+```
+
 ### POST /subscription/start
 Inicia fluxo criando cliente e assinatura Asaas.
 Body mínimo:
@@ -154,6 +190,31 @@ Lista beneficiários.
 ## Dashboard
 ### GET /dashboard (protegido - requer Bearer token Firebase)
 Retorna `{ usuario, assinaturas, beneficiarios }` pelo UID/CPF autenticado.
+
+## Onboarding (Orquestrador)
+### POST /subscription/complete-onboarding
+Completa o onboarding por CPF sem depender de localStorage.
+Body:
+```json
+{
+	"cpf": "12345678901",
+	"overrides": {
+		"nome": "(opcional)",
+		"email": "(opcional)",
+		"telefone": "(opcional)",
+		"birthday": "(opcional, YYYY-MM-DD)",
+		"zipCode": "(opcional)",
+		"assinaturaId": "(opcional)",
+		"planoId": "(opcional)"
+	}
+}
+```
+Respostas:
+- 200 `{ ok: true, assinaturaId, created: { rapidoc, usuario, assinatura } }`
+- 400 `{ ok: false, missing: ["birthday", ...], assinaturaId }` (solicitar campos em falta e reenviar como overrides)
+- 402 assinatura encontrada porém ainda não paga
+- 404 nenhuma assinatura ativa encontrada
+- 500 erro interno
 
 ## Administração
 ### POST /admin/cadastrar

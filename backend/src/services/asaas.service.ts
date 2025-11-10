@@ -94,3 +94,36 @@ export async function verificarAssinaturaPorCpf(cpf: string): Promise<{ assinatu
         }
     };
 }
+
+// Detalhes do primeiro pagamento (boleto/pix) da assinatura
+export async function obterDetalhesPagamentoAssinatura(assinaturaId: string): Promise<any> {
+    if (!ASAAS_API_KEY) throw new Error('Chave da API Asaas não configurada');
+    if (!assinaturaId) throw new Error('assinaturaId obrigatório');
+    const resp = await axios.get(`${ASAAS_API_URL}/payments`, {
+        params: { subscription: assinaturaId },
+        headers: { access_token: ASAAS_API_KEY },
+    });
+    const pagamentos: any[] = resp.data.data || [];
+    if (!pagamentos.length) return { assinaturaId, encontrado: false };
+    const primeiroPagamento = pagamentos.sort((a: any, b: any) => new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime())[0];
+    if (!primeiroPagamento) return { assinaturaId, encontrado: false };
+    const billingType = primeiroPagamento.billingType;
+    const detalhes: Record<string, any> = {
+        assinaturaId,
+        paymentId: primeiroPagamento.id,
+        billingType,
+        status: primeiroPagamento.status,
+        value: primeiroPagamento.value,
+        dueDate: primeiroPagamento.dueDate,
+        original: primeiroPagamento
+    };
+    // Campos específicos (boleto)
+    if (primeiroPagamento.bankSlipUrl) detalhes.bankSlipUrl = primeiroPagamento.bankSlipUrl;
+    if (primeiroPagamento.invoiceUrl) detalhes.invoiceUrl = primeiroPagamento.invoiceUrl;
+    // Campos PIX (tentamos mapear nomes possíveis)
+    if (primeiroPagamento.pixQrCode) detalhes.pixQrCode = primeiroPagamento.pixQrCode;
+    if (primeiroPagamento.pixCode) detalhes.pixCode = primeiroPagamento.pixCode;
+    if (primeiroPagamento.qrCode) detalhes.qrCode = primeiroPagamento.qrCode;
+    if (primeiroPagamento.encodedImage) detalhes.encodedImage = primeiroPagamento.encodedImage;
+    return { assinaturaId, encontrado: true, pagamento: detalhes };
+}

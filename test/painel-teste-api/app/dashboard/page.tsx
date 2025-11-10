@@ -45,6 +45,7 @@ export default function DashboardPage() {
   };
   const search = useSearchParams();
   const router = useRouter();
+  const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:3000/api';
   const [cpf, setCpf] = useState<string>("");
   const [nome, setNome] = useState<string>("");
   const [loading, setLoading] = useState(true);
@@ -83,7 +84,7 @@ export default function DashboardPage() {
         const token = typeof window !== 'undefined' ? localStorage.getItem('firebaseToken') : null;
         const headers: Record<string, string> = { 'Content-Type': 'application/json' };
         if (token) headers['Authorization'] = `Bearer ${token}`;
-        const resp = await fetch('http://localhost:3000/api/dashboard', { headers });
+        const resp = await fetch(`${API_BASE}/dashboard`, { headers });
         const data = await resp.json();
         if (!resp.ok) {
           const msg = typeof data?.error === 'string' ? data.error : JSON.stringify(data);
@@ -102,14 +103,14 @@ export default function DashboardPage() {
     }
     load();
     return () => { cancel = true; };
-  }, [cpf, nome]);
+  }, [cpf, nome, API_BASE]);
 
   const handlePrimeiroAcesso = async () => {
     if (!cpf || dashboard?.usuario?.primeiroAcesso) return;
     setMsgAcao("Gerando senha temporária...");
     setErro("");
     try {
-      const resp = await fetch("http://localhost:3000/api/first-access", {
+      const resp = await fetch(`${API_BASE}/first-access`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ cpf }),

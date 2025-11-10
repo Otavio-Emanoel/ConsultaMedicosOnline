@@ -16,6 +16,7 @@ type Plano = {
 export default function CadastroPage() {
   const params = useParams();
   const router = useRouter();
+  const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:3000/api';
   const planoId = Array.isArray(params?.id) ? params.id[0] : params?.id;
   const [plano, setPlano] = useState<Plano | null>(null);
   const [loading, setLoading] = useState(true);
@@ -43,7 +44,7 @@ export default function CadastroPage() {
 
   useEffect(() => {
     if (!planoId) return;
-    fetch(`http://localhost:3000/api/planos`)
+  fetch(`${API_BASE}/planos`)
       .then((res) => res.json())
       .then((planos) => {
         const p = planos.find((pl: Plano) => pl.id === planoId);
@@ -52,7 +53,7 @@ export default function CadastroPage() {
       })
       .catch(() => setErro("Erro ao buscar plano."))
       .finally(() => setLoading(false));
-  }, [planoId]);
+  }, [planoId, API_BASE]);
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setForm({ ...form, [e.target.name]: e.target.value });
@@ -107,7 +108,7 @@ export default function CadastroPage() {
         billingType: form.billingType,
         ciclo: cicloAsaas,
       };
-      const resp = await fetch("http://localhost:3000/api/subscription/start", {
+      const resp = await fetch(`${API_BASE}/subscription/start`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),

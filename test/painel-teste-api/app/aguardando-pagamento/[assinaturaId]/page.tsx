@@ -48,6 +48,7 @@ type DraftDados = {
 export default function AguardandoPagamentoPage() {
   const params = useParams();
   const router = useRouter();
+  const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:3000/api';
   const assinaturaId = Array.isArray(params?.assinaturaId) ? params.assinaturaId[0] : params?.assinaturaId;
   const [status, setStatus] = useState<{ pago: boolean; pagamento?: unknown } | null>(null);
   const [loading, setLoading] = useState(true);
@@ -70,7 +71,7 @@ export default function AguardandoPagamentoPage() {
     if (!assinaturaId || !polling) return;
     const fetchStatus = async () => {
       try {
-        const resp = await fetch(`http://localhost:3000/api/subscription/check-payment/${assinaturaId}`);
+  const resp = await fetch(`${API_BASE}/subscription/check-payment/${assinaturaId}`);
         const data = await resp.json();
         if (resp.ok) {
           setStatus(data);
@@ -93,7 +94,7 @@ export default function AguardandoPagamentoPage() {
     const interval = setInterval(fetchStatus, 7000); // a cada 7s
     fetchStatus(); // chamada inicial
     return () => clearInterval(interval);
-  }, [assinaturaId, polling]);
+  }, [assinaturaId, polling, API_BASE]);
 
   const billingType = draft?.dados?.billingType;
   const pagamento = (status?.pagamento as PaymentDetails) || undefined;
@@ -164,7 +165,7 @@ export default function AguardandoPagamentoPage() {
         const maxTentativas = 3;
         for (let tentativa = 1; tentativa <= maxTentativas && !rapidocOk; tentativa++) {
           setMensagem(`Cadastrando beneficiário no Rapidoc (tentativa ${tentativa}/${maxTentativas})...`);
-          const resp = await fetch("http://localhost:3000/api/subscription/rapidoc-beneficiary", {
+          const resp = await fetch(`${API_BASE}/subscription/rapidoc-beneficiary`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify(bodyRapidoc),
@@ -235,7 +236,7 @@ export default function AguardandoPagamentoPage() {
         const maxUserTentativas = 5;
         for (let tentativa = 1; tentativa <= maxUserTentativas; tentativa++) {
           setMensagem(`Criando usuário (tentativa ${tentativa}/${maxUserTentativas})...`);
-          const respUser = await fetch("http://localhost:3000/api/usuarios", {
+          const respUser = await fetch(`${API_BASE}/usuarios`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify(body),
@@ -262,7 +263,7 @@ export default function AguardandoPagamentoPage() {
               const maxAssTentativas = 3;
               for (let t = 1; t <= maxAssTentativas; t++) {
                 setMensagem(`Salvando assinatura no banco (tentativa ${t}/${maxAssTentativas})...`);
-                const respAssin = await fetch("http://localhost:3000/api/assinaturas", {
+                const respAssin = await fetch(`${API_BASE}/assinaturas`, {
                   method: "POST",
                   headers: { "Content-Type": "application/json" },
                   body: JSON.stringify(assinaturaBody),

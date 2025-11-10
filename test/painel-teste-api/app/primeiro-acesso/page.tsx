@@ -4,6 +4,7 @@ import { useState, useEffect } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 
 export default function PrimeiroAcessoPage() {
+  const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:3000/api';
   const router = useRouter();
   const searchParams = useSearchParams();
   const [cpf, setCpf] = useState("");
@@ -33,7 +34,7 @@ export default function PrimeiroAcessoPage() {
     setPodeCopiar(false);
     setLoading(true);
     try {
-      const resp = await fetch("http://localhost:3000/api/first-access", {
+      const resp = await fetch(`${API_BASE}/first-access`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ cpf: cpf.replace(/\D/g, "") }),
