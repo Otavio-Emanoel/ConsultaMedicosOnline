@@ -109,6 +109,13 @@ Ou para PIX:
 }
 ```
 
+### GET /subscription/onboarding-status/:cpf
+Retorna o status do onboarding para um CPF.
+Resposta 200:
+```json
+{ "assinaturaAtiva": true, "rapidocAtivo": true, "usuarioExiste": true }
+```
+
 ### POST /subscription/start
 Inicia fluxo criando cliente e assinatura Asaas.
 Body mínimo:

@@ -188,6 +188,42 @@ export class SubscriptionController {
         }
     }
 
+    static async onboardingStatus(req: Request, res: Response) {
+        const { cpf } = req.params as { cpf?: string };
+        if (!cpf) return res.status(400).json({ error: 'CPF é obrigatório.' });
+        try {
+            const { verificarAssinaturaPorCpf } = await import('../services/asaas.service.js');
+            const axios = (await import('axios')).default;
+            const admin = (await import('firebase-admin')).default;
+
+            // Assinatura (Asaas)
+            const asaas = await verificarAssinaturaPorCpf(cpf);
+            const assinaturaAtiva = !!asaas.assinaturaOk;
+
+            // Rapidoc (beneficiário ativo)
+            let rapidocAtivo = false;
+            try {
+                const r = await axios.get(`${process.env.RAPIDOC_BASE_URL}/${cpf}`, {
+                    headers: {
+                        Authorization: `Bearer ${process.env.RAPIDOC_TOKEN}`,
+                        clientId: process.env.RAPIDOC_CLIENT_ID,
+                        'Content-Type': 'application/vnd.rapidoc.tema-v2+json'
+                    }
+                });
+                const b = r.data && r.data.beneficiary;
+                rapidocAtivo = !!b && b.isActive === true && !!b.uuid;
+            } catch {/* considera false */}
+
+            // Firestore (usuario existe)
+            const usuarioDoc = await admin.firestore().collection('usuarios').doc(cpf).get();
+            const usuarioExiste = usuarioDoc.exists;
+
+            return res.status(200).json({ assinaturaAtiva, rapidocAtivo, usuarioExiste });
+        } catch (error: any) {
+            return res.status(500).json({ error: error?.message || 'Erro ao consultar status de onboarding.' });
+        }
+    }
+
     /**
      * Orquestrador: completa onboarding por CPF sem depender de localStorage.
      * 1) Busca assinatura ativa e pagamento recebido no Asaas

@@ -15,6 +15,9 @@ router.get('/subscription/check-payment/:assinaturaId', SubscriptionController.c
 // GET /api/subscription/payment-details/:assinaturaId
 router.get('/subscription/payment-details/:assinaturaId', SubscriptionController.paymentDetails);
 
+// GET /api/subscription/onboarding-status/:cpf
+router.get('/subscription/onboarding-status/:cpf', SubscriptionController.onboardingStatus);
+
 // POST /api/subscription/complete-onboarding
 router.post('/subscription/complete-onboarding', SubscriptionController.completeOnboarding);
 

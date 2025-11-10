@@ -11,6 +11,9 @@ export default function Page() {
   const [loading, setLoading] = useState(false);
   const [podeCadastrar, setPodeCadastrar] = useState<null | boolean>(null);
   const [usuario, setUsuario] = useState<Record<string, unknown> | null>(null);
+  type UsuarioFS = { id: string; cpf?: string; nome?: string; email?: string; telefone?: string } | null;
+  const [usuarioFirestore, setUsuarioFirestore] = useState<UsuarioFS>(null);
+  const [rapidocAtivo, setRapidocAtivo] = useState<boolean | null>(null);
   const [onboardingMsg, setOnboardingMsg] = useState("");
   const [onboardingLoading, setOnboardingLoading] = useState(false);
   const [missing, setMissing] = useState<string[] | null>(null);
@@ -64,6 +67,21 @@ export default function Page() {
           setPodeCadastrar(false);
           setUsuario(data.usuario);
           setMensagem("Usuário já possui assinatura ativa.");
+          // Após constatar assinatura ativa, verificar usuário Firestore e Rapidoc para decidir exibição do botão de finalizar cadastro
+          try {
+            const digits = cpf.replace(/\D/g, "");
+            // Checa status completo no backend (sem expor segredos)
+            const statusResp = await fetch(`${API_BASE}/subscription/onboarding-status/${digits}`);
+            if (statusResp.ok) {
+              const s = await statusResp.json();
+              setRapidocAtivo(!!s.rapidocAtivo);
+              // opcionalmente poderíamos buscar o usuário, mas basta saber se existe
+              setUsuarioFirestore(s.usuarioExiste ? { id: digits } : null);
+            } else {
+              setRapidocAtivo(null);
+              setUsuarioFirestore(null);
+            }
+          } catch { /* silencioso */ }
         } else {
           setMensagem("CPF verificado com sucesso!");
         }
@@ -168,14 +186,17 @@ export default function Page() {
             >
               Ir para Login
             </button>
-            <button
-              type="button"
-              className="bg-purple-600 hover:bg-purple-700 text-white rounded py-2 font-semibold"
-              onClick={() => handleCompleteOnboarding()}
-              disabled={onboardingLoading}
-            >
-              {onboardingLoading ? 'Verificando…' : 'Finalizar cadastro'}
-            </button>
+            {/* Exibe botão de finalizar cadastro somente se faltar algum componente do onboarding */}
+            {!(usuarioFirestore && rapidocAtivo) && (
+              <button
+                type="button"
+                className="bg-purple-600 hover:bg-purple-700 text-white rounded py-2 font-semibold"
+                onClick={() => handleCompleteOnboarding()}
+                disabled={onboardingLoading}
+              >
+                {onboardingLoading ? 'Verificando…' : 'Finalizar cadastro'}
+              </button>
+            )}
             {onboardingMsg && (
               <div className="text-center text-xs text-zinc-600 dark:text-zinc-300">{onboardingMsg}</div>
             )}
