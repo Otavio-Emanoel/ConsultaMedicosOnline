@@ -36,6 +36,13 @@ type DashboardResponse = {
 };
 
 export default function DashboardPage() {
+  // Função de logout
+  const handleLogout = () => {
+    try {
+      localStorage.removeItem('firebaseToken');
+    } catch {}
+    router.push('/');
+  };
   const search = useSearchParams();
   const router = useRouter();
   const [cpf, setCpf] = useState<string>("");
@@ -138,6 +145,12 @@ export default function DashboardPage() {
               className="px-3 py-2 text-sm rounded bg-zinc-800 text-white hover:bg-zinc-700"
             >
               Início
+            </button>
+            <button
+              onClick={handleLogout}
+              className="px-3 py-2 text-sm rounded border border-red-500 text-red-600 hover:bg-red-50"
+            >
+              Logout
             </button>
           </div>
         </div>
