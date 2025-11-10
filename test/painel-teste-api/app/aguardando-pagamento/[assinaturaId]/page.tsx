@@ -31,22 +31,38 @@ type PaymentDetails = {
   [k: string]: unknown;
 };
 
+type DraftDados = {
+  nome: string;
+  email: string;
+  cpf: string;
+  birthday?: string;
+  dataNascimento?: string;
+  telefone?: string;
+  zipCode?: string;
+  billingType?: BillingType;
+  serviceType?: string;
+  holder?: string;
+  general?: string;
+};
+
 export default function AguardandoPagamentoPage() {
   const params = useParams();
   const router = useRouter();
   const assinaturaId = Array.isArray(params?.assinaturaId) ? params.assinaturaId[0] : params?.assinaturaId;
   const [status, setStatus] = useState<{ pago: boolean; pagamento?: unknown } | null>(null);
   const [loading, setLoading] = useState(true);
-  const [erro, setErro] = useState("");
+  const [erro, setErro] = useState<string>("");
   const [draft, setDraft] = useState<Draft | null>(null);
   const [polling, setPolling] = useState(true);
+  const [finalizando, setFinalizando] = useState(false);
+  const [mensagem, setMensagem] = useState("");
 
   // Carrega draft salvo
   useEffect(() => {
     try {
       const raw = localStorage.getItem("assinaturaDraft");
       if (raw) setDraft(JSON.parse(raw));
-    } catch {}
+    } catch { }
   }, []);
 
   // Polling do status de pagamento
@@ -62,10 +78,14 @@ export default function AguardandoPagamentoPage() {
             setPolling(false);
           }
         } else {
-          setErro(data.error || "Erro ao verificar pagamento.");
+          let msg = "Erro ao verificar pagamento.";
+          if (typeof data.error === "string") msg = data.error;
+          else if (typeof data.description === "string") msg = data.description;
+          else if (typeof data === "object" && data !== null) msg = JSON.stringify(data);
+          setErro(msg);
         }
-      } catch {
-        setErro("Falha de conexão ao verificar pagamento.");
+      } catch (err) {
+        setErro(err instanceof Error ? err.message : JSON.stringify(err));
       } finally {
         setLoading(false);
       }
@@ -95,67 +115,166 @@ export default function AguardandoPagamentoPage() {
     return null;
   };
 
+  const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+  // Normalizadores para Rapidoc
+  const normalizePaymentType = (raw?: string) => {
+    const val = (raw || '').toUpperCase();
+    return val === 'A' || val === 'S' ? val : 'S';
+  };
+  const normalizeServiceType = (raw?: string) => {
+    const allowed = new Set(['G', 'P', 'GP', 'GS', 'GSP']);
+    const val = (raw || '').toUpperCase();
+    return allowed.has(val) ? val : 'G';
+  };
+
   const finalizar = async () => {
-    // 1. Cadastra beneficiário no Rapidoc
+    setFinalizando(true);
+    setErro("");
+    setMensagem("Aguardando confirmação do pagamento...");
+
+    // Pequeno atraso para evitar condição de corrida com a confirmação do Asaas
+    await sleep(4000);
+
+    // 1. Cadastra beneficiário no Rapidoc com retry
     let rapidocOk = false;
+    let rapidocFailMsg = "";
     try {
       const draftRaw = localStorage.getItem("assinaturaDraft");
-      if (draftRaw) {
-        const draftObj = JSON.parse(draftRaw);
-        const dados = draftObj?.dados || {};
-        const assinaturaId = draftObj?.assinaturaId;
-        const bodyRapidoc = {
-          assinaturaId,
-          nome: dados.nome,
-          email: dados.email,
-          cpf: dados.cpf,
-          birthday: dados.birthday || dados.dataNascimento,
-          phone: dados.telefone,
-          zipCode: dados.zipCode,
-          paymentType: dados.billingType,
-          serviceType: dados.serviceType,
-          holder: dados.cpf,
-          general: dados.general,
-        };
-        if (bodyRapidoc.assinaturaId && bodyRapidoc.nome && bodyRapidoc.email && bodyRapidoc.cpf && bodyRapidoc.birthday) {
+      const draftObj = draftRaw ? JSON.parse(draftRaw) : null;
+      const dados = (draftObj?.dados || {}) as Partial<DraftDados>;
+      const assinIdToUse: string | undefined = draftObj?.assinaturaId || (typeof assinaturaId === "string" ? assinaturaId : undefined);
+      const bodyRapidoc = {
+        assinaturaId: assinIdToUse,
+        nome: dados.nome,
+        email: dados.email,
+        cpf: dados.cpf,
+        birthday: dados.birthday || dados.dataNascimento,
+        phone: dados.telefone,
+        zipCode: dados.zipCode,
+  paymentType: normalizePaymentType((dados as unknown as Record<string, string>)?.paymentType),
+        serviceType: normalizeServiceType(dados.serviceType),
+        holder: dados.cpf,
+        general: dados.general,
+      };
+      const camposOk = bodyRapidoc.assinaturaId && bodyRapidoc.nome && bodyRapidoc.email && bodyRapidoc.cpf && bodyRapidoc.birthday;
+      if (!camposOk) {
+        rapidocFailMsg = "Dados insuficientes para cadastrar no Rapidoc.";
+      } else {
+        const maxTentativas = 3;
+        for (let tentativa = 1; tentativa <= maxTentativas && !rapidocOk; tentativa++) {
+          setMensagem(`Cadastrando beneficiário no Rapidoc (tentativa ${tentativa}/${maxTentativas})...`);
           const resp = await fetch("http://localhost:3000/api/subscription/rapidoc-beneficiary", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify(bodyRapidoc),
           });
-          rapidocOk = resp.ok;
-        }
-      }
-    } catch {}
-
-    // 2. Se Rapidoc OK, cria usuário no banco
-    if (rapidocOk) {
-      try {
-        const draftRaw = localStorage.getItem("assinaturaDraft");
-        if (draftRaw) {
-          const draftObj = JSON.parse(draftRaw);
-          const dados = draftObj?.dados || {};
-          const body = {
-            cpf: dados.cpf,
-            nome: dados.nome,
-            email: dados.email,
-            telefone: dados.telefone,
-            dataNascimento: dados.birthday || dados.dataNascimento,
-          };
-          if (body.cpf && body.nome && body.email && body.telefone && body.dataNascimento) {
-            await fetch("http://localhost:3000/api/usuarios", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify(body),
-            });
+          if (resp.ok) {
+            // Validar corpo (pode vir success=false mesmo com 201)
+            try {
+              const dataRapidoc = await resp.clone().json();
+              const successFlag = (dataRapidoc?.beneficiario?.success === true) || dataRapidoc?.success === true;
+              if (successFlag) {
+                rapidocOk = true;
+              } else if (dataRapidoc?.error) {
+                rapidocFailMsg = typeof dataRapidoc.error === 'string' ? dataRapidoc.error : JSON.stringify(dataRapidoc.error);
+              } else if (dataRapidoc?.beneficiario?.message) {
+                rapidocFailMsg = dataRapidoc.beneficiario.message;
+              }
+            } catch {}
+            if (!rapidocOk && !rapidocFailMsg) {
+              rapidocFailMsg = "Resposta inesperada do Rapidoc.";
+            }
+            if (!rapidocOk) {
+              // Não considerar tentativa válida se sucesso não confirmado
+              rapidocOk = false;
+            }
+            break;
+          } else {
+            let msg = `Falha ao cadastrar no Rapidoc (HTTP ${resp.status}).`;
+            try {
+              const data = await resp.json();
+              if (typeof data?.error === "string") msg = data.error;
+              else if (data?.error?.description) msg = data.error.description;
+              else if (data?.description) msg = data.description;
+              else msg = JSON.stringify(data);
+            } catch { }
+            rapidocFailMsg = msg;
+            // Se for 403 (pagamento ainda não confirmado no Asaas), aguardar e tentar de novo
+            if (resp.status === 403 && tentativa < maxTentativas) {
+              setMensagem("Pagamento ainda não propagou. Tentando novamente em 3s...");
+              await sleep(3000);
+            }
           }
         }
-      } catch {}
+      }
+    } catch (e: unknown) {
+      rapidocFailMsg = e instanceof Error ? e.message : String(e);
     }
-    try { localStorage.removeItem("assinaturaDraft"); } catch {}
+
+    if (!rapidocOk) {
+      setErro(rapidocFailMsg || "Não foi possível cadastrar no Rapidoc agora. Tente novamente em instantes.");
+      setFinalizando(false);
+      return;
+    }
+
+    // 2. Se Rapidoc OK, cria usuário no banco com retries (404 = conta Rapidoc ainda não propagou)
+    try {
+      const draftRaw = localStorage.getItem("assinaturaDraft");
+      const draftObj = draftRaw ? JSON.parse(draftRaw) : null;
+      const dados = (draftObj?.dados || {}) as Partial<DraftDados>;
+      const body = {
+        cpf: dados.cpf,
+        nome: dados.nome,
+        email: dados.email,
+        telefone: dados.telefone,
+        dataNascimento: dados.birthday || dados.dataNascimento,
+      };
+      if (body.cpf && body.nome && body.email && body.telefone && body.dataNascimento) {
+        const maxUserTentativas = 5;
+        for (let tentativa = 1; tentativa <= maxUserTentativas; tentativa++) {
+          setMensagem(`Criando usuário (tentativa ${tentativa}/${maxUserTentativas})...`);
+          const respUser = await fetch("http://localhost:3000/api/usuarios", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(body),
+          });
+          if (respUser.ok) {
+            setMensagem("Usuário criado com sucesso.");
+            break;
+          }
+          // Trata erro
+          let msg = `Falha ao criar usuário (HTTP ${respUser.status}).`;
+          try {
+            const data = await respUser.json();
+            if (typeof data?.error === "string") msg = data.error;
+            else if (data?.description) msg = data.description;
+            else msg = JSON.stringify(data);
+          } catch { }
+          // Se 404 Rapidoc ainda não propagou, espera e tenta de novo
+          if (respUser.status === 404 && tentativa < maxUserTentativas) {
+            setMensagem("Conta Rapidoc não encontrada ainda. Aguardando propagação (3s)...");
+            await sleep(3000);
+            continue;
+          }
+          // Outros erros ou última tentativa
+          setErro(msg);
+          setFinalizando(false);
+          return;
+        }
+      }
+    } catch (e: unknown) {
+      setErro(e instanceof Error ? e.message : "Erro inesperado ao criar usuário no banco.");
+      setFinalizando(false);
+      return;
+    }
+
+    try { localStorage.removeItem("assinaturaDraft"); } catch { }
     // Ir para tela de Primeiro Acesso (usar CPF se disponível)
     const cpfField = draft?.dados && typeof draft.dados["cpf"] === "string" ? String(draft.dados["cpf"]) : undefined;
     const cpf = cpfField;
+    setMensagem("");
+    setFinalizando(false);
     if (cpf) {
       router.push(`/verificar-cpf?cpf=${encodeURIComponent(cpf)}`);
     } else {
@@ -178,7 +297,16 @@ export default function AguardandoPagamentoPage() {
           </div>
         )}
         {loading && <div className="text-sm">Verificando status do pagamento...</div>}
-        {erro && <div className="text-sm text-red-600 dark:text-red-400 mb-4">{erro}</div>}
+        {mensagem && !erro && (
+          <div className="text-xs mb-3 text-blue-600 dark:text-blue-400">{mensagem}</div>
+        )}
+        {erro && (
+          <div className="text-sm text-red-600 dark:text-red-400 mb-4">
+            {typeof erro === "string"
+              ? erro
+              : JSON.stringify(erro, Object.getOwnPropertyNames(erro))}
+          </div>
+        )}
         {status && !status.pago && (
           <div className="text-sm mb-4">
             <div className="font-medium mb-2">Status: pagamento pendente</div>
@@ -250,9 +378,10 @@ export default function AguardandoPagamentoPage() {
             <button
               type="button"
               onClick={finalizar}
-              className="px-4 py-2 rounded bg-green-600 hover:bg-green-700 text-white text-sm"
+              disabled={finalizando}
+              className={`px-4 py-2 rounded text-white text-sm ${finalizando ? 'bg-green-400 cursor-wait' : 'bg-green-600 hover:bg-green-700'}`}
             >
-              Continuar
+              {finalizando ? 'Processando...' : 'Continuar'}
             </button>
           ) : (
             <button

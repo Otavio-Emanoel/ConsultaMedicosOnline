@@ -43,6 +43,15 @@ export class SubscriptionController {
             }
             // Cadastrar beneficiário Rapidoc
             const { cadastrarBeneficiarioRapidoc } = await import('../services/rapidoc.service.js');
+            // Normaliza campos conforme contrato Rapidoc
+            const allowedPayment = new Set(['S', 'A']);
+            const allowedService = new Set(['G', 'P', 'GP', 'GS', 'GSP']);
+            const normalizedPaymentType = allowedPayment.has(String(paymentType || '').toUpperCase())
+                ? String(paymentType).toUpperCase()
+                : 'S';
+            const normalizedServiceType = allowedService.has(String(serviceType || '').toUpperCase())
+                ? String(serviceType).toUpperCase()
+                : 'G';
             // A API de cadastro aceita apenas as propriedades conhecidas; enviar somente as propriedades válidas.
             const beneficiario = await cadastrarBeneficiarioRapidoc({
                 nome,
@@ -51,13 +60,30 @@ export class SubscriptionController {
                 birthday,
                 phone,
                 zipCode,
-                paymentType,
-                serviceType,
+                paymentType: normalizedPaymentType,
+                serviceType: normalizedServiceType,
                 holder,
                 general
             });
+            // Alguns cenários do Rapidoc retornam 200 com success=false (ex: CPF já utilizado)
+            const result = beneficiario as any;
+            const success = (result && result.success === true) || (Array.isArray(result) && result[0]?.success === true);
+            const rapidocMsg = (result && result.message) || (Array.isArray(result) && result[0]?.message) || undefined;
+            if (!success) {
+                const msg = typeof rapidocMsg === 'string' && rapidocMsg.trim().length > 0
+                    ? rapidocMsg
+                    : 'Falha ao cadastrar beneficiário Rapidoc.';
+                const statusCode = String(msg).toLowerCase().includes('cpf') ? 409 : 400;
+                return res.status(statusCode).json({ error: msg, result: beneficiario });
+            }
             return res.status(201).json({ message: 'Beneficiário Rapidoc criado com sucesso.', beneficiario });
         } catch (error: any) {
+            // Log detalhado para depuração
+            console.error('Erro ao cadastrar beneficiário Rapidoc:', {
+                message: error?.message,
+                responseData: error?.response?.data,
+                stack: error?.stack
+            });
             return res.status(500).json({ error: error?.response?.data || error.message || 'Erro ao cadastrar beneficiário Rapidoc.' });
         }
     }
