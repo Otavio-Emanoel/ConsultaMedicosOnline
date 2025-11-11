@@ -43,6 +43,7 @@ type DraftDados = {
   serviceType?: string;
   holder?: string;
   general?: string;
+  endereco?: string;
 };
 
 export default function AguardandoPagamentoPage() {
@@ -147,13 +148,15 @@ export default function AguardandoPagamentoPage() {
       const assinIdToUse: string | undefined = draftObj?.assinaturaId || (typeof assinaturaId === "string" ? assinaturaId : undefined);
       const bodyRapidoc = {
         assinaturaId: assinIdToUse,
+        name: dados.nome,
         nome: dados.nome,
         email: dados.email,
         cpf: dados.cpf,
         birthday: dados.birthday || dados.dataNascimento,
         phone: dados.telefone,
         zipCode: dados.zipCode,
-  paymentType: normalizePaymentType((dados as unknown as Record<string, string>)?.paymentType),
+        address: dados.endereco,
+        paymentType: normalizePaymentType((dados as unknown as Record<string, string>)?.paymentType),
         serviceType: normalizeServiceType(dados.serviceType),
         holder: dados.cpf,
         general: dados.general,

@@ -17,7 +17,7 @@ export interface RapidocPlan {
 
 export async function listarRapidocPlanos(): Promise<RapidocPlan[]> {
   if (!RAPIDOC_BASE_URL || !RAPIDOC_TOKEN || !RAPIDOC_CLIENT_ID) throw new Error('Configuração Rapidoc ausente');
-  const url = `${RAPIDOC_BASE_URL}/plans`;
+  const url = `${RAPIDOC_BASE_URL}/tema/api/plans`;
   const resp = await axios.get(url, {
     headers: {
       Authorization: `Bearer ${RAPIDOC_TOKEN}`,
@@ -53,7 +53,7 @@ export async function cadastrarBeneficiarioRapidoc({ nome, email, cpf, birthday,
     holder,
     general
   }];
-  const resp = await axios.post(`${RAPIDOC_BASE_URL}/beneficiaries`, body, {
+  const resp = await axios.post(`${RAPIDOC_BASE_URL}/tema/api/beneficiaries`, body, {
     headers: {
       Authorization: `Bearer ${RAPIDOC_TOKEN}`,
       clientId: RAPIDOC_CLIENT_ID,

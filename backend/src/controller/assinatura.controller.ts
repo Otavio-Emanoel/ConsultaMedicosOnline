@@ -43,7 +43,7 @@ export class AssinaturaController {
             // Verifica se tem conta no Rapidoc
             let rapidocContaExiste = false;
             try {
-                const resp = await axios.get(`${process.env.RAPIDOC_BASE_URL}/beneficiaries/${assinatura.cpfUsuario}`, {
+                const resp = await axios.get(`${process.env.RAPIDOC_BASE_URL}/tema/api/beneficiaries/${assinatura.cpfUsuario}`, {
                     headers: {
                         Authorization: `Bearer ${process.env.RAPIDOC_TOKEN}`,
                         clientId: process.env.RAPIDOC_CLIENT_ID,

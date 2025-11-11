@@ -24,7 +24,7 @@ export class UsuarioController {
             // Verifica se usuário existe no Rapidoc
             let rapidocContaExiste = false;
             try {
-                const resp = await axios.get(`${process.env.RAPIDOC_BASE_URL}/${usuario.cpf}`, {
+                const resp = await axios.get(`${process.env.RAPIDOC_BASE_URL}/tema/api/beneficiaries/${usuario.cpf}`, {
                     headers: {
                         Authorization: `Bearer ${process.env.RAPIDOC_TOKEN}`,
                         clientId: process.env.RAPIDOC_CLIENT_ID,
@@ -87,7 +87,7 @@ export class UsuarioController {
             if (process.env.RAPIDOC_BASE_URL && process.env.RAPIDOC_TOKEN) {
                 try {
                     // Busca dados atuais do beneficiário
-                    const getResp = await axios.get(`${process.env.RAPIDOC_BASE_URL}/${cpf}`,
+                    const getResp = await axios.get(`${process.env.RAPIDOC_BASE_URL}/tema/api/beneficiaries/${cpf}`,
                         {
                             headers: {
                                 Authorization: `Bearer ${process.env.RAPIDOC_TOKEN}`,
