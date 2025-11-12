@@ -1,5 +1,7 @@
 "use client"
 
+import { useState } from "react"
+
 const especialidades = [
   "Cardiologia",
   "Dermatologia",
@@ -16,6 +18,13 @@ const especialidades = [
 ]
 
 export default function Especialidades() {
+  const handlePlansClick = () => {
+    const plansElement = document.getElementById("planos")
+    if (plansElement) {
+      plansElement.scrollIntoView({ behavior: "smooth" })
+    }
+  }
+
   return (
     <section id="especialidades" className="py-16 sm:py-20 lg:py-24 bg-gradient-to-br from-emerald-50 to-white">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -38,12 +47,12 @@ export default function Especialidades() {
         </div>
 
         <div className="mt-12 text-center">
-          <a
-            href="#"
-            className="inline-flex items-center gap-2 rounded-full bg-gradient-to-r from-emerald-500 to-emerald-600 text-white px-6 py-3 font-medium shadow-md hover:shadow-lg transition-transform hover:-translate-y-0.5"
+          <button
+            onClick={handlePlansClick}
+            className="inline-flex items-center gap-2 rounded-full bg-gradient-to-r from-emerald-500 to-emerald-600 text-white px-6 py-3 font-medium shadow-md hover:shadow-lg transition-transform hover:-translate-y-0.5 cursor-pointer"
           >
             <i className="fas fa-heart" /> Ver planos recomendados
-          </a>
+          </button>
         </div>
       </div>
     </section>
