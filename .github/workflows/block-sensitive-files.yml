@@ -1,0 +1,41 @@
+name: Block Sensitive Files
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+  push:
+    branches:
+      - main
+      - master
+
+jobs:
+  block-files:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # Necessário para comparar commits
+
+      - name: Determine base commit
+        id: base
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            echo "base_sha=${{ github.event.pull_request.base.sha }}" >> $GITHUB_OUTPUT
+          else
+            echo "base_sha=${{ github.event.before }}" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Check for forbidden files
+        run: |
+          echo "Comparando ${{ steps.base.outputs.base_sha }} com ${{ github.sha }}"
+          
+          forbidden_files=$(git diff --name-only ${{ steps.base.outputs.base_sha }} ${{ github.sha }} \
+            | grep -E '(^|/)\.env(\.local)?$|(^|/)node_modules/' || true)
+
+          if [ ! -z "$forbidden_files" ]; then
+            echo "❌ Commit/PR contém arquivos proibidos:"
+            echo "$forbidden_files"
+            exit 1
+          fi
+
+          echo "✅ Nenhum arquivo sensível encontrado!"
