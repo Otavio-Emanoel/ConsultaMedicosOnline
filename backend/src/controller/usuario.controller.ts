@@ -24,7 +24,7 @@ export class UsuarioController {
             // Verifica se usuário existe no Rapidoc
             let rapidocContaExiste = false;
             try {
-                const resp = await axios.get(`${process.env.RAPIDOC_BASE_URL}/${usuario.cpf}`, {
+                const resp = await axios.get(`${process.env.RAPIDOC_BASE_URL}/tema/api/beneficiaries/${usuario.cpf}`, {
                     headers: {
                         Authorization: `Bearer ${process.env.RAPIDOC_TOKEN}`,
                         clientId: process.env.RAPIDOC_CLIENT_ID,
@@ -63,6 +63,94 @@ export class UsuarioController {
         }
     }
 
+    static async obterDados(req: Request, res: Response) {
+        const { cpf } = req.params;
+        if (!cpf) return res.status(400).json({ error: 'CPF é obrigatório.' });
+
+        try {
+            const usuarioRef = admin.firestore().collection('usuarios').doc(cpf);
+            const usuarioDoc = await usuarioRef.get();
+            if (!usuarioDoc.exists) return res.status(404).json({ error: 'Usuário não encontrado.' });
+            return res.status(200).json(usuarioDoc.data());
+        } catch (error: any) {
+            return res.status(500).json({ error: error.message || 'Erro ao obter usuário.' });
+        }
+    }
+
+    static async atualizarSenha(req: Request, res: Response) {
+        try {
+            const { senhaAtual, novaSenha } = req.body;
+            const uid = req.user?.uid;
+            const email = req.user?.email;
+            if (!uid || !email || !senhaAtual || !novaSenha) {
+                return res.status(400).json({ error: 'Dados obrigatórios não informados.' });
+            }
+
+            // 1. Valida senha atual via Firebase REST API
+            const apiKey = process.env.FIREBASE_WEB_API_KEY;
+            if (!apiKey) {
+                return res.status(500).json({ error: 'FIREBASE_WEB_API_KEY não configurada.' });
+            }
+
+            try {
+                await axios.post(
+                    `https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key=${apiKey}`,
+                    {
+                        email,
+                        password: senhaAtual,
+                        returnSecureToken: false,
+                    }
+                );
+            } catch (err: any) {
+                return res.status(401).json({ error: 'Senha atual incorreta.' });
+            }
+
+            // 2. Troca a senha no Firebase Auth
+            await admin.auth().updateUser(uid, { password: novaSenha });
+
+            return res.status(200).json({ ok: true, message: 'Senha alterada com sucesso.' });
+        } catch (error: any) {
+            return res.status(500).json({ error: error.message || 'Erro ao alterar senha.' });
+        }
+    }
+
+    static async recuperarSenha(req: Request, res: Response) {
+    try {
+        const { email } = req.body;
+        if (!email) return res.status(400).json({ error: 'E-mail é obrigatório.' });
+
+        const apiKey = process.env.FIREBASE_WEB_API_KEY;
+        if (!apiKey) return res.status(500).json({ error: 'FIREBASE_WEB_API_KEY não configurada.' });
+
+        // Chama a API REST do Firebase para enviar o e-mail de reset
+        await axios.post(
+            `https://identitytoolkit.googleapis.com/v1/accounts:sendOobCode?key=${apiKey}`,
+            {
+                requestType: "PASSWORD_RESET",
+                email,
+            }
+        );
+
+        return res.status(200).json({ ok: true, message: 'E-mail de recuperação enviado com sucesso.' });
+    } catch (error: any) {
+        return res.status(500).json({ error: error.message || 'Erro ao enviar e-mail de recuperação.' });
+    }
+}
+
+    static async obterDadosAutenticado(req: Request, res: Response) {
+        const cpf = req.user?.cpf;
+        if (!cpf) return res.status(400).json({ error: 'CPF é obrigatório.' });
+
+        try {
+            const usuarioRef = admin.firestore().collection('usuarios').doc(cpf);
+            const usuarioDoc = await usuarioRef.get();
+            if (!usuarioDoc.exists) return res.status(404).json({ error: 'Usuário não encontrado.' });
+            return res.status(200).json(usuarioDoc.data());
+        } catch (error: any) {
+            return res.status(500).json({ error: error.message || 'Erro ao obter usuário.' });
+        }
+    }
+
     static async atualizarDados(req: Request, res: Response) {
 
         const { cpf } = req.params;
@@ -87,7 +175,7 @@ export class UsuarioController {
             if (process.env.RAPIDOC_BASE_URL && process.env.RAPIDOC_TOKEN) {
                 try {
                     // Busca dados atuais do beneficiário
-                    const getResp = await axios.get(`${process.env.RAPIDOC_BASE_URL}/${cpf}`,
+                    const getResp = await axios.get(`${process.env.RAPIDOC_BASE_URL}/tema/api/beneficiaries/${cpf}`,
                         {
                             headers: {
                                 Authorization: `Bearer ${process.env.RAPIDOC_TOKEN}`,
@@ -121,7 +209,7 @@ export class UsuarioController {
                             },
                         }
                     );
-                } catch (e) {/* ignora erro do Rapidoc, segue fluxo */}
+                } catch (e) {/* ignora erro do Rapidoc, segue fluxo */ }
             }
 
             // Atualiza no Asaas (se necessário)
@@ -141,12 +229,32 @@ export class UsuarioController {
                             { headers: { access_token: process.env.ASAAS_API_KEY } }
                         );
                     }
-                } catch (e) {/* ignora erro do Asaas, segue fluxo */}
+                } catch (e) {/* ignora erro do Asaas, segue fluxo */ }
             }
 
             return res.status(200).json({ message: 'Dados atualizados com sucesso.' });
         } catch (error: any) {
             return res.status(500).json({ error: error.message || 'Erro ao atualizar dados.' });
+        }
+    }
+
+    static async obterBeneficiarioRapidoc(req: Request, res: Response) {
+        const { cpf } = req.params;
+        if (!cpf) return res.status(400).json({ error: 'CPF é obrigatório.' });
+
+        try {
+            const resp = await axios.get(`${process.env.RAPIDOC_BASE_URL}/tema/api/beneficiaries/${cpf}`, {
+                headers: {
+                    Authorization: `Bearer ${process.env.RAPIDOC_TOKEN}`,
+                    clientId: process.env.RAPIDOC_CLIENT_ID,
+                    'Content-Type': 'application/vnd.rapidoc.tema-v2+json'
+                }
+            });
+            const data = resp.data && resp.data.beneficiary;
+            if (!data) return res.status(404).json({ error: 'Beneficiário não encontrado no Rapidoc.' });
+            return res.status(200).json(data);
+        } catch (error: any) {
+            return res.status(500).json({ error: error.message || 'Erro ao obter beneficiário no Rapidoc.' });
         }
     }
 }

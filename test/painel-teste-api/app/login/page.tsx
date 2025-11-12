@@ -108,6 +108,13 @@ export default function LoginPage() {
           >
             Primeiro acesso
           </button>
+          <button
+            type="button"
+            className="text-sm underline"
+            onClick={() => router.push("/esqueci-senha")}
+          >
+            Esqueci a senha
+          </button>
           <button type="button" className="text-sm underline" onClick={() => router.push("/")}>Voltar ao início</button>
         </div>
       </form>

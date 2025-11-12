@@ -40,7 +40,7 @@ export default function DashboardPage() {
   const handleLogout = () => {
     try {
       localStorage.removeItem('firebaseToken');
-    } catch {}
+    } catch { }
     router.push('/');
   };
   const search = useSearchParams();
@@ -70,7 +70,7 @@ export default function DashboardPage() {
         if (dcpf) setCpf(String(dcpf));
         if (dnome) setNome(String(dnome));
       }
-    } catch {}
+    } catch { }
   }, [search]);
 
   // Carrega dados agregados do backend (/api/dashboard) usando token se existir
@@ -168,6 +168,15 @@ export default function DashboardPage() {
             {/* Usuário */}
             <div className="rounded-xl border p-4">
               <div className="font-semibold mb-1">Usuário</div>
+              <button
+                className="mb-2 flex items-center gap-2 px-4 py-2 rounded-lg bg-gradient-to-r from-blue-600 to-blue-400 text-white text-xs font-semibold shadow hover:from-blue-700 hover:to-blue-500 transition"
+                onClick={() => router.push('/assinante/perfil')}
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M5.121 17.804A13.937 13.937 0 0112 15c2.5 0 4.847.655 6.879 1.804M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
+                </svg>
+                Acessar área de perfil
+              </button>
               {dashboard.usuario ? (
                 <div className="text-sm space-y-1">
                   <div className="font-medium">{dashboard.usuario.nome}</div>
@@ -184,6 +193,15 @@ export default function DashboardPage() {
             {/* Assinaturas */}
             <div className="rounded-xl border p-4">
               <div className="font-semibold mb-1">Assinaturas</div>
+              <button
+                className="mb-2 flex items-center gap-2 px-4 py-2 rounded-lg bg-gradient-to-r from-green-600 to-green-400 text-white text-xs font-semibold shadow hover:from-green-700 hover:to-green-500 transition"
+                onClick={() => router.push('/assinante/assinaturas')}
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M12 8v4l3 3m6 0a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+                Ver minhas assinaturas
+              </button>
               {dashboard.assinaturas && dashboard.assinaturas.length > 0 ? (
                 <ul className="text-sm space-y-1">
                   {dashboard.assinaturas.map(a => (
@@ -198,6 +216,15 @@ export default function DashboardPage() {
             {/* Beneficiários */}
             <div className="rounded-xl border p-4">
               <div className="font-semibold mb-1">Beneficiários</div>
+              <button
+                className="mb-2 flex items-center gap-2 px-4 py-2 rounded-lg bg-gradient-to-r from-purple-600 to-purple-400 text-white text-xs font-semibold shadow hover:from-purple-700 hover:to-purple-500 transition"
+                onClick={() => router.push('/assinante/dependentes')}
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M17 20h5v-2a4 4 0 00-3-3.87M9 20H4v-2a4 4 0 013-3.87M16 3.13a4 4 0 010 7.75M8 3.13a4 4 0 000 7.75" />
+                </svg>
+                Gerenciar dependentes
+              </button>
               {dashboard.beneficiarios && dashboard.beneficiarios.length > 0 ? (
                 <ul className="text-sm space-y-1">
                   {dashboard.beneficiarios.map(b => (

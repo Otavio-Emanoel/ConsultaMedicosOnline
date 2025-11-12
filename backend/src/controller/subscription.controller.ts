@@ -203,7 +203,7 @@ export class SubscriptionController {
             // Rapidoc (beneficiário ativo)
             let rapidocAtivo = false;
             try {
-                const r = await axios.get(`${process.env.RAPIDOC_BASE_URL}/${cpf}`, {
+                const r = await axios.get(`${process.env.RAPIDOC_BASE_URL}/beneficiaries/${cpf}`, {
                     headers: {
                         Authorization: `Bearer ${process.env.RAPIDOC_TOKEN}`,
                         clientId: process.env.RAPIDOC_CLIENT_ID,
