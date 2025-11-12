@@ -17,21 +17,9 @@ export const metadata: Metadata = {
     "Telemedicina 24 horas por dia, 7 dias por semana. Fale com especialistas de diversas áreas sem sair de casa.",
   generator: "v0.app",
   icons: {
-    icon: [
-      {
-        url: "/icon-light-32x32.png",
-        media: "(prefers-color-scheme: light)",
-      },
-      {
-        url: "/icon-dark-32x32.png",
-        media: "(prefers-color-scheme: dark)",
-      },
-      {
-        url: "/icon.svg",
-        type: "image/svg+xml",
-      },
-    ],
-    apple: "/apple-icon.png",
+    icon: "/consultas online logo.png",
+    apple: "/consultas online logo.png",
+    shortcut: "/consultas online logo.png",
   },
 }
 

@@ -122,6 +122,10 @@
   body {
     @apply bg-background text-foreground;
   }
+  /* Garantir cursor pointer para elementos interativos */
+  a, button, [role="button"], [onclick] {
+    cursor: pointer;
+  }
 }
 
 html {

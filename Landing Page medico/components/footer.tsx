@@ -76,7 +76,7 @@ export default function Footer() {
         </div>
 
         <div className="mt-4 lg:mt-0">
-          <img src="/m-dicos-consultas-online-logo.jpg" alt="Médicos Consultas Online" className="h-10 object-contain" />
+          <img src="/consultas online logo.png" alt="Médicos Consultas Online" className="h-10 object-contain" />
         </div>
 
         <div className="sm:col-span-2 lg:col-span-4">
@@ -87,12 +87,7 @@ export default function Footer() {
                 Conheça as regras de uso, proteção de dados e direitos do paciente antes de contratar.
               </p>
             </div>
-            <a
-              href="#"
-              className="inline-flex items-center gap-2 rounded-full bg-gradient-to-r from-emerald-500 to-emerald-600 px-5 py-2.5 font-semibold text-white shadow-md hover:shadow-lg transition-transform hover:-translate-y-0.5 whitespace-nowrap"
-            >
-              <i className="fas fa-file-signature" /> Acessar termos de aceite
-            </a>
+            
           </div>
         </div>
       </div>
