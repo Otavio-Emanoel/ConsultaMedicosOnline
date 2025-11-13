@@ -36,3 +36,14 @@ body {
   color: rgb(var(--foreground));
 }
 
+/* Estilos da Landing Page */
+html {
+  scroll-behavior: smooth;
+}
+
+/* Gradient específico para landing page */
+.landing-page-bg {
+  background: linear-gradient(to bottom right, white, rgba(16, 185, 129, 0.6), rgba(16, 185, 129, 0.5));
+  background-attachment: fixed;
+}
+

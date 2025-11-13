@@ -222,6 +222,31 @@ export default function ConfiguracoesPage() {
           </CardHeader>
           <CardBody>
             <div className="space-y-4">
+              {/* Change Password */}
+              <div className="p-4 bg-green-50 dark:bg-green-900/20 rounded-xl border-2 border-green-200 dark:border-green-800">
+                <div className="flex items-start gap-3 mb-4">
+                  <Lock className="w-5 h-5 text-green-600 dark:text-green-400 flex-shrink-0 mt-1" />
+                  <div className="flex-1">
+                    <p className="font-semibold text-green-900 dark:text-green-100 mb-1">
+                      Alterar Senha
+                    </p>
+                    <p className="text-sm text-green-700 dark:text-green-300 mb-3">
+                      Mantenha sua conta segura alterando sua senha regularmente
+                    </p>
+                  </div>
+                </div>
+                <Button 
+                  variant="primary" 
+                  onClick={() => {
+                    // Implementação futura: abrir modal ou redirecionar
+                    alert('Funcionalidade de trocar senha será implementada aqui. Por enquanto, entre em contato com o suporte.');
+                  }}
+                  className="w-full sm:w-auto"
+                >
+                  Trocar Senha Agora
+                </Button>
+              </div>
+
               {/* Two-Factor Authentication */}
               <div className="flex items-center justify-between p-4 bg-gray-50 dark:bg-gray-800/50 rounded-xl">
                 <div className="flex items-center space-x-3">

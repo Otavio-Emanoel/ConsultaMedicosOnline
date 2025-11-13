@@ -140,10 +140,11 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
       >
         {/* Logo */}
         <div className="h-16 flex items-center px-6 border-b border-border-light dark:border-border-dark">
-          <Stethoscope className="w-8 h-8 text-primary mr-2" />
-          <span className="font-bold text-lg text-gray-900 dark:text-white">
-            MCO
-          </span>
+          <img
+            src="/logo.png"
+            alt="Médicos Consultas Online"
+            className="h-12 w-auto object-contain"
+          />
         </div>
 
         {/* User Info */}

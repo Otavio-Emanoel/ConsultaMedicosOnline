@@ -1,242 +1,156 @@
-'use client';
+"use client";
 
-import { useState } from 'react';
-import { useRouter } from 'next/navigation';
-import { useForm } from 'react-hook-form';
-import { zodResolver } from '@hookform/resolvers/zod';
-import { z } from 'zod';
-import { UserPlus, Mail, Lock, User, Stethoscope, CreditCard } from 'lucide-react';
-import api from '@/lib/api';
-import { toast } from 'sonner';
-import { Input } from '@/components/ui/Input';
-import { Button } from '@/components/ui/Button';
-import Link from 'next/link';
-import InputMask from 'react-input-mask';
-
-const cpfSchema = z.object({
-  cpf: z.string().min(11, 'CPF deve ter 11 dÃ­gitos'),
-});
-
-const registerSchema = z.object({
-  name: z.string().min(3, 'Nome deve ter no mÃ­nimo 3 caracteres'),
-  email: z.string().email('E-mail invÃ¡lido'),
-  password: z.string().min(6, 'Senha deve ter no mÃ­nimo 6 caracteres'),
-  confirmPassword: z.string(),
-}).refine((data) => data.password === data.confirmPassword, {
-  message: 'As senhas nÃ£o coincidem',
-  path: ['confirmPassword'],
-});
-
-type CpfForm = z.infer<typeof cpfSchema>;
-type RegisterForm = z.infer<typeof registerSchema>;
+import { useState, useEffect } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { ArrowLeft, Copy, CheckCircle, AlertCircle, Eye, EyeOff } from "lucide-react";
 
 export default function PrimeiroAcessoPage() {
+  const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:3000/api";
   const router = useRouter();
-  const [step, setStep] = useState<'cpf' | 'register'>('cpf');
-  const [cpf, setCpf] = useState('');
-  const [isLoading, setIsLoading] = useState(false);
+  const searchParams = useSearchParams();
+  
+  const [cpf, setCpf] = useState("");
+  const [mensagem, setMensagem] = useState("");
+  const [senhaTemp, setSenhaTemp] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [mostrarSenha, setMostrarSenha] = useState(false);
+  const [copiado, setCopiado] = useState(false);
 
-  const cpfForm = useForm<CpfForm>({
-    resolver: zodResolver(cpfSchema),
-  });
-
-  const registerForm = useForm<RegisterForm>({
-    resolver: zodResolver(registerSchema),
-  });
-
-  const handleCpfSubmit = async (data: CpfForm) => {
-    setIsLoading(true);
-    try {
-      const cleanCpf = data.cpf.replace(/\D/g, '');
-      const response = await api.post('/auth/validate-cpf', { cpf: cleanCpf });
-      
-      if (response.data.success) {
-        setCpf(cleanCpf);
-        setStep('register');
-        toast.success('CPF vÃ¡lido! Preencha os dados para criar sua conta.');
+  useEffect(() => {
+    const paramCpf = searchParams.get("cpf");
+    if (paramCpf && !cpf) {
+      const onlyNums = paramCpf.replace(/\D/g, "");
+      if (onlyNums.length === 11) {
+        const masked = `${onlyNums.slice(0, 3)}.${onlyNums.slice(3, 6)}.${onlyNums.slice(6, 9)}-${onlyNums.slice(9, 11)}`;
+        setCpf(masked);
+      } else {
+        setCpf(paramCpf);
       }
-    } catch (error: any) {
-      toast.error(error.response?.data?.message || 'Erro ao validar CPF');
+    }
+  }, [searchParams, cpf]);
+
+  const formatarCPF = (value: string) => {
+    const onlyNums = value.replace(/\D/g, "");
+    return onlyNums
+      .replace(/(\d{3})(\d)/, "$1.$2")
+      .replace(/(\d{3})(\d)/, "$1.$2")
+      .replace(/(\d{3})(\d{1,2})$/, "$1-$2");
+  };
+
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const formatted = formatarCPF(e.target.value);
+    setCpf(formatted);
+  };
+
+  const handlePrimeiroAcesso = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setMensagem("");
+    setSenhaTemp(null);
+    setCopiado(false);
+    setLoading(true);
+
+    try {
+      const resp = await fetch(`${API_BASE}/first-access`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ cpf: cpf.replace(/\D/g, "") }),
+      });
+      
+      const data = await resp.json();
+      
+      if (resp.status === 201 && data.senhaTemporaria) {
+        setSenhaTemp(data.senhaTemporaria);
+        setMensagem("Primeiro acesso realizado com sucesso!");
+      } else if (resp.status === 409) {
+        setMensagem("Você já realizou o primeiro acesso. Faça login normalmente.");
+      } else if (resp.status === 404) {
+        setMensagem("Usuário não encontrado. Verifique o CPF.");
+      } else {
+        setMensagem(data.error || "Erro ao processar primeiro acesso.");
+      }
+    } catch {
+      setMensagem("Erro de conexão com o servidor.");
     } finally {
-      setIsLoading(false);
+      setLoading(false);
     }
   };
 
-  const handleRegisterSubmit = async (data: RegisterForm) => {
-    setIsLoading(true);
-    try {
-      const response = await api.post('/auth/register', {
-        cpf,
-        name: data.name,
-        email: data.email,
-        password: data.password,
-      });
-      
-      if (response.data.success) {
-        localStorage.setItem('auth_token', response.data.data.token);
-        toast.success('Conta criada com sucesso!');
-        router.push('/dashboard');
+  const copiarSenha = async () => {
+    if (senhaTemp) {
+      try {
+        await navigator.clipboard.writeText(senhaTemp);
+        setCopiado(true);
+        setTimeout(() => setCopiado(false), 3000);
+      } catch {
+        setMensagem("Não foi possível copiar a senha.");
       }
-    } catch (error: any) {
-      toast.error(error.response?.data?.message || 'Erro ao criar conta');
-    } finally {
-      setIsLoading(false);
     }
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-background-light dark:bg-background-dark p-4">
+    <div className="min-h-screen bg-gradient-to-br from-green-50 via-white to-green-50 dark:from-slate-900 dark:via-gray-900 dark:to-slate-800 flex items-center justify-center p-4">
       <div className="w-full max-w-md">
-        <div className="bg-white dark:bg-surface-dark rounded-2xl shadow-lg p-8">
-          {/* Logo e TÃ­tulo */}
-          <div className="text-center mb-8">
-            <div className="inline-flex items-center justify-center w-16 h-16 bg-primary/10 rounded-2xl mb-4">
-              <UserPlus className="w-8 h-8 text-primary" />
-            </div>
-            <h1 className="text-2xl font-bold text-gray-900 dark:text-white mb-2">
-              {step === 'cpf' ? 'Primeiro Acesso' : 'Complete seu Cadastro'}
-            </h1>
-            <p className="text-gray-600 dark:text-gray-400">
-              {step === 'cpf' 
-                ? 'Digite seu CPF para iniciar o cadastro' 
-                : 'Preencha seus dados para finalizar'}
-            </p>
+        <button
+          onClick={() => router.push("/verificar-cpf")}
+          className="inline-flex items-center gap-2 px-4 py-2 text-sm text-gray-600 dark:text-gray-400 hover:text-primary transition mb-4"
+        >
+          <ArrowLeft className="w-5 h-5" />
+          Voltar
+        </button>
+
+        <div className="bg-white dark:bg-gray-800 p-8 rounded-2xl shadow-lg">
+          <div className="text-center mb-6">
+            <img src="/logo.png" alt="Logo" className="h-16 w-auto mx-auto mb-4 object-contain" />
+            <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-2">Primeiro Acesso</h2>
+            <p className="text-gray-600 dark:text-gray-300 text-sm">Digite seu CPF para gerar sua senha temporária</p>
           </div>
 
-          {/* Step Indicator */}
-          <div className="flex items-center justify-center mb-8">
-            <div className="flex items-center">
-              <div className={`w-8 h-8 rounded-full flex items-center justify-center ${
-                step === 'cpf' ? 'bg-primary text-white' : 'bg-green-500 text-white'
-              }`}>
-                {step === 'register' ? 'âœ“' : '1'}
-              </div>
-              <div className={`w-16 h-1 ${step === 'register' ? 'bg-primary' : 'bg-gray-300'}`} />
-              <div className={`w-8 h-8 rounded-full flex items-center justify-center ${
-                step === 'register' ? 'bg-primary text-white' : 'bg-gray-300 text-gray-600'
-              }`}>
-                2
-              </div>
+          <form onSubmit={handlePrimeiroAcesso} className="space-y-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">CPF</label>
+              <input type="text" placeholder="000.000.000-00" value={cpf} onChange={handleChange} className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-primary dark:bg-gray-700 dark:text-white" maxLength={14} disabled={loading || !!senhaTemp} />
             </div>
-          </div>
+            <button type="submit" className="w-full bg-gradient-to-r from-primary to-green-600 text-white rounded-lg py-3 font-semibold shadow-md hover:shadow-lg transition-all disabled:opacity-50" disabled={loading || !!senhaTemp || cpf.replace(/\D/g, "").length !== 11}>
+              {loading ? "Gerando..." : "Gerar Senha Temporária"}
+            </button>
+          </form>
 
-          {step === 'cpf' ? (
-            <form onSubmit={cpfForm.handleSubmit(handleCpfSubmit)} className="space-y-5">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                  CPF
-                </label>
-                <InputMask
-                  mask="999.999.999-99"
-                  {...cpfForm.register('cpf')}
-                >
-                  {(inputProps: any) => (
-                    <div className="relative">
-                      <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                        <CreditCard className="w-5 h-5 text-gray-400" />
-                      </div>
-                      <input
-                        {...inputProps}
-                        type="text"
-                        placeholder="000.000.000-00"
-                        className="w-full pl-10 px-4 py-2.5 rounded-xl border border-border-light dark:border-border-dark bg-white dark:bg-surface-dark text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-primary"
-                      />
-                    </div>
-                  )}
-                </InputMask>
-                {cpfForm.formState.errors.cpf && (
-                  <p className="text-danger text-sm mt-1">
-                    {cpfForm.formState.errors.cpf.message}
-                  </p>
-                )}
-              </div>
-
-              <Button
-                type="submit"
-                variant="primary"
-                size="lg"
-                className="w-full"
-                isLoading={isLoading}
-              >
-                {isLoading ? 'Verificando...' : 'Continuar'}
-              </Button>
-            </form>
-          ) : (
-            <form onSubmit={registerForm.handleSubmit(handleRegisterSubmit)} className="space-y-5">
-              <Input
-                label="Nome Completo"
-                type="text"
-                placeholder="Seu nome completo"
-                icon={<User className="w-5 h-5 text-gray-400" />}
-                error={registerForm.formState.errors.name?.message}
-                {...registerForm.register('name')}
-              />
-
-              <Input
-                label="E-mail"
-                type="email"
-                placeholder="seu@email.com"
-                icon={<Mail className="w-5 h-5 text-gray-400" />}
-                error={registerForm.formState.errors.email?.message}
-                {...registerForm.register('email')}
-              />
-
-              <Input
-                label="Senha"
-                type="password"
-                placeholder="MÃ­nimo 6 caracteres"
-                icon={<Lock className="w-5 h-5 text-gray-400" />}
-                error={registerForm.formState.errors.password?.message}
-                {...registerForm.register('password')}
-              />
-
-              <Input
-                label="Confirmar Senha"
-                type="password"
-                placeholder="Digite a senha novamente"
-                icon={<Lock className="w-5 h-5 text-gray-400" />}
-                error={registerForm.formState.errors.confirmPassword?.message}
-                {...registerForm.register('confirmPassword')}
-              />
-
-              <div className="flex gap-3">
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="lg"
-                  className="flex-1"
-                  onClick={() => setStep('cpf')}
-                >
-                  Voltar
-                </Button>
-                <Button
-                  type="submit"
-                  variant="primary"
-                  size="lg"
-                  className="flex-1"
-                  isLoading={isLoading}
-                >
-                  {isLoading ? 'Criando...' : 'Criar Conta'}
-                </Button>
-              </div>
-            </form>
+          {mensagem && !senhaTemp && (
+            <div className={`mt-4 p-4 rounded-lg flex items-start gap-3 ${mensagem.includes("sucesso") ? "bg-green-50 text-green-800" : "bg-red-50 text-red-800"}`}>
+              {mensagem.includes("sucesso") ? <CheckCircle className="w-5 h-5" /> : <AlertCircle className="w-5 h-5" />}
+              <p className="text-sm">{mensagem}</p>
+            </div>
           )}
 
-          {/* Link para Login */}
-          <div className="mt-6 text-center">
-            <p className="text-gray-600 dark:text-gray-400 text-sm">
-              JÃ¡ tem uma conta?{' '}
-              <Link href="/login" className="text-primary hover:underline font-medium">
-                Fazer login
-              </Link>
-            </p>
-          </div>
+          {senhaTemp && (
+            <div className="mt-6 space-y-4">
+              <div className="bg-green-50 border-2 border-green-200 rounded-lg p-4">
+                <div className="flex items-center justify-center gap-2 text-green-800 mb-3">
+                  <CheckCircle className="w-5 h-5" />
+                  <span className="font-semibold">Senha gerada!</span>
+                </div>
+                <div className="bg-white rounded-lg p-4 border">
+                  <label className="block text-xs font-medium text-gray-600 mb-2">Sua senha temporária:</label>
+                  <div className="flex items-center gap-2">
+                    <div className="flex-1 bg-gray-50 px-4 py-3 rounded-lg font-mono text-lg tracking-widest">
+                      {mostrarSenha ? senhaTemp : ""}
+                    </div>
+                    <button type="button" onClick={() => setMostrarSenha(!mostrarSenha)} className="p-3 rounded-lg border hover:bg-gray-50">
+                      {mostrarSenha ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
+                    </button>
+                    <button type="button" onClick={copiarSenha} className="p-3 rounded-lg border hover:bg-gray-50">
+                      <Copy className={`w-5 h-5 ${copiado ? "text-green-600" : ""}`} />
+                    </button>
+                  </div>
+                  {copiado && <p className="text-xs text-green-600 mt-2 text-center"> Copiado!</p>}
+                </div>
+              </div>
+              <button type="button" className="w-full bg-primary hover:bg-green-700 text-white rounded-lg py-3 font-semibold" onClick={() => router.push(`/login?cpf=${cpf.replace(/\D/g, "")}`)}>
+                Ir para Login
+              </button>
+            </div>
+          )}
         </div>
-
-        {/* Footer */}
-        <p className="text-center text-sm text-gray-500 dark:text-gray-400 mt-6">
-          Â© 2025 MÃ©dicos Consultas Online. Todos os direitos reservados.
-        </p>
       </div>
     </div>
   );
