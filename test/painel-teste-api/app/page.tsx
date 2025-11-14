@@ -64,6 +64,11 @@ export default function Page() {
               </button>
             </div>
           ))}
+          <button className="bg-green-600 hover:bg-green-700 text-white font-semibold py-2 px-6 rounded-full transition-colors mt-4 fixed top-8 right-8"
+            onClick={() => router.push("/login")}
+            >
+            Login
+          </button>
         </div>
       )}
     </div>
