@@ -65,7 +65,9 @@ export default function Footer() {
               <span className="text-sm">LinkedIn</span>
             </a>
             <a
-              href="#"
+              href="https://wa.me/5551995095554"
+              target="_blank"
+              rel="noopener noreferrer"
               aria-label="WhatsApp"
               className="inline-flex items-center gap-2 rounded-lg border border-gray-700 px-3 py-2 hover:bg-gray-800 transition"
             >

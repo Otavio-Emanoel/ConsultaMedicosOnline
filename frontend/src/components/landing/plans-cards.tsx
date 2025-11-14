@@ -40,11 +40,7 @@ const plans: Plan[] = [
         text: "Atendimentos ilimitados com médicos especializados e Clínico Geral",
       },
       { icon: "check", text: "Sem carência" },
-      {
-        icon: "link",
-        text: "Clique aqui e veja todas especialidades",
-        href: "/index#especialidades",
-      },
+     
     ],
     buttonText: "Quero esse!",
     buttonHref: "/verificar-cpf",
@@ -66,14 +62,11 @@ const plans: Plan[] = [
       { icon: "check", text: "Sem carência" },
       { icon: "check", text: "Consultas com Nutricionista" },
       { icon: "check", text: "Consultas com Psicólogo" },
-      {
-        icon: "link",
-        text: "Clique aqui e veja todas especialidades",
-        href: "/index#especialidades",
-      },
+
     ],
     buttonText: "Quero esse!",
     buttonHref: "/verificar-cpf",
+    isRecommended: true,
   },
   {
     id: "casal",
@@ -91,11 +84,7 @@ const plans: Plan[] = [
         text: "Atendimentos ilimitados com médicos especializados e Clínico Geral",
       },
       { icon: "check", text: "Sem carência" },
-      {
-        icon: "link",
-        text: "Clique aqui e veja todas especialidades",
-        href: "/index#especialidades",
-      },
+      
     ],
     buttonText: "Quero esse!",
     buttonHref: "/verificar-cpf",
@@ -118,11 +107,7 @@ const plans: Plan[] = [
       { icon: "check", text: "Sem carência" },
       { icon: "check", text: "Consultas com Nutricionista" },
       { icon: "check", text: "Consultas com Psicólogo" },
-      {
-        icon: "link",
-        text: "Clique aqui e veja todas especialidades",
-        href: "/index#especialidades",
-      },
+      
     ],
     buttonText: "Quero esse!",
     buttonHref: "/verificar-cpf",
@@ -144,11 +129,7 @@ const plans: Plan[] = [
         text: "Atendimentos ilimitados com médicos especializados e Clínico Geral",
       },
       { icon: "check", text: "Sem carência" },
-      {
-        icon: "link",
-        text: "Clique aqui e veja todas Especialidades",
-        href: "/index#especialidades",
-      },
+      
     ],
     buttonText: "Quero esse!",
     buttonHref: "/verificar-cpf",
@@ -171,14 +152,11 @@ const plans: Plan[] = [
       { icon: "check", text: "Sem carência" },
       { icon: "check", text: "Consultas com Nutricionista" },
       { icon: "check", text: "Consultas com Psicólogo" },
-      {
-        icon: "link",
-        text: "Clique aqui e veja todas Especialidades para a Família",
-        href: "/index#especialidades",
-      },
+      
     ],
     buttonText: "Quero esse!",
     buttonHref: "/verificar-cpf",
+    isRecommended: true,
   },
   {
     id: "empresarial",
@@ -196,14 +174,10 @@ const plans: Plan[] = [
         text: "Atendimentos ilimitados com médicos especializados e Clínico Geral",
       },
       { icon: "check", text: "Sem carência" },
-      {
-        icon: "link",
-        text: "Clique aqui e veja todas Especialidades para seus Colaboradores",
-        href: "/index#especialidades",
-      },
+      
     ],
     buttonText: "Falar com vendas",
-    buttonHref: "mailto:contato@medicosconsultasonline.com.br",
+    buttonHref: "https://wa.me/5551995095554",
     isSpecial: true,
   },
   {
@@ -224,14 +198,10 @@ const plans: Plan[] = [
       { icon: "check", text: "Sem carência" },
       { icon: "check", text: "Consultas com Nutricionista" },
       { icon: "check", text: "Consultas com Psicólogo" },
-      {
-        icon: "link",
-        text: "Clique aqui e veja todas Especialidades para seus Colaboradores",
-        href: "/index#especialidades",
-      },
+      
     ],
     buttonText: "Falar com vendas",
-    buttonHref: "mailto:contato@medicosconsultasonline.com.br",
+    buttonHref: "https://wa.me/5551995095554",
     isSpecial: true,
   },
 ]
@@ -268,64 +238,66 @@ export default function PlansCards({ filter: initialFilter = "individual" }: Pla
         ))}
       </div>
 
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 grid gap-8 sm:grid-cols-2 lg:grid-cols-3">
+      <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 grid gap-8 sm:grid-cols-2 lg:grid-cols-2">
         {visiblePlans.map((plan) => (
           <article
             key={plan.id}
-            className={`rounded-2xl bg-white p-7 transition-transform duration-300 hover:shadow-lg ${
+            className={`rounded-2xl bg-white p-7 transition-transform duration-300 hover:shadow-lg flex flex-col justify-between ${
               plan.isRecommended ? "border-2 border-emerald-600 relative" : "border border-slate-200"
             } ${plan.isRecommended || plan.isSpecial ? "hover:scale-105" : "hover:-translate-y-1"}`}
           >
-            {/* Recommended Badge */}
-            {plan.isRecommended && (
-              <div className="absolute -top-3 left-1/2 -translate-x-1/2 bg-emerald-600 text-white text-[11px] px-3 py-1 rounded-full font-semibold">
-                Recomendado
-              </div>
-            )}
+            <div>
+              {/* Recommended Badge */}
+              {plan.isRecommended && (
+                <div className="absolute -top-3 left-1/2 -translate-x-1/2 bg-emerald-600 text-white text-[11px] px-3 py-1 rounded-full font-semibold">
+                  Recomendado
+                </div>
+              )}
 
-            {/* Badge */}
-            <div className="inline-flex items-center px-2 py-1 rounded-full bg-emerald-100 text-emerald-700 text-[10px] font-semibold">
-              {plan.badge}
+              {/* Badge */}
+              <div className="inline-flex items-center px-2 py-1 rounded-full bg-emerald-100 text-emerald-700 text-[10px] font-semibold w-fit">
+                {plan.badge}
+              </div>
+
+              {/* Name */}
+              <h3 className="mt-2 font-semibold text-xl text-slate-900">{plan.name}</h3>
+              {plan.subtitle && <p className="text-slate-500 text-sm">{plan.subtitle}</p>}
+
+              {/* Features */}
+              <ul className="mt-4 space-y-2 text-slate-700 text-sm">
+                {plan.features.map((feature, idx) => (
+                  <li key={idx} className="flex gap-2">
+                    {feature.icon === "check" ? (
+                      <Check className="w-4 h-4 text-emerald-600 flex-shrink-0 mt-0.5" />
+                    ) : (
+                      <LinkIcon className="w-4 h-4 text-emerald-600 flex-shrink-0 mt-0.5" />
+                    )}
+                    {feature.href ? (
+                      <a href={feature.href} className="underline hover:no-underline">
+                        {feature.text}
+                      </a>
+                    ) : (
+                      feature.text
+                    )}
+                  </li>
+                ))}
+              </ul>
+
+              {/* Price Section */}
+              {!plan.isSpecial && (
+                <div className="mt-5">
+                  <div className="text-xs line-through text-slate-400">{plan.originalPrice}</div>
+                  <div className="text-4xl font-extrabold text-slate-900">{plan.price}</div>
+                  <div className="text-slate-500 text-sm">{plan.priceInfo}</div>
+                  <p className="mt-1 text-xs uppercase tracking-wide text-slate-400">{plan.fidelity}</p>
+                </div>
+              )}
+
+              {/* Special Plan Message */}
+              {plan.isSpecial && <p className="mt-4 text-xs uppercase tracking-wide text-slate-400">{plan.fidelity}</p>}
             </div>
 
-            {/* Name */}
-            <h3 className="mt-2 font-semibold text-xl text-slate-900">{plan.name}</h3>
-            {plan.subtitle && <p className="text-slate-500 text-sm">{plan.subtitle}</p>}
-
-            {/* Features */}
-            <ul className="mt-4 space-y-2 text-slate-700 text-sm">
-              {plan.features.map((feature, idx) => (
-                <li key={idx} className="flex gap-2">
-                  {feature.icon === "check" ? (
-                    <Check className="w-4 h-4 text-emerald-600 flex-shrink-0 mt-0.5" />
-                  ) : (
-                    <LinkIcon className="w-4 h-4 text-emerald-600 flex-shrink-0 mt-0.5" />
-                  )}
-                  {feature.href ? (
-                    <a href={feature.href} className="underline hover:no-underline">
-                      {feature.text}
-                    </a>
-                  ) : (
-                    feature.text
-                  )}
-                </li>
-              ))}
-            </ul>
-
-            {/* Price Section */}
-            {!plan.isSpecial && (
-              <div className="mt-5">
-                <div className="text-xs line-through text-slate-400">{plan.originalPrice}</div>
-                <div className="text-4xl font-extrabold text-slate-900">{plan.price}</div>
-                <div className="text-slate-500 text-sm">{plan.priceInfo}</div>
-                <p className="mt-1 text-xs uppercase tracking-wide text-slate-400">{plan.fidelity}</p>
-              </div>
-            )}
-
-            {/* Special Plan Message */}
-            {plan.isSpecial && <p className="mt-4 text-xs uppercase tracking-wide text-slate-400">{plan.fidelity}</p>}
-
-            {/* Button */}
+            {/* Button at bottom */}
             <Link
               href={plan.buttonHref}
               className={`mt-7 inline-flex justify-center w-full px-4 py-3 rounded-lg font-medium transition-all duration-300 ${

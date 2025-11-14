@@ -19,9 +19,9 @@ export default function HomePage() {
   const [cpf, setCpf] = useState('');
 
   const roleOptions = [
-    { role: 'admin' as UserRole, title: 'Administrador', icon: Shield, color: 'from-green-600 to-green-700' },
+    { role: 'admin' as UserRole, title: 'Administrador', icon: Shield, color: 'from-primary to-green-600' },
     { role: 'subscriber' as UserRole, title: 'Assinante', icon: CreditCard, color: 'from-primary to-green-600' },
-    { role: 'dependent' as UserRole, title: 'Dependente', icon: Heart, color: 'from-green-500 to-green-600' },
+    { role: 'dependent' as UserRole, title: 'Dependente', icon: Heart, color: 'from-primary to-green-600' },
   ];
 
   const handleLogin = (e: React.FormEvent) => {
@@ -52,17 +52,18 @@ export default function HomePage() {
         <div className="text-center mb-8">
           <button
             onClick={() => router.push('/landing')}
-            className="inline-flex items-center gap-2 px-4 py-2 text-sm text-gray-600 dark:text-gray-400 hover:text-primary transition mb-4"
+            aria-label="Voltar para o início"
+            className="fixed top-4 left-4 z-50 inline-flex items-center gap-2 px-4 py-3 text-sm text-white bg-green-600 hover:bg-emerald-700 rounded-full shadow-lg transition"
           >
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" />
             </svg>
-            Voltar para o início
+            <span className="ml-2 text-sm font-medium">Voltar para o início</span>
           </button>
-          <div className="inline-flex items-center justify-center w-20 h-20 bg-gradient-to-br from-primary to-green-600 rounded-3xl mb-4 shadow-lg">
-            <Stethoscope className="w-10 h-10 text-white" />
+          <div className="mb-4">
+            <img src="/logo.png" alt="Consultas Online" className="w-20 h-20 object-contain mx-auto" />
           </div>
-          <h1 className="text-4xl font-bold text-gray-900 dark:text-white mb-2">Consultas Online</h1>
+          <h1 className="text-4xl font-bold text-gray-900 dark:text-white mb-2">Médicos Consultas Online</h1>
           <p className="text-lg text-gray-600 dark:text-gray-300">Tenha atendimento médico online agora!</p>
         </div>
 

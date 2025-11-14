@@ -121,7 +121,7 @@ export default function Parceiros({ onOpenTermos }: { onOpenTermos: () => void }
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 mb-16 sm:mb-20 lg:mb-24">
         <div className="grid gap-10 lg:grid-cols-[minmax(0,0.4fr)_minmax(0,0.6fr)] items-center">
           <div className="space-y-6 flex flex-col justify-center h-full">
-            <h2 className="text-2xl font-bold text-emerald-600">Modelos de parceria</h2>
+            <h2 className="text-2xl font-bold text-emerald-900">Modelos de parceria</h2>
             <p className="text-slate-600 text-base leading-relaxed">
               Diversos tipos de parceria para atender suas necessidades, desde clínicas até influenciadores. Cada modelo
               inclui suporte dedicado e ferramentas específicas para maximizar seus resultados e crescimento.
@@ -149,7 +149,7 @@ export default function Parceiros({ onOpenTermos }: { onOpenTermos: () => void }
       {/* Seção de Parceiros */}
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 mb-16 sm:mb-20 lg:mb-24">
         <div className="text-center mb-12">
-          <h2 className="text-3xl md:text-4xl font-bold text-emerald-600 mb-4">Conheça nossos parceiros</h2>
+          <h2 className="text-3xl md:text-4xl font-bold text-emerald-900 mb-4">Conheça nossos parceiros</h2>
           <p className="text-lg text-slate-600 max-w-2xl mx-auto">
             Empresas líderes que confiam em nossas soluções de telemedicina
           </p>

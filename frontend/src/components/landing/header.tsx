@@ -55,7 +55,7 @@ export default function Header() {
               Área do Cliente
             </a>
             <a href="#parceiros" className="px-4 py-2 rounded-full bg-white/15 hover:bg-white/25 transition font-medium">
-               Parceirias
+               Parcerias
             </a>
           </div>
         </div>

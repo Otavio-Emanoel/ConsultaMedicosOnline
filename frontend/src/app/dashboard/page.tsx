@@ -98,12 +98,12 @@ export default function DashboardPage() {
       <Card className="mb-8">
         <CardHeader>Ações Rápidas</CardHeader>
         <CardBody>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+          <div className="flex flex-col md:flex-row gap-4">
             <Link href="/consultas/agendar">
               <Button
                 variant="primary"
                 size="lg"
-                className="w-full justify-between group"
+                className="flex-1 justify-between group"
               >
                 <span className="flex items-center">
                   <Calendar className="w-5 h-5 mr-2" />
@@ -117,7 +117,7 @@ export default function DashboardPage() {
               <Button
                 variant="danger"
                 size="lg"
-                className="w-full justify-between group"
+                className="flex-1 justify-between group"
               >
                 <span className="flex items-center">
                   <Stethoscope className="w-5 h-5 mr-2" />
@@ -131,7 +131,7 @@ export default function DashboardPage() {
               <Button
                 variant="outline"
                 size="lg"
-                className="w-full justify-between group"
+                className="flex-1 justify-between group"
               >
                 <span className="flex items-center">
                   <UserPlus className="w-5 h-5 mr-2" />
@@ -145,7 +145,7 @@ export default function DashboardPage() {
               <Button
                 variant="outline"
                 size="lg"
-                className="w-full justify-between group"
+                className="flex-1 justify-between group"
               >
                 <span className="flex items-center">
                   <CreditCard className="w-5 h-5 mr-2" />
