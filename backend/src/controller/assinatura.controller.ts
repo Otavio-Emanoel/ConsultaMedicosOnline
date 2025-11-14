@@ -84,4 +84,58 @@ export class AssinaturaController {
             return res.status(500).json({ error: error.message || 'Erro ao listar assinaturas.' });
         }
     }
+
+    static async obterStatusAssinatura(req: Request, res: Response) {
+        try {
+            const { verificarAssinaturaPorCpf } = await import('../services/asaas.service.js');
+            const cpf = req.params.cpf;
+            if (!cpf) return res.status(400).json({ error: 'CPF é obrigatório.' });
+            const resultado = await verificarAssinaturaPorCpf(cpf);
+            if (!resultado.assinaturaOk || !resultado.cliente) {
+                return res.status(404).json({ error: 'Assinatura não encontrada para este CPF.' });
+            }
+            // Buscar assinaturas do cliente
+            const clienteId: string = resultado.cliente.id;
+            const axios = (await import('axios')).default;
+            const ASAAS_API_URL = process.env.ASAAS_BASE_URL || 'https://sandbox.asaas.com/api/v3';
+            const ASAAS_API_KEY = process.env.ASAAS_API_KEY;
+            const assinaturasResp = await axios.get(`${ASAAS_API_URL}/subscriptions`, {
+                params: { customer: clienteId },
+                headers: { access_token: ASAAS_API_KEY },
+            });
+            const assinaturas: any[] = assinaturasResp.data.data;
+            const assinaturaAtiva = assinaturas.find((a: any) => a.status === 'ACTIVE');
+            if (!assinaturaAtiva) {
+                return res.status(404).json({ error: 'Nenhuma assinatura ativa encontrada para este CPF.' });
+            }
+
+            // Buscar pagamentos (faturas) da assinatura ativa
+            const pagamentosResp = await axios.get(`${ASAAS_API_URL}/payments`, {
+                params: { subscription: assinaturaAtiva.id },
+                headers: { access_token: ASAAS_API_KEY },
+            });
+            const pagamentos: any[] = pagamentosResp.data.data || [];
+
+            // Encontrar o próximo pagamento pendente (ou o mais próximo do vencimento futuro)
+            const hoje = new Date();
+            const proximaFatura = pagamentos
+                .filter((p: any) => p.status === 'PENDING' && new Date(p.dueDate) >= hoje)
+                .sort((a: any, b: any) => new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime())[0];
+
+            // Se não achar, pode tentar pegar o último vencido não pago
+            // const proximaFatura = pagamentos.find((p: any) => p.status === 'PENDING');
+
+            // Monta resposta incluindo o link do boleto
+            return res.status(200).json({
+                assinaturaId: assinaturaAtiva.id,
+                assinatura: {
+                    ...assinaturaAtiva,
+                    bankSlipUrl: proximaFatura?.bankSlipUrl || null,
+                    paymentLink: proximaFatura?.invoiceUrl || null // se quiser garantir compatibilidade
+                }
+            });
+        } catch (error: any) {
+            return res.status(500).json({ error: error?.message || 'Erro ao buscar assinatura.' });
+        }
+    }
 }
