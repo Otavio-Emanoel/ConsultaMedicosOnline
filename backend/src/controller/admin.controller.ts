@@ -3,6 +3,7 @@ import admin from 'firebase-admin';
 import { getAuth } from 'firebase-admin/auth';
 import { getFirestore } from 'firebase-admin/firestore';
 import { firebaseApp } from '../config/firebase.js';
+import axios from 'axios';
 
 export class AdminController {
   // Cadastro de administrador (apenas outro admin pode cadastrar)
@@ -97,6 +98,66 @@ export class AdminController {
       return res.status(201).json({ message: 'Plano cadastrado com sucesso.', id: planoRef.id });
     } catch (error: any) {
       return res.status(500).json({ error: error.message || 'Erro ao cadastrar plano.' });
+    }
+  }
+
+  // Dashboard administrativo com métricas gerais
+  static async dashboard(req: Request, res: Response) {
+    try {
+      const db = getFirestore(firebaseApp);
+
+      // Totais básicos (Firestore)
+      const [usuariosSnap, assinSnap, ativasSnap, canceladasSnap, pendentesSnap] = await Promise.all([
+        db.collection('usuarios').get(),
+        db.collection('assinaturas').get(),
+        db.collection('assinaturas').where('status', '==', 'ATIVA').get(),
+        db.collection('assinaturas').where('status', 'in', ['CANCELADA', 'CANCELADO']).get().catch(() => ({ size: 0 } as any)),
+        db.collection('assinaturas').where('status', 'in', ['PENDENTE', 'PENDING']).get().catch(() => ({ size: 0 } as any)),
+      ]);
+
+      const totais = {
+        usuarios: (usuariosSnap as any).size ?? 0,
+        assinaturas: (assinSnap as any).size ?? 0,
+        assinaturasAtivas: (ativasSnap as any).size ?? 0,
+        assinaturasCanceladas: (canceladasSnap as any).size ?? 0,
+        assinaturasPendentes: (pendentesSnap as any).size ?? 0,
+      };
+
+      // Faturamento (Asaas) - melhor esforço, primeira página
+      const ASAAS_API_URL = process.env.ASAAS_BASE_URL || 'https://sandbox.asaas.com/api/v3';
+      const ASAAS_API_KEY = process.env.ASAAS_API_KEY as string | undefined;
+      let faturamento = { mesAtual: 0, ultimos30Dias: 0, pendencias: 0 };
+      if (ASAAS_API_KEY) {
+        try {
+          const paymentsResp = await axios.get(`${ASAAS_API_URL}/payments`, {
+            headers: { access_token: ASAAS_API_KEY },
+            params: { limit: 100 },
+          });
+          const payments: any[] = paymentsResp.data?.data || [];
+          const hoje = new Date();
+          const inicioMes = new Date(hoje.getFullYear(), hoje.getMonth(), 1);
+          const trintaDiasAtras = new Date(hoje.getTime() - 30 * 24 * 60 * 60 * 1000);
+
+          let mesAtual = 0;
+          let ultimos30 = 0;
+          let pendencias = 0;
+          for (const p of payments) {
+            const status = String(p?.status || '').toUpperCase();
+            if (status === 'PENDING' || status === 'OVERDUE') pendencias += 1;
+            const pago = status === 'RECEIVED';
+            const dataPag = p.paymentDate || p.receivedDate || p.dueDate;
+            if (!dataPag) continue;
+            const data = new Date(dataPag);
+            if (pago && data >= inicioMes) mesAtual += Number(p.value || 0);
+            if (pago && data >= trintaDiasAtras) ultimos30 += Number(p.value || 0);
+          }
+          faturamento = { mesAtual, ultimos30Dias: ultimos30, pendencias };
+        } catch {}
+      }
+
+      return res.status(200).json({ totais, faturamento });
+    } catch (error: any) {
+      return res.status(500).json({ error: error?.message || 'Erro ao montar dashboard administrativo.' });
     }
   }
 }

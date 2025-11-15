@@ -10,4 +10,7 @@ router.post('/admin/cadastrar', AdminController.cadastrar);
 // POST /api/admin/cadastrar-plano - Cadastro de plano
 router.post('/admin/cadastrar-plano', autenticarAdministrador, AdminController.cadastrarPlano);
 
+// GET /api/admin/dashboard - métricas administrativas
+router.get('/admin/dashboard', autenticarAdministrador, AdminController.dashboard);
+
 export default router;
