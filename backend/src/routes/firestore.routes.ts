@@ -1,7 +1,8 @@
 import { Router } from 'express';
 import { UsuarioController } from '../controller/usuario.controller.js';
 import { AssinaturaController } from '../controller/assinatura.controller.js';
-import { BeneficiarioController } from '../controller/beneficiario.controller.js';
+import { DependenteController } from '../controller/dependente.controller.js';
+import { autenticarFirebase } from '../middlewares/auth.middleware.js';
 
 const router = Router();
 
@@ -9,7 +10,7 @@ router.post('/usuarios', UsuarioController.criarOuAtualizar);
 router.get('/usuarios', UsuarioController.listar);
 router.post('/assinaturas', AssinaturaController.criarOuAtualizar);
 router.get('/assinaturas', AssinaturaController.listar);
-router.post('/beneficiarios', BeneficiarioController.criarOuAtualizar);
-router.get('/beneficiarios', BeneficiarioController.listar);
+router.post('/dependentes', autenticarFirebase, DependenteController.adicionar);
+router.get('/dependentes/:cpf', autenticarFirebase, DependenteController.listarPorTitular);
 
 export default router;
