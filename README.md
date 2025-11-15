@@ -1,126 +1,152 @@
-# Consulta Medicos Online - Painel de Assinante de Telemedicina
+<div align="center">
 
-Status: 🚧 Desenvolvimento 🚧
+# Consulta Médicos Online
 
-Painel web para assinantes de telemedicina. Esta plataforma atua como um intermediário para gerenciar consultas (via API Rapidoc) e assinaturas/pagamentos (via API Asaas), unificando a experiência do usuário.
+Painel do Assinante de Telemedicina • Orquestração Rapidoc + Asaas + Firebase
 
-## 🎯 Objetivo do Projeto
+Status: 🚧 Em desenvolvimento ativo
 
-Criar um painel web robusto onde assinantes possam gerenciar sua assinatura e todo o atendimento de telemedicina. O sistema funcionará como o principal intermediador entre a API Rapidoc (provedor de telemedicina) e a API Asaas (provedor de pagamentos e assinaturas).
+</div>
 
-## 🧩 Arquitetura e Integrações
+---
 
-Este projeto é construído em torno da orquestração de serviços externos.
+## Visão Geral
 
-Frontend: React, Vue ou Next.js
+Plataforma que centraliza a experiência do assinante: gerencia assinatura e pagamentos (Asaas), dados e consultas (Rapidoc), autenticação e dados de perfil (Firebase). O backend atua como BFF/Orquestrador, garantindo segurança das chaves e rastreabilidade via logs.
 
-Backend: Node.js (NestJS ou Express)
+## Capturas de Tela
 
-Banco de Dados: Firebase Firestore
+> Coloque as imagens no diretório `preview/` para o README exibir corretamente.
 
-Autenticação: Firebase Authentication
+![Landing Page](./preview/front%201.PNG)
 
-APIs Externas:
+![Painel do Assinante – Consultas](./preview/front%202.PNG)
 
-Rapidoc API: Para criação de beneficiários (pacientes), agendamento de consultas e atendimento imediato.
+![Planos](./preview/front%203.png)
 
-Asaas API: Para criação de clientes, gerenciamento de assinaturas, consulta de faturas e status de pagamento.
+## Principais Recursos
 
-⚠️ Importante: Toda a comunicação com as APIs externas (Rapidoc, Asaas) deve ser feita através do backend (servidor intermediário) para garantir a segurança das chaves de API e o registro de logs.
+- Assinatura: criação de cliente/assinatura no Asaas, checagem de pagamento e cancelamento condicionado a pendências.
+- Beneficiário Rapidoc: criação após confirmação do pagamento, inativação por CPF, associação de especialidades.
+- Consultas: agendamento tradicional e “Consulta Imediata” (fila/triagem com tentativa automática opcional).
+- Dependentes: CRUD (local) vinculado ao titular; sincronizações essenciais com Rapidoc quando aplicável.
+- Dashboard do assinante: dados do usuário, consultas (Rapidoc), faturas (Asaas), resumo do beneficiário.
+- Dashboard admin: totais e faturamento, com autenticação de administradores.
+- Auditoria: middleware de logs no Firestore (método, rota, uid/cpf, status, latência).
 
-## 🚀 Principais Funcionalidades
+## Arquitetura (alto nível)
 
-## 👤 Painel do Assinante
+- Frontend: Next.js (pasta `frontend/` e landing dedicada)
+- Backend: Express + TypeScript (pasta `backend/`)
+- Banco de dados: Firebase Firestore
+- Auth: Firebase Authentication (JWT no header Authorization)
+- Integrações:
+	- Rapidoc (beneficiários, planos, especialidades, consultas)
+	- Asaas (clientes, assinaturas, pagamentos/faturas)
 
-Cadastro/Primeiro Acesso: Validação de CPF contra a base do Asaas para localizar assinaturas ativas.
+## Fluxos-Chave
 
-Login: Autenticação via Firebase.
+1) Nova Assinatura (start → pagamento → beneficiário Rapidoc → usuário Firestore → acesso)
+2) Primeiro Acesso (CPF → validações Asaas/Rapidoc → criação de login → dashboard)
+3) Consulta Imediata (fila/triagem persistida + tentativa de agendamento imediato opcional)
 
-Dashboard: Um resumo rápido do status da assinatura e botões de acesso rápido.
+Regras:
+- Nunca criar beneficiário Rapidoc antes do pagamento confirmado (Asaas)
+- Nunca cancelar plano com débito pendente
+- Sempre logar eventos críticos de API
 
-Atendimento Imediato: Chamada direta à API da Rapidoc para consulta instantânea.
+## Endpoints
 
-Agendar Consulta: Formulário para agendamento futuro.
+- A documentação completa está em `backend/endpoints.md`.
+- Exemplos: assinatura, beneficiário Rapidoc, consultas, dashboards, planos, especialidades e auditoria.
 
-Cadastrar Dependentes: Criação de novos beneficiários vinculados à assinatura principal.
+## Rodando Localmente
 
-Ver Faturas: Consulta ao histórico de pagamentos e faturas via Asaas.
+Requisitos: Node 18+, conta Firebase (Admin SDK), chaves Asaas e Rapidoc.
 
-Atualizar Dados Cadastrais: Sincronização de dados entre Firebase, Rapidoc e Asaas.
-
-Cancelar Plano: Permite o cancelamento apenas se não houver pendências financeiras (validado via Asaas).
-
-## 👑 Painel do Administrador
-
-Gestão de Planos: Cadastro de novos planos e geração de URLs únicas de assinatura.
-
-Dashboard de Métricas: Visão geral de assinantes (ativos, pendentes, cancelados).
-
-Logs de API: Registro de falhas e eventos críticos das integrações.
-
-## 🧠 Fluxos Essenciais
-
-## 1. Fluxo de Nova Assinatura
-
-Usuário acessa uma URL específica do plano.
-
-Preenche formulário único (com dados para Asaas + Rapidoc).
-
-O sistema cria o Cliente no Asaas.
-
-O sistema cria a Assinatura (cobrança) no Asaas.
-
-Somente após a confirmação do pagamento:
-
-O backend chama a API Rapidoc e cria o Beneficiário (paciente).
-
-O sistema gera as credenciais de acesso ao painel (ou recebe da Rapidoc).
-
-O usuário vê uma tela de sucesso com seus dados de acesso.
-
-## 2. Fluxo de Primeiro Acesso (Para Assinantes Existentes)
-
-Usuário informa o CPF na tela de "Primeiro Acesso".
-
-Backend consulta o Asaas buscando por assinaturas ativas para aquele CPF.
-
-Se uma assinatura for encontrada:
-
-O sistema valida o status do beneficiário na Rapidoc.
-
-Se tudo estiver correto, o sistema cria o login no painel (Firebase Auth).
-
-O usuário é autenticado e direcionado ao dashboard.
-
-### 🚨 Regras de Negócio Críticas
-
-NUNCA criar um beneficiário na Rapidoc antes da confirmação de pagamento no Asaas.
-
-NUNCA permitir o cancelamento do plano se existirem débitos pendentes no Asaas.
-
-SEMPRE salvar logs de auditoria para todas as respostas críticas das APIs (criação de usuário, falha de pagamento, cancelamento).
-
-SEMPRE registrar data, hora e status de cada etapa dos fluxos principais.
-
-🛠️ Como Executar o Projeto (Placeholder)
-
-## 1. Clone o repositório
+```sh
+# Clonar
 git clone https://github.com/Otavio-Emanoel/ConsultaMedicosOnline.git
+cd ConsultaMedicosOnline
 
-## 2. Instale as dependências (backend e frontend)
-cd ConsultaMedicosOnline/backend
+# Backend
+cd backend
 npm install
 
+# Frontend
 cd ../frontend
 npm install
+```
 
-## 3. Configure suas variáveis de ambiente
-### (Crie arquivos .env e adicione as chaves do Firebase, Asaas e Rapidoc)
+Variáveis de ambiente (backend/.env):
 
-## 4. Inicie os servidores
-npm run dev # (Em ambas as pastas, backend e frontend)
+```env
+PORT=3000
+FIREBASE_CREDENTIALS_FILE=./consulta-medicos-online-FIREBASE_CREDENTIALS_FILE.json
+FIREBASE_WEB_API_KEY=xxxxx
 
+# Rapidoc
+RAPIDOC_BASE_URL=https://api.rapidoc.example
+RAPIDOC_TOKEN=xxxxx
+RAPIDOC_CLIENT_ID=xxxxx
+RAPIDOC_IMMEDIATE_AUTO=false
 
-📄 Licença
+# Asaas
+ASAAS_BASE_URL=https://sandbox.asaas.com/api/v3
+ASAAS_API_KEY=xxxxx
 
-Este projeto está licenciado sob a Licença MIT.
+# Auditoria
+ENABLE_API_AUDIT_LOGS=true
+```
+
+Executando em desenvolvimento:
+
+```sh
+# Backend (em /backend)
+npm run dev
+
+# Frontend (em /frontend)
+npm run dev
+```
+
+## Qualidade e Observabilidade
+
+- Logs de API no Firestore (`logs_api`): método, URL, status, latência, uid/cpf, IP, user-agent.
+- Healthcheck e speedtest: ver `GET /api/health` e `GET /api/speedtest`.
+- Sem webhooks: endpoints de “refresh” manual podem ser adicionados para sincronismo (Asaas) quando necessário.
+
+## Segurança
+
+- Autenticação via Firebase (Bearer token) nas rotas protegidas.
+- Rotas administrativas exigem presença do UID na coleção `administradores`.
+- Cancelamento de assinatura condicionado a ausência de pendências no Asaas.
+
+## Estrutura
+
+```
+ConsultaMedicosOnline/
+├── backend/
+│   ├── src/
+│   │   ├── controller/   # Regras de negócio e orquestração
+│   │   ├── routes/       # Rotas Express
+│   │   ├── services/     # Rapidoc/Asaas/Firestore
+│   │   ├── middlewares/  # Auth e auditoria
+│   │   └── app.ts        # Montagem da API
+│   └── endpoints.md      # Documentação da API
+├── frontend/
+│   └── ...               # App Next.js
+└── preview/              # Coloque as imagens usadas neste README
+```
+
+## Roadmap (resumo)
+
+- [x] Assinatura + Beneficiário Rapidoc + Dashboard
+- [x] Consulta Imediata (fila)
+- [x] Logs de auditoria no Firestore
+- [ ] Endpoint(s) de “refresh” de status (sem webhooks)
+- [ ] Paginação de faturamento admin (Asaas) + filtros por período
+- [ ] Testes de integração de fluxos críticos
+
+---
+
+Licença: MIT
