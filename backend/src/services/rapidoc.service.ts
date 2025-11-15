@@ -98,6 +98,7 @@ export async function atualizarBeneficiarioRapidoc(uuid: string, data: {
   paymentType?: string,
   serviceType?: string,
   specialties?: Array<{ uuid: string }>,
+  isActive?: boolean,
 }) {
   if (!RAPIDOC_BASE_URL || !RAPIDOC_TOKEN || !RAPIDOC_CLIENT_ID) throw new Error('Configuração Rapidoc ausente');
   const url = `${RAPIDOC_BASE_URL}/tema/api/beneficiaries/${uuid}`;
@@ -126,6 +127,7 @@ export async function atualizarBeneficiarioRapidoc(uuid: string, data: {
   if (data.paymentType) body.paymentType = data.paymentType;
   if (data.serviceType) body.serviceType = data.serviceType;
   if (data.specialties) body.specialties = data.specialties;
+  if (typeof (data as any).isActive === 'boolean') body.isActive = (data as any).isActive;
 
   const resp = await axios.put(url, body, {
     headers: {
@@ -224,4 +226,28 @@ export async function cancelarAgendamentoRapidoc(uuid: string) {
     }
   });
   return { status: resp.status };
+}
+
+// Inativa beneficiário no Rapidoc tentando chaves isActive/active
+export async function inativarBeneficiarioRapidoc(uuid: string) {
+  if (!RAPIDOC_BASE_URL || !RAPIDOC_TOKEN || !RAPIDOC_CLIENT_ID) throw new Error('Configuração Rapidoc ausente');
+  const url = `${RAPIDOC_BASE_URL}/tema/api/beneficiaries/${uuid}`;
+  const headers = {
+    Authorization: `Bearer ${RAPIDOC_TOKEN}`,
+    clientId: RAPIDOC_CLIENT_ID,
+    'Content-Type': 'application/vnd.rapidoc.tema-v2+json'
+  } as const;
+  // 1) Tenta com isActive
+  try {
+    const resp = await axios.put(url, { uuid, isActive: false }, { headers });
+    return resp.data;
+  } catch (e1: any) {
+    // 2) Fallback: tenta com active
+    try {
+      const resp2 = await axios.put(url, { uuid, active: false }, { headers });
+      return resp2.data;
+    } catch (e2: any) {
+      throw e2 || e1;
+    }
+  }
 }
