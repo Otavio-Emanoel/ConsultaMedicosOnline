@@ -12,6 +12,30 @@ export async function verificarPrimeiroPagamentoAssinatura(assinaturaId: string)
     }
     return { pago: false, pagamento: primeiroPagamento };
 }
+
+export async function listarPagamentosDaAssinatura(assinaturaId: string): Promise<any[]> {
+    if (!ASAAS_API_KEY) throw new Error('Chave da API Asaas não configurada');
+    const resp = await axios.get(`${ASAAS_API_URL}/payments`, {
+        params: { subscription: assinaturaId },
+        headers: { access_token: ASAAS_API_KEY },
+    });
+    return resp.data?.data || [];
+}
+
+export async function temPendenciasNaAssinatura(assinaturaId: string): Promise<{ pendente: boolean, pendentes: any[] }> {
+    const pagamentos = await listarPagamentosDaAssinatura(assinaturaId);
+    const PENDENTES = new Set(['PENDING', 'OVERDUE']);
+    const pendentes = pagamentos.filter((p: any) => PENDENTES.has(String(p?.status || '').toUpperCase()));
+    return { pendente: pendentes.length > 0, pendentes };
+}
+
+export async function cancelarAssinaturaAsaas(assinaturaId: string): Promise<{ status: number, data?: any }> {
+    if (!ASAAS_API_KEY) throw new Error('Chave da API Asaas não configurada');
+    const resp = await axios.delete(`${ASAAS_API_URL}/subscriptions/${assinaturaId}`, {
+        headers: { access_token: ASAAS_API_KEY }
+    });
+    return { status: resp.status, data: resp.data };
+}
 export async function criarAssinaturaAsaas({ customer, value, cycle = 'MONTHLY', description = 'Assinatura Consulta Médicos Online', billingType = 'BOLETO' }: { customer: string, value: number, cycle?: string, description?: string, billingType?: string }) {
     if (!ASAAS_API_KEY) throw new Error('Chave da API Asaas não configurada');
     const body: any = {

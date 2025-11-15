@@ -15,6 +15,9 @@ router.get('/subscription/check-payment/:assinaturaId', SubscriptionController.c
 // GET /api/subscription/payment-details/:assinaturaId
 router.get('/subscription/payment-details/:assinaturaId', SubscriptionController.paymentDetails);
 
+// DELETE /api/subscription/cancel/:assinaturaId
+router.delete('/subscription/cancel/:assinaturaId', SubscriptionController.cancelSubscription);
+
 // GET /api/subscription/onboarding-status/:cpf
 router.get('/subscription/onboarding-status/:cpf', SubscriptionController.onboardingStatus);
 

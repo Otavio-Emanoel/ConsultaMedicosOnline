@@ -188,6 +188,31 @@ export class SubscriptionController {
         }
     }
 
+    static async cancelSubscription(req: Request, res: Response) {
+        const { assinaturaId } = req.params as { assinaturaId?: string };
+        if (!assinaturaId) return res.status(400).json({ error: 'assinaturaId é obrigatório.' });
+        try {
+            const { temPendenciasNaAssinatura, cancelarAssinaturaAsaas } = await import('../services/asaas.service.js');
+            // 1) Verifica pendências
+            const pend = await temPendenciasNaAssinatura(assinaturaId);
+            if (pend.pendente) {
+                return res.status(409).json({
+                    error: 'Não é possível cancelar: existem pagamentos pendentes/atrasados.',
+                    pendentes: pend.pendentes.map((p: any) => ({ id: p.id, status: p.status, value: p.value, dueDate: p.dueDate }))
+                });
+            }
+            // 2) Cancela assinatura no Asaas
+            const resp = await cancelarAssinaturaAsaas(assinaturaId);
+            const ok = resp.status === 200 || resp.status === 204;
+            if (!ok) return res.status(400).json({ error: 'Falha ao cancelar assinatura no Asaas.', detail: resp });
+            return res.status(200).json({ cancelled: true, status: resp.status });
+        } catch (error: any) {
+            const status = error?.response?.status;
+            if (status === 404) return res.status(404).json({ error: 'Assinatura não encontrada no Asaas.' });
+            return res.status(500).json({ error: error?.response?.data || error.message || 'Erro ao cancelar assinatura.' });
+        }
+    }
+
     static async onboardingStatus(req: Request, res: Response) {
         const { cpf } = req.params as { cpf?: string };
         if (!cpf) return res.status(400).json({ error: 'CPF é obrigatório.' });
