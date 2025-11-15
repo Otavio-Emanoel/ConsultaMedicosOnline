@@ -1,293 +1,430 @@
-# Backend — Consulta Médicos Online (Painel do Assinante)
+# Documentação de Endpoints
 
-> API intermediadora entre Rapidoc (telemedicina) e Asaas (pagamentos), com autenticação e base de dados (ex.: Firebase). Este README documenta setup, variáveis de ambiente e TODOS os endpoints previstos com responsabilidades e contratos resumidos.
+Base URL: `http://localhost:3000/api`
 
----
+## Saúde e Diagnóstico
+### GET /health
+Retorna status da API.
 
-## Visão geral
-- Painel do Assinante: gestão de assinatura e acesso à telemedicina.
-- Painel/Admin: gestão de planos, métricas e auditoria.
-- Backend integra e orquestra: Auth + Banco + Asaas + Rapidoc.
+### GET /speedtest
+Retorna informações de latência.
 
-Regras críticas
-- Nunca criar beneficiário (Rapidoc) sem pagamento confirmado (Asaas).
-- Cancelar assinatura somente se não houver débitos pendentes (validação Asaas).
-- Toda resposta crítica de APIs externas deve ser registrada para auditoria (logs persistentes com data/hora e status de cada etapa).
-
----
-
-## Tecnologias
-- Node.js + TypeScript (ESM)
-- Express
-- Firebase (Auth e Firestore) — ou serviço equivalente
-- Integrações externas: Asaas API, Rapidoc API
-
----
-
-## Requisitos e execução
-
-Pré-requisitos
-- Node 18+ (recomendado 20/22)
-- NPM 9+
-
-Instalação
-```sh
-cd backend
-npm install
+### POST /firestore-test
+Cria registro de teste no Firestore.
+Body: (nenhum)
+Resposta 201:
+```json
+{ "id": "...", "createdAt": "ISO", "status": "ok" }
 ```
 
-Desenvolvimento (watch + reload)
-```sh
-# compila TS e reinicia o Node quando dist/ mudar
-npm run dev
+## Primeiro Acesso
+### POST /first-access/validate-cpf
+Valida CPF consultando Asaas. Deve haver assinatura ativa e paga para não permitir novo cadastro.
+Body:
+```json
+{ "cpf": "63833776048" }
 ```
+Respostas:
+- 200 podeCadastrar true (não possui assinatura ativa)
+- 200 usuario (dados cliente Asaas se assinatura ativa)
 
-Build e produção
-```sh
-npm run build
-npm start
+### POST /first-access
+Marca primeiro acesso e cria usuário no Firebase Auth usando dados já existentes em `usuarios`.
+Body:
+```json
+{ "cpf": "63833776048" }
 ```
+Respostas:
+- 201 senhaTemporaria gerada
+- 404 usuário não encontrado no Firestore
+- 409 já realizou primeiro acesso
 
-Atalho (execução direta com ts-node – sem reload)
-```sh
-npm run dev:tsnode
-```
-
----
-
-## Variáveis de ambiente (.env)
-Crie um arquivo `.env` na pasta `backend/` com as chaves abaixo (nomes sugestivos; ajuste conforme o provedor de Auth/Banco usado):
-
-```env
-# App
-PORT=3000
-APP_BASE_URL=http://localhost:3000
-NODE_ENV=development
-
-# Firebase (exemplo)
-FIREBASE_PROJECT_ID=...
-FIREBASE_CLIENT_EMAIL=...
-FIREBASE_PRIVATE_KEY=-----BEGIN PRIVATE KEY-----\n...\n-----END PRIVATE KEY-----\n
-# Asaas
-ASAAS_BASE_URL=https://www.asaas.com/api/v3
-ASAAS_API_KEY=your_asaas_key
-ASAAS_WEBHOOK_SECRET=replace_with_random_secret
-
-# Rapidoc
-RAPIDOC_BASE_URL=https://api.rapidoc.example
-RAPIDOC_API_KEY=your_rapidoc_key
-```
-
-Observações
-- `ASAAS_WEBHOOK_SECRET` assina/valida chamadas do webhook.
-- As credenciais do Firebase podem ser injetadas via variáveis ou arquivo de credenciais.
-
----
-
-## Modelagem (alto nível)
-Coleções (Firestore ou equivalente)
-- users: perfil do assinante/admin, mapeamento `userId`, CPF, e-mail.
-- plans: metadados de planos ofertados (admin).
-- subscriptions: dados da assinatura, status, datas, relação com Asaas (customerId, subscriptionId).
-- dependents: lista de beneficiários do assinante (Rapidoc patientId).
-- mappings: relação `userId ↔ rapidocUid ↔ asaasCustomerId`.
-- logs: auditoria de chamadas críticas (request/response das integrações e status).
-
----
-
-## Autenticação
-- Preferencial: Firebase Auth (Bearer token no header `Authorization: Bearer <token>`).
-- Middleware valida token e injeta `req.user` (id, email, roles, cpf...).
-- Perfis: `admin`, `subscriber` (assinante), `dependent` (acesso restrito aos recursos do titular).
-
----
-
-## Endpoints da API
-Base URL: `/api`
-
-Padrão de resposta de erro
+## Assinaturas (Firestore + Asaas + Rapidoc)
+### POST /assinaturas
+Cria/atualiza registro de assinatura após validações (Asaas pago, Rapidoc conta existente) e inclui snapshot do plano.
+Body:
 ```json
 {
-	"error": {
-		"code": "string",
-		"message": "string",
-		"details": { }
+	"idAssinatura": "sub_asaas_id",
+	"cpfUsuario": "63833776048",
+	"planoId": "plano_doc_id",
+	"outrosCamposOpcionais": "..."
+}
+```
+Respostas:
+- 201 id da assinatura no Firestore
+- 400 campos obrigatórios ausentes
+- 404 plano não encontrado / assinatura Asaas inexistente / Rapidoc inexistente
+- 402 assinatura não está paga
+
+### GET /assinaturas
+Lista todas as assinaturas salvas no Firestore.
+
+### GET /assinatura/status/:cpf
+Busca assinatura ativa diretamente no Asaas para o CPF.
+Respostas:
+- 200 assinaturaId e objeto assinatura
+- 404 não encontrada
+
+### GET /subscription/check-payment/:assinaturaId
+Verifica primeiro pagamento da assinatura no Asaas.
+Respostas:
+```json
+{ "pago": true, "pagamento": { ... } }
+```
+
+### GET /subscription/payment-details/:assinaturaId
+Retorna detalhes do primeiro pagamento (boleto ou PIX) para exibir instruções de pagamento ou comprovante.
+Respostas:
+```json
+{
+	"assinaturaId": "sub_xxx",
+	"encontrado": true,
+	"pagamento": {
+		"paymentId": "pay_yyy",
+		"billingType": "BOLETO",
+		"status": "PENDING",
+		"value": 79.9,
+		"dueDate": "2025-01-10",
+		"bankSlipUrl": "https://...",
+		"invoiceUrl": "https://..."
+	}
+}
+```
+Ou para PIX:
+```json
+{
+	"assinaturaId": "sub_xxx",
+	"encontrado": true,
+	"pagamento": {
+		"paymentId": "pay_zzz",
+		"billingType": "PIX",
+		"status": "PENDING",
+		"value": 79.9,
+		"dueDate": "2025-01-10",
+		"pixQrCode": "data:image/png;base64,...",
+		"pixCode": "0002012658...",
+		"qrCode": "000201..."
 	}
 }
 ```
 
-### Health
-- GET `/api/health` — healthcheck (200 OK)
+### DELETE /subscription/cancel/:assinaturaId
+Cancela uma assinatura no Asaas apenas se não houver pendências de pagamento (status PENDING/OVERDUE).
+Respostas:
+- 200 `{ cancelado: true }`
+- 409 `{ mensagem: "Existem pendências de pagamento" }`
+- 404 assinatura não encontrada
 
-### Auth (painel)
-- POST `/api/auth/login` — delega ao provedor (ex.: Firebase ou outro). Se usar Firebase no frontend, o backend apenas valida tokens em middlewares; esse endpoint pode não ser necessário.
-- GET `/api/auth/me` — retorna perfil do usuário autenticado.
-
-### Primeiro acesso / validações iniciais
-- POST `/api/first-access/validate-cpf`
-	- Body: `{ "cpf": "string" }`
-	- Ações: consulta Asaas por assinatura; se existir e estiver ok, valida/obtém beneficiário Rapidoc; sincroniza mapeamentos e dados locais.
-
-### Assinaturas (Asaas)
-- POST `/api/subscriptions/initiate`
-	- Body: dados do cliente + plano (campos compatíveis com Asaas e requisitos do Rapidoc).
-	- Cria customer no Asaas, inicia assinatura/cobrança, registra localmente em `subscriptions`.
-- GET `/api/subscription/status`
-	- Retorna status atual (consulta Asaas e cache/banco local).
-- POST `/api/subscription/cancel`
-	- Regras: só cancela se Asaas indicar que não há débitos pendentes.
-
-### Webhooks (Asaas)
-- POST `/api/webhooks/asaas`
-	- Recebe eventos de pagamento/assinatura. Valida assinatura do webhook via `ASAAS_WEBHOOK_SECRET`.
-	- Ao confirmar pagamento: cria beneficiário (Rapidoc) se não existir; grava logs e atualiza `subscriptions`.
-
-### Telemedicina (Rapidoc)
-- POST `/api/telemed/patients`
-	- Cria beneficiário/paciente no Rapidoc (normalmente disparado pós-pagamento ou via painel admin).
-- GET `/api/telemed/me`
-	- Retorna dados do paciente/usuário no Rapidoc vinculado ao `userId`.
-- POST `/api/telemed/consult-now`
-	- Chama consulta imediata (immediate care) na Rapidoc.
-- POST `/api/telemed/appointments`
-	- Agenda atendimento. Body traz data/horário e campos obrigatórios do Rapidoc.
-
-### Dependentes (beneficiários)
-- GET `/api/dependents`
-	- Lista dependentes do assinante autenticado.
-- POST `/api/dependents`
-	- Cria dependente: registra no Rapidoc e persiste local; aplica regras de limite por plano (se houver).
-- DELETE `/api/dependents/:id`
-	- Remove dependente (se permitido pelas regras do plano e da Rapidoc).
-
-### Faturas (Asaas)
-- GET `/api/invoices`
-	- Lista faturas do assinante (consulta Asaas e/ou cache/banco).
-- GET `/api/invoices/:id`
-	- Detalhe de fatura.
-
-### Meus dados (assinante)
-- GET `/api/me`
-	- Dados do perfil no painel (e mapeamentos com Asaas/Rapidoc).
-- PUT `/api/me`
-	- Atualiza dados básicos: sincroniza Firebase + Rapidoc + Asaas quando aplicável.
-
-### Admin — Planos e gestão
-- POST `/api/admin/plans`
-	- Cria/atualiza plano (registra no banco + vincula UID Rapidoc, se necessário).
-- GET `/api/admin/plans`
-	- Lista planos.
-- GET `/api/admin/dashboard`
-	- Métricas: total de assinantes / pendentes / cancelados.
-- GET `/api/admin/logs`
-	- Retorna registros de auditoria filtráveis por período, usuário, integração.
-
----
-
-## Contratos resumidos (exemplos)
-
-Criar assinatura
-```http
-POST /api/subscriptions/initiate
-Content-Type: application/json
-Authorization: Bearer <token>
-
-{
-	"planId": "string",
-	"customer": {
-		"name": "string",
-		"cpf": "string",
-		"email": "string",
-		"phone": "string"
-	},
-	"address": { "zip": "string", "street": "string", "number": "string", "city": "string", "state": "string" }
-}
+### GET /subscription/onboarding-status/:cpf
+Retorna o status do onboarding para um CPF.
+Resposta 200:
+```json
+{ "assinaturaAtiva": true, "rapidocAtivo": true, "usuarioExiste": true }
 ```
 
-Resposta (200)
+### POST /subscription/start
+Inicia fluxo criando cliente e assinatura Asaas.
+Body mínimo:
 ```json
 {
-	"subscriptionId": "asaas_sub_id",
-	"customerId": "asaas_cus_id",
-	"status": "PENDING" | "ACTIVE",
-	"nextInvoice": { "id": "...", "dueDate": "...", "value": 0 }
+  "nome": "João Silva",
+  "email": "joao@email.com",
+  "cpf": "12345678901",
+  "birthday": "1990-05-15",
+  "zipCode": "13040000",
+  "endereco": "Rua Teste",
+  "numero": "123",
+  "bairro": "Centro",
+  "cidade": "Campinas",
+  "estado": "SP",
+  "country": "BR",
+  "valor": 79.9,
+  "telefone": "19999998888"
+  // opcionais: ciclo, billingType, description, phone, paymentType, serviceType, holder, general
 }
 ```
+Respostas:
+- 201 assinaturaId e dados que serão usados depois no Rapidoc
 
-Webhook Asaas (pagamento confirmado)
-```http
-POST /api/webhooks/asaas
-X-Signature: <hmac>
-
-{ /* payload do Asaas */ }
-```
-Ação: valida assinatura, atualiza `subscriptions`, chama Rapidoc para criar/garantir beneficiário, grava logs.
-
-Agendar consulta
-```http
-POST /api/telemed/appointments
-Authorization: Bearer <token>
-Content-Type: application/json
-
+### POST /subscription/rapidoc-beneficiary
+Cria beneficiário no Rapidoc após confirmação de pagamento.
+Body mínimos:
+```json
 {
-	"patientId": "rapidoc_patient_id",
-	"datetime": "2025-11-06T14:00:00-03:00",
-	"reason": "string"
+	"assinaturaId": "sub_asaas_id",
+	"nome": "João Silva",
+	"email": "joao@email.com",
+	"cpf": "12345678901",
+	"birthday": "1990-05-15"
+	// opcionais: phone, zipCode, paymentType, serviceType, holder, general
 }
 ```
 
----
+## Usuários
+### POST /usuarios
+Cria usuário no Firestore após validar Rapidoc e Asaas.
+Body:
+```json
+{
+	"cpf": "12345678901",
+	"nome": "João Silva",
+	"email": "joao@email.com",
+	"telefone": "11999998888",
+	"dataNascimento": "1990-05-15"
+}
+```
 
-## Logs e Auditoria
-- Todas as chamadas críticas às APIs externas têm request/response e status registrados em `logs`.
-- Cada etapa do fluxo (assinatura, pagamento, criação de beneficiário, agendamento) registra data/hora, usuário e resultado.
+### GET /usuarios
+Lista usuários cadastrados.
 
----
+### PATCH /usuario/:cpf
+Atualiza nome / email / telefone (sincroniza Rapidoc e Asaas quando possível).
+Body (exemplo):
+```json
+{ "nome": "João Silva Junior" }
+```
 
-## Tratamento de erros
-- Respostas padronizadas (vide estrutura acima).
-- Mapeamento de códigos de erro relevantes (ex.: `ASAAS_PAYMENT_PENDING`, `ASAAS_OVERDUE`, `RAPIDOC_VALIDATION_ERROR`, `FORBIDDEN`, `NOT_FOUND`).
+### GET /usuario/:cpf (protegido)
+Obtém dados do usuário no Firestore pelo CPF.
 
----
+### GET /usuario/me (protegido)
+Obtém dados do usuário autenticado (usa CPF do token).
 
-## Segurança
-- Autorização por perfis/escopos nos endpoints admin e recursos sensíveis.
-- Validação do webhook Asaas via HMAC/segredo (`ASAAS_WEBHOOK_SECRET`).
-- Sanitização/validação de entrada (CPF, e-mail, datas). 
-- Não expor chaves de API no frontend; chamadas às integrações sempre via backend.
+### PATCH /usuario/senha (protegido)
+Altera a senha do usuário autenticado (valida a senha atual via Firebase REST API).
 
----
+### POST /usuario/recuperar-senha
+Envia e-mail de recuperação de senha via Firebase.
 
-## Roadmap de implementação (resumo)
-1) Autenticação (middleware + `GET /api/auth/me`).
-2) Integração Asaas: create customer + assinatura; webhook pagamento.
-3) Integração Rapidoc: criação de beneficiário + agendamentos + consulta imediata.
-4) Modelos e persistência (users, plans, subscriptions, dependents, mappings, logs).
-5) Painel Admin: planos, dashboard, logs.
-6) Auditoria e robustez (retries, idempotência no webhook).
+### GET /rapidoc/beneficiario/:cpf (protegido)
+Obtém dados do beneficiário no Rapidoc pelo CPF.
 
----
+## Dependentes (Beneficiários locais)
+### POST /dependentes (protegido)
+Cria dependente vinculado a um titular (holder) existente.
 
-## Dicas de desenvolvimento
-- Use `npm run dev` para hot-reload (TS → dist → Node).
-- Cubra integrações externas com mocks nos testes.
-- Mantenha os schemas de requests/responses atualizados conforme Asaas/Rapidoc.
+### PUT /dependentes/:cpf (protegido)
+Atualiza dados do dependente identificado por CPF.
 
----
+### GET /dependentes/:cpf (protegido)
+Lista dependentes vinculados ao titular (holder = :cpf).
 
-## Endpoints — resumo por área
-- Health: `GET /api/health`
-- Speedtest: `GET /api/speedtest`
-- Auth: `GET /api/auth/me`
-- Primeiro acesso: `POST /api/first-access/validate-cpf`
-- Assinatura: `POST /api/subscriptions/initiate`, `GET /api/subscription/status`, `POST /api/subscription/cancel`
-- Webhook Asaas: `POST /api/webhooks/asaas`
-- Telemedicina: `POST /api/telemed/patients`, `GET /api/telemed/me`, `POST /api/telemed/consult-now`, `POST /api/telemed/appointments`
-- Dependentes: `GET /api/dependents`, `POST /api/dependents`, `DELETE /api/dependents/:id`
-- Faturas: `GET /api/invoices`, `GET /api/invoices/:id`
-- Meus dados: `GET /api/me`, `PUT /api/me`
-- Admin: `POST /api/admin/plans`, `GET /api/admin/plans`, `GET /api/admin/dashboard`, `GET /api/admin/logs`
+### POST /beneficiarios/:cpf/inativar-rapidoc (protegido)
+Inativa o beneficiário correspondente no Rapidoc (marca isActive=false).
 
----
+### DELETE /beneficiarios/:cpf (protegido)
+Remove do banco local o titular e todos os dependentes relacionados (Firestore). Não remove no Rapidoc/Asaas.
 
-Qualquer ajuste de nomenclatura/rotas conforme seus contratos de Rapidoc/Asaas, me avise que atualizo este README.
+### GET /beneficiarios/:cpf/especialidades (protegido)
+Lista as especialidades efetivas do beneficiário (agregadas de plano + associações).
+
+### PUT /beneficiarios/:cpf/especialidades (protegido)
+Associa/atualiza especialidades do beneficiário no Rapidoc. Normaliza `paymentType` (S/A) e `serviceType` (G/P/GP/GS/GSP).
+
+## Especialidades
+### GET /especialidades (protegido)
+Lista especialidades globais do Rapidoc.
+
+## Dashboard
+### GET /dashboard (protegido - requer Bearer token Firebase)
+Retorna visão do assinante pelo UID/CPF autenticado:
+```json
+{
+	"usuario": { ... },
+	"assinaturas": [ ... ],
+	"beneficiarios": [ ... ],
+	"rapidoc": {
+		"beneficiary": { ... },
+		"appointments": [ ... ]
+	},
+	"faturas": [
+		{ "paymentId": "...", "status": "...", "value": 79.9, "dueDate": "...", "invoiceUrl": "..." }
+	]
+}
+```
+
+## Onboarding (Orquestrador)
+### POST /subscription/complete-onboarding
+Completa o onboarding por CPF sem depender de localStorage.
+Body:
+```json
+{
+	"cpf": "12345678901",
+	"overrides": {
+		"nome": "(opcional)",
+		"email": "(opcional)",
+		"telefone": "(opcional)",
+		"birthday": "(opcional, YYYY-MM-DD)",
+		"zipCode": "(opcional)",
+		"assinaturaId": "(opcional)",
+		"planoId": "(opcional)"
+	}
+}
+```
+Respostas:
+- 200 `{ ok: true, assinaturaId, created: { rapidoc, usuario, assinatura } }`
+- 400 `{ ok: false, missing: ["birthday", ...], assinaturaId }` (solicitar campos em falta e reenviar como overrides)
+- 402 assinatura encontrada porém ainda não paga
+- 404 nenhuma assinatura ativa encontrada
+- 500 erro interno
+
+## Administração
+### POST /admin/cadastrar
+Cadastro de administrador.
+Body:
+```json
+{ "nome": "Otavio", "email": "otavio.admin@dominio.com", "senha": "SenhaForte@2025" }
+```
+
+### POST /admin/cadastrar-plano (protegido - autenticarAdministrador)
+Body:
+```json
+{
+	"tipo": "Casal",
+	"periodicidade": "TRIMESTRAL",
+	"descricao": "Atendimentos ilimitados com médicos especializados e Clínico Geral. Sem carência.",
+	"especialidades": [
+		"Cardiologia",
+		"Dermatologia",
+		"Endocrinologia",
+		"Geriatria",
+		"Ginecologia",
+		"Neurologia",
+		"Pediatria",
+		"Urologia",
+		"Psiquiatria"
+	],
+	"preco": 249.90
+}
+```
+
+### GET /admin/dashboard (protegido - autenticarAdministrador)
+Métricas administrativas com totais e faturamento:
+```json
+{
+	"totais": {
+		"usuarios": 100,
+		"assinaturas": { "ativas": 80, "pendentes": 10, "canceladas": 10 }
+	},
+	"faturamento": {
+		"mesAtual": 12345.67,
+		"ultimos30dias": 23456.78,
+		"pendencias": 5
+	}
+}
+```
+
+## Planos
+### GET /planos
+Lista todos os planos disponíveis cadastrados no sistema.
+
+**Exemplo de resposta:**
+```json
+[
+  {
+    "id": "plano_doc_id",
+    "tipo": "Casal",
+    "periodicidade": "TRIMESTRAL",
+    "descricao": "Atendimentos ilimitados com médicos especializados e Clínico Geral. Sem carência.",
+    "especialidades": [
+      "Cardiologia",
+      "Dermatologia",
+      "Endocrinologia"
+    ],
+    "preco": 249.9,
+    "criadoEm": "2024-06-01T12:00:00.000Z"
+  }
+]
+```
+
+**Observações:**
+- Não requer autenticação.
+- Retorna todos os campos do plano cadastrados no Firestore.
+- O campo `id` corresponde ao ID do documento do plano no Firestore.
+
+### GET /planos/:id
+Retorna os detalhes de um plano específico salvo no Firestore.
+
+Respostas:
+- 200 objeto do plano `{ id, ... }`
+- 404 quando não encontrado
+
+### GET /planos/rapidoc
+Lista planos do Rapidoc diretamente pela API externa.
+
+### GET /planos/rapidoc/:uuid
+Retorna os detalhes de um plano específico no Rapidoc (por UUID).
+- 200 objeto do plano Rapidoc
+- 404 quando não encontrado
+
+### PUT /planos/rapidoc/:uuid/especialidades
+Atualiza as especialidades associadas a um plano Rapidoc (admin). Envie `specialtyUuid` (string) ou `specialtyUuids` (array de strings).
+
+## Agendamentos
+### POST /agendamentos (protegido)
+Agenda consulta no Rapidoc. Requer especialidade explicitamente informada via `specialtyUuid` quando não houver associações prévias no beneficiário.
+Body (exemplo mínimo):
+```json
+{
+	"cpf": "12345678901",
+	"date": "2025-01-15",
+	"time": "14:00",
+	"specialtyUuid": "uuid-especialidade"
+}
+```
+Respostas:
+- 201 objeto do agendamento
+- 422 quando não houver especialidade associada e `specialtyUuid` não for enviado (retorna sugestões)
+
+### GET /agendamentos/:uuid (protegido)
+Lê detalhes de um agendamento no Rapidoc.
+
+### DELETE /agendamentos/:uuid (protegido)
+Cancela um agendamento no Rapidoc.
+
+### POST /agendamentos/imediato (protegido)
+Cria uma solicitação de Consulta Imediata (fila/triagem). A API registra a solicitação e, opcionalmente, tenta agendar automaticamente um slot imediato se `RAPIDOC_IMMEDIATE_AUTO=true` e `specialtyUuid` for informado.
+
+Body (exemplo):
+```json
+{ "cpf": "12345678901", "specialtyUuid": "uuid-especialidade", "notes": "triagem" }
+```
+Respostas:
+- 201 quando já agendado (status "scheduled")
+- 202 quando aceito em fila (status "pending")
+- 400/422 se faltarem dados ou não houver especialidades associadas
+
+### GET /agendamentos/imediato/:id (protegido)
+Retorna o status da solicitação de consulta imediata. Possíveis `status`: `pending`, `scheduled`, `canceled`, `failed`.
+
+### DELETE /agendamentos/imediato/:id (protegido)
+Cancela a solicitação e, se já houver agendamento Rapidoc vinculado, tenta cancelá-lo também.
+
+## Faturas
+### GET /faturas (protegido)
+Lista faturas do usuário autenticado (via CPF no token ou parâmetros auxiliares).
+
+## Autenticação / Tokens
+Rotas protegidas exigem header:
+```
+Authorization: Bearer <TOKEN_JWT_FIREBASE>
+```
+
+## Ordem Recomendada de Fluxo
+1. /subscription/start (cria cliente + assinatura Asaas)
+2. Confirmar pagamento (poll /subscription/check-payment/:id ou webhook futuro)
+3. /subscription/rapidoc-beneficiary (cria beneficiário Rapidoc)
+4. /usuarios (cria usuário no Firestore)
+5. /first-access (marca primeiro acesso e gera senha)
+6. /dashboard (após login Firebase) 
+
+## Observações
+- Campos opcionais não devem ser enviados como `undefined`.
+- Erros do Rapidoc/Asaas são retornados encapsulados quando possível.
+- Snapshot do plano é salvo dentro da assinatura para histórico.
+
+### Auditoria de API
+- Todas as requisições passam por um middleware de auditoria que registra em `logs_api` (Firestore): método, URL, status, latência, `uid`/`cpf` (quando disponível), IP e user-agent.
+- Para desativar logs, defina `ENABLE_API_AUDIT_LOGS=false` no ambiente.
+
