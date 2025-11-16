@@ -16,8 +16,6 @@ Plataforma que centraliza a experiência do assinante: gerencia assinatura e pag
 
 ## Capturas de Tela
 
-> Coloque as imagens no diretório `preview/` para o README exibir corretamente.
-
 ![Landing Page](./preview/front%201.PNG)
 
 ![Painel do Assinante – Consultas](./preview/front%202.PNG)
