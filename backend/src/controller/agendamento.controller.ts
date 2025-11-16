@@ -1,5 +1,5 @@
 import type { Request, Response } from 'express';
-import { buscarBeneficiarioRapidocPorCpf, agendarConsultaRapidoc, lerAgendamentoRapidoc, cancelarAgendamentoRapidoc, listarRapidocEspecialidades, obterDetalhesPlanoRapidoc, atualizarBeneficiarioRapidoc, atualizarPlanoRapidoc } from '../services/rapidoc.service.js';
+import { buscarBeneficiarioRapidocPorCpf, agendarConsultaRapidoc, lerAgendamentoRapidoc, cancelarAgendamentoRapidoc, listarRapidocEspecialidades, obterDetalhesPlanoRapidoc, atualizarBeneficiarioRapidoc, atualizarPlanoRapidoc, listarAgendamentosRapidoc } from '../services/rapidoc.service.js';
 import { firebaseApp } from '../config/firebase.js';
 import { getFirestore } from 'firebase-admin/firestore';
 
@@ -332,6 +332,111 @@ export class AgendamentoController {
       return res.status(200).json({ id, canceled: true });
     } catch (error: any) {
       return res.status(500).json({ error: error?.message || 'Erro ao cancelar solicitação.' });
+    }
+  }
+
+  // GET /api/agendamentos - lista agendamentos por CPF ou beneficiaryUuid
+  static async listar(req: Request, res: Response) {
+    try {
+      // origem do CPF: token > query ?cpf=
+      let cpf: string | undefined = (req.user as any)?.cpf;
+      if (!cpf && typeof req.query.cpf === 'string') cpf = (req.query.cpf as string).trim();
+
+      const beneficiaryUuid = typeof req.query.beneficiaryUuid === 'string' ? (req.query.beneficiaryUuid as string).trim() : undefined;
+      const status = typeof req.query.status === 'string' ? (req.query.status as string).trim() : undefined;
+      const date = typeof req.query.date === 'string' ? (req.query.date as string).trim() : undefined;
+
+      let finalBenefUuid = beneficiaryUuid;
+      if (!finalBenefUuid) {
+        if (!cpf) return res.status(400).json({ error: 'Informe cpf (query) ou envie o token com cpf.' });
+        const beneficiarioResp = await buscarBeneficiarioRapidocPorCpf(cpf);
+        const beneficiario = beneficiarioResp?.beneficiary;
+        if (!beneficiario || !beneficiario.uuid) return res.status(404).json({ error: 'Beneficiário não encontrado no Rapidoc.' });
+        finalBenefUuid = beneficiario.uuid;
+      }
+
+      const params: Record<string, any> = { beneficiary: finalBenefUuid };
+      if (status) params.status = status;
+      if (date) params.date = date; // formato dd/MM/yyyy esperado pela API (não convertendo aqui)
+
+      const itens = await listarAgendamentosRapidoc(params);
+      const mapped = (Array.isArray(itens) ? itens : []).map((a: any) => ({
+        uuid: a?.uuid || a?.id || null,
+        status: a?.status || null,
+        date: a?.detail?.date || a?.date || null,
+        from: a?.detail?.from || a?.from || null,
+        to: a?.detail?.to || a?.to || null,
+        specialty: a?.specialty?.name || a?.specialty?.description || a?.specialty?.title || null,
+      }));
+      return res.status(200).json({ count: mapped.length, appointments: mapped });
+    } catch (error: any) {
+      return res.status(500).json({ error: error?.message || 'Erro ao listar agendamentos.' });
+    }
+  }
+
+  // GET /api/agendamentos/:uuid/join - retorna informações para entrar na consulta
+  static async join(req: Request, res: Response) {
+    try {
+      const { uuid } = req.params;
+      if (!uuid) return res.status(400).json({ error: 'uuid é obrigatório.' });
+      const data = await lerAgendamentoRapidoc(uuid);
+
+      const appt = data?.appointment || data;
+      const candidateKeys = [
+        'joinUrl', 'meetingUrl', 'url', 'roomUrl', 'videoUrl', 'telemedUrl',
+        'video_link', 'videoLink', 'accessUrl'
+      ];
+      let joinUrl: string | null = null;
+      for (const k of candidateKeys) {
+        if (appt?.[k]) { joinUrl = appt[k]; break; }
+        if (appt?.detail?.[k]) { joinUrl = appt.detail[k]; break; }
+      }
+
+      const payload: any = {
+        uuid: appt?.uuid || uuid,
+        status: appt?.status || null,
+        date: appt?.detail?.date || appt?.date || null,
+        from: appt?.detail?.from || appt?.from || null,
+        to: appt?.detail?.to || appt?.to || null,
+        joinUrl,
+      };
+      if (!joinUrl) payload.message = 'Link de acesso não disponível na resposta do Rapidoc.';
+      return res.status(200).json(payload);
+    } catch (error: any) {
+      const status = error?.response?.status;
+      if (status === 404) return res.status(404).json({ error: 'Agendamento não encontrado.' });
+      return res.status(500).json({ error: error?.message || 'Erro ao obter link de acesso.' });
+    }
+  }
+
+  // GET /api/agendamentos/imediato/:id/join - retorna link da consulta para solicitação imediata já agendada
+  static async joinImediato(req: Request, res: Response) {
+    try {
+      const db = getFirestore(firebaseApp);
+      const { id } = req.params;
+      if (!id) return res.status(400).json({ error: 'id é obrigatório.' });
+      const doc = await db.collection('immediate_requests').doc(id).get();
+      if (!doc.exists) return res.status(404).json({ error: 'Solicitação não encontrada.' });
+      const data: any = doc.data() || {};
+      if (data.status !== 'scheduled') {
+        return res.status(409).json({ error: 'Solicitação ainda não agendada.', status: data.status });
+      }
+      const apptUuid = data?.appointment?.uuid || data?.appointment?.appointment?.uuid;
+      if (!apptUuid) {
+        // tenta aproveitar link direto salvo, se houver
+        const candidateKeys = ['joinUrl', 'meetingUrl', 'url', 'roomUrl', 'videoUrl', 'telemedUrl'];
+        for (const k of candidateKeys) {
+          if (data?.appointment?.[k]) {
+            return res.status(200).json({ joinUrl: data.appointment[k], via: 'stored' });
+          }
+        }
+        return res.status(404).json({ error: 'UUID do agendamento não encontrado na solicitação.' });
+      }
+      // reusa a lógica do join
+      req.params.uuid = apptUuid;
+      return await AgendamentoController.join(req, res);
+    } catch (error: any) {
+      return res.status(500).json({ error: error?.message || 'Erro ao obter link da consulta imediata.' });
     }
   }
 }

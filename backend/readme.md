@@ -377,8 +377,14 @@ Respostas:
 - 201 objeto do agendamento
 - 422 quando não houver especialidade associada e `specialtyUuid` não for enviado (retorna sugestões)
 
+### GET /agendamentos (protegido)
+Lista agendamentos do beneficiário. Usa `cpf` do token por padrão, ou aceite `?cpf=`/`?beneficiaryUuid=`/`?status=`/`?date=`.
+
 ### GET /agendamentos/:uuid (protegido)
 Lê detalhes de um agendamento no Rapidoc.
+
+### GET /agendamentos/:uuid/join (protegido)
+Retorna informações para entrar na consulta (ex.: `joinUrl`). Se a API não retornar link, responde com mensagem informativa.
 
 ### DELETE /agendamentos/:uuid (protegido)
 Cancela um agendamento no Rapidoc.
@@ -400,6 +406,9 @@ Retorna o status da solicitação de consulta imediata. Possíveis `status`: `pe
 
 ### DELETE /agendamentos/imediato/:id (protegido)
 Cancela a solicitação e, se já houver agendamento Rapidoc vinculado, tenta cancelá-lo também.
+
+### GET /agendamentos/imediato/:id/join (protegido)
+Quando a solicitação estiver `scheduled`, retorna o link/credenciais para entrar na consulta (busca pelo agendamento associado).
 
 ## Faturas
 ### GET /faturas (protegido)
