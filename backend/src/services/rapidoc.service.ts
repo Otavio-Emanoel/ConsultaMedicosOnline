@@ -139,31 +139,47 @@ export async function atualizarBeneficiarioRapidoc(uuid: string, data: {
   return resp.data;
 }
 
-export async function cadastrarBeneficiarioRapidoc({ nome, email, cpf, birthday, phone, zipCode, paymentType, serviceType, holder, general }: {
+export async function cadastrarBeneficiarioRapidoc({ nome, email, cpf, birthday, phone, zipCode, address, city, state, holder, plans }: {
   nome: string,
   email: string,
   cpf: string,
   birthday: string,
   phone?: string,
   zipCode?: string,
-  paymentType?: string,
-  serviceType?: string,
+  address?: string,
+  city?: string,
+  state?: string,
   holder?: string,
-  general?: string
+  plans?: Array<{ paymentType: string; plan: { uuid: string } }>
 }) {
   if (!RAPIDOC_BASE_URL || !RAPIDOC_TOKEN || !RAPIDOC_CLIENT_ID) throw new Error('Configuração Rapidoc ausente');
-  const body = [{
-    name: nome,
-    email,
-    cpf,
-    birthday,
-    phone,
-    zipCode,
-    paymentType,
-    serviceType,
-    holder,
-    general
-  }];
+    const rawBody: Record<string, any> = {
+      name: nome,
+      email,
+      cpf,
+      birthday,
+      phone,
+      zipCode,
+      address,
+      city,
+      state,
+    };
+    if (holder) rawBody.holder = holder;
+    if (Array.isArray(plans) && plans.length > 0) {
+      rawBody.plans = plans.map(p => ({
+        paymentType: String(p.paymentType || '').toUpperCase(),
+        plan: { uuid: p.plan.uuid }
+      }));
+    }
+    // Remove campos undefined ou null
+    const cleanBody: Record<string, any> = {};
+    Object.keys(rawBody).forEach((k) => {
+      if ((rawBody as any)[k] !== undefined && (rawBody as any)[k] !== null) {
+        cleanBody[k] = (rawBody as any)[k];
+      }
+    });
+    const body = [cleanBody];
+    console.log('[Rapidoc] Body enviado:', JSON.stringify(body, null, 2));
   const resp = await axios.post(`${RAPIDOC_BASE_URL}/tema/api/beneficiaries`, body, {
     headers: {
       Authorization: `Bearer ${RAPIDOC_TOKEN}`,

@@ -10,62 +10,108 @@ export class SubscriptionController {
             birthday,
             phone,
             zipCode,
-            paymentType,
-            serviceType,
-            holder,
-            general,
             endereco,
-            numero,
-            complemento,
-            bairro,
             cidade,
             estado,
-            country
+            plans
         } = req.body;
 
-        // Validação dos campos obrigatórios
-        if (
-            !assinaturaId ||
-            !nome ||
-            !email ||
-            !cpf ||
-            !birthday
-        ) {
-            return res.status(400).json({ error: 'Campos obrigatórios: assinaturaId, nome, email, cpf, birthday.' });
+        // Campos obrigatórios básicos
+        const missing: string[] = [];
+        if (!assinaturaId) missing.push('assinaturaId');
+        if (!nome) missing.push('nome');
+        if (!email) missing.push('email');
+        if (!cpf) missing.push('cpf');
+        if (!birthday) missing.push('birthday');
+        if (!endereco) missing.push('endereco');
+        if (!cidade) missing.push('cidade');
+        if (!estado) missing.push('estado');
+        if (!zipCode) missing.push('zipCode');
+        if (!plans || !Array.isArray(plans) || plans.length === 0) missing.push('plans');
+        if (missing.length) {
+            return res.status(400).json({ error: `Campos obrigatórios ausentes: ${missing.join(', ')}` });
         }
 
         try {
-            // Validar pagamento da assinatura
+            // 1. Verifica pagamento da assinatura no Asaas
             const { verificarPrimeiroPagamentoAssinatura } = await import('../services/asaas.service.js');
             const resultadoPagamento = await verificarPrimeiroPagamentoAssinatura(assinaturaId);
             if (!resultadoPagamento.pago) {
                 return res.status(403).json({ error: 'Primeiro pagamento da assinatura não confirmado.' });
             }
-            // Cadastrar beneficiário Rapidoc
-            const { cadastrarBeneficiarioRapidoc } = await import('../services/rapidoc.service.js');
-            // Normaliza campos conforme contrato Rapidoc
-            const allowedPayment = new Set(['S', 'A']);
-            const allowedService = new Set(['G', 'P', 'GP', 'GS', 'GSP']);
-            const normalizedPaymentType = allowedPayment.has(String(paymentType || '').toUpperCase())
-                ? String(paymentType).toUpperCase()
-                : 'S';
-            const normalizedServiceType = allowedService.has(String(serviceType || '').toUpperCase())
-                ? String(serviceType).toUpperCase()
-                : 'G';
-            // A API de cadastro aceita apenas as propriedades conhecidas; enviar somente as propriedades válidas.
-            const beneficiario = await cadastrarBeneficiarioRapidoc({
+
+            // 2. Validar planos contra Rapidoc (paymentType conforme GET /plans)
+            const { listarRapidocPlanos, cadastrarBeneficiarioRapidoc } = await import('../services/rapidoc.service.js');
+            let rapidocPlanos: any[] = [];
+            try {
+                rapidocPlanos = await listarRapidocPlanos();
+            } catch {
+                // Se falhar em listar planos, ainda tentamos prosseguir (pode ser problema temporário)
+                console.warn('[createRapidocBeneficiary] Falha ao listar planos Rapidoc, prosseguindo sem validação estrita.');
+            }
+            const planosMap = new Map<string, any>();
+            rapidocPlanos.forEach(p => planosMap.set(p.uuid, p));
+
+            const normalizedPlans: any[] = [];
+            for (const p of plans) {
+                const paymentTypeReq = String(p.paymentType || '').toUpperCase();
+                const planUuid = p?.plan?.uuid || p?.uuid; // permitir formatos flexíveis
+                if (!planUuid) {
+                    return res.status(400).json({ error: 'Cada item em plans deve possuir plan.uuid.' });
+                }
+                const planoOriginal = planosMap.get(planUuid);
+                if (planoOriginal) {
+                    const originalPaymentType = String(planoOriginal.paymentType || '').toUpperCase();
+                    if (originalPaymentType === 'L') {
+                        if (!['S', 'A'].includes(paymentTypeReq)) {
+                            return res.status(400).json({ error: `paymentType inválido para plano flexível (uuid=${planUuid}). Use S ou A.` });
+                        }
+                    } else if (originalPaymentType && originalPaymentType !== paymentTypeReq) {
+                        return res.status(400).json({ error: `paymentType (${paymentTypeReq}) não corresponde ao plano (${originalPaymentType}) uuid=${planUuid}.` });
+                    }
+                } else {
+                    // Se não encontrou plano para validar, ainda inclui (pode ser recém-criado ou falha na listagem)
+                    console.warn(`[createRapidocBeneficiary] Plano uuid=${planUuid} não encontrado na listagem Rapidoc.`);
+                }
+                if (!paymentTypeReq) {
+                    return res.status(400).json({ error: 'Cada plano deve possuir paymentType.' });
+                }
+                normalizedPlans.push({
+                    paymentType: paymentTypeReq,
+                    plan: { uuid: planUuid }
+                });
+            }
+
+            // 3. Normalizar telefone (apenas dígitos) conforme exemplos; não enviamos country aqui.
+            const digitsPhone = String(phone || '').replace(/\D/g, '');
+            // 11 dígitos esperado (DDD + número). Não adicionamos DDI, exemplo documentação.
+            // para satisfazer tipos estritos, garantimos que phone seja string (padrão vazio se omitido)
+            const normalizedPhone = digitsPhone.length >= 10 ? digitsPhone : '';
+            
+            // 4. Chamada Rapidoc
+            // Regra: Rapidoc não permite holder == cpf do beneficiário.
+            const holderFromBody: string | undefined = (req.body?.holder ? String(req.body.holder) : undefined);
+            const docCpf = String(cpf).replace(/\D/g, '');
+            const docHolder = holderFromBody ? holderFromBody.replace(/\D/g, '') : undefined;
+            const shouldSendHolder = !!(docHolder && docHolder.length > 0 && docHolder !== docCpf);
+
+            const payload: any = {
                 nome,
                 email,
                 cpf,
                 birthday,
-                phone,
+                phone: normalizedPhone,
                 zipCode,
-                paymentType: normalizedPaymentType,
-                serviceType: normalizedServiceType,
-                holder,
-                general
-            });
-            // Alguns cenários do Rapidoc retornam 200 com success=false (ex: CPF já utilizado)
+                address: endereco,
+                city: cidade,
+                state: estado,
+                plans: normalizedPlans
+            };
+            if (shouldSendHolder) payload.holder = docHolder;
+
+            const beneficiario = await cadastrarBeneficiarioRapidoc(payload);
+
+            // 5. Interpretar resposta (pode ser array ou objeto)
             const result = beneficiario as any;
             const success = (result && result.success === true) || (Array.isArray(result) && result[0]?.success === true);
             const rapidocMsg = (result && result.message) || (Array.isArray(result) && result[0]?.message) || undefined;
@@ -78,7 +124,6 @@ export class SubscriptionController {
             }
             return res.status(201).json({ message: 'Beneficiário Rapidoc criado com sucesso.', beneficiario });
         } catch (error: any) {
-            // Log detalhado para depuração
             console.error('Erro ao cadastrar beneficiário Rapidoc:', {
                 message: error?.message,
                 responseData: error?.response?.data,
@@ -237,7 +282,7 @@ export class SubscriptionController {
                 });
                 const b = r.data && r.data.beneficiary;
                 rapidocAtivo = !!b && b.isActive === true && !!b.uuid;
-            } catch {/* considera false */}
+            } catch {/* considera false */ }
 
             // Firestore (usuario existe)
             const usuarioDoc = await admin.firestore().collection('usuarios').doc(cpf).get();
@@ -351,7 +396,7 @@ export class SubscriptionController {
                     serviceType: normalizedServiceType,
                     holder: cpf,
                     general: overrides?.general,
-                });
+                } as any);
                 const success = (respRapidoc && respRapidoc.success === true) || (Array.isArray(respRapidoc) && respRapidoc[0]?.success === true);
                 console.log('[complete-onboarding] resposta Rapidoc', respRapidoc);
                 if (!success) {
