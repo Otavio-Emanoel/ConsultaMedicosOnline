@@ -85,7 +85,37 @@ export class DashboardController {
         } catch {}
       }
 
-      return res.status(200).json({ usuario, assinaturas, beneficiarios, rapidoc, consultas: consultasMapeadas, faturas });
+      // Status da assinatura (ativa/inativa)
+      let statusAssinatura = 'inativa';
+      let assinaturaAtiva = null;
+      if (assinaturas && assinaturas.length > 0) {
+        assinaturaAtiva = assinaturas.find(a => (a.status === 'ACTIVE' || a.status === 'ATIVA' || a.status === 'ativo' || a.status === 'active')) || assinaturas[0];
+        statusAssinatura = assinaturaAtiva?.status || 'inativa';
+      }
+
+      // Data da próxima cobrança (menor dueDate de fatura pendente)
+      let proximaCobranca = null;
+      if (faturas && faturas.length > 0) {
+        const pendentes = faturas.filter(f => f.status === 'PENDING');
+        if (pendentes.length > 0) {
+          proximaCobranca = pendentes.sort((a, b) => new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime())[0].dueDate;
+        }
+      }
+
+      // Número de dependentes
+      const numeroDependentes = beneficiarios?.length || 0;
+
+      return res.status(200).json({
+        usuario,
+        assinaturas,
+        beneficiarios,
+        rapidoc,
+        consultas: consultasMapeadas,
+        faturas,
+        statusAssinatura,
+        proximaCobranca,
+        numeroDependentes
+      });
     } catch (error: any) {
       return res.status(500).json({ error: error.message || 'Erro ao buscar dashboard.' });
     }
