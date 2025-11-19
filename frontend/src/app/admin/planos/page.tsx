@@ -162,30 +162,43 @@ export default function AdminPlanosPage() {
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center space-x-3 mb-2">
                         <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
-                          {plano.nome}
+                          {plano.tipo || plano.nome || plano.internalPlanKey || plano.id}
                         </h3>
-                        {plano.status === 'ativo' ? (
-                          <Badge variant="success">Ativo</Badge>
-                        ) : (
-                          <Badge variant="danger">Inativo</Badge>
+                        {plano.status && (
+                          <Badge variant={plano.status === 'ativo' ? 'success' : 'danger'}>
+                            {plano.status.charAt(0).toUpperCase() + plano.status.slice(1)}
+                          </Badge>
                         )}
-                        <Badge variant="info">
-                          {plano.tipo?.charAt(0).toUpperCase() + plano.tipo?.slice(1)}
-                        </Badge>
+                        {plano.periodicidade && (
+                          <Badge variant="info">{plano.periodicidade}</Badge>
+                        )}
+                        {plano.internalPlanKey && (
+                          <Badge variant="info">{plano.internalPlanKey}</Badge>
+                        )}
                       </div>
                       <p className="text-sm text-gray-600 dark:text-gray-400 mb-3">
                         {plano.descricao}
                       </p>
-                      <div className="flex flex-wrap gap-2 mb-3">
-                        {(plano.beneficios || []).map((beneficio: string, idx: number) => (
-                          <span
-                            key={idx}
-                            className="px-3 py-1 bg-gray-100 dark:bg-gray-800 rounded-full text-xs text-gray-700 dark:text-gray-300"
-                          >
-                            {beneficio}
-                          </span>
-                        ))}
-                      </div>
+                      {Array.isArray(plano.especialidades) && plano.especialidades.length > 0 && (
+                        <div className="flex flex-wrap gap-2 mb-3">
+                          {plano.especialidades.map((esp: string, idx: number) => (
+                            <span
+                              key={idx}
+                              className="px-3 py-1 bg-gray-100 dark:bg-gray-800 rounded-full text-xs text-gray-700 dark:text-gray-300"
+                            >
+                              {esp}
+                            </span>
+                          ))}
+                        </div>
+                      )}
+                      {plano.beneficiaryConfig && (
+                        <div className="mb-3 text-xs text-gray-500 dark:text-gray-400">
+                          <span className="font-medium">Beneficiários:</span> até {plano.beneficiaryConfig.maxBeneficiaries}
+                          {Array.isArray(plano.beneficiaryConfig.bundles) && plano.beneficiaryConfig.bundles.length > 0 && (
+                            <span> | Bundles: {plano.beneficiaryConfig.bundles.map((b: any) => `${b.internalPlanKey} (${b.count})`).join(', ')}</span>
+                          )}
+                        </div>
+                      )}
                       <div className="flex items-center space-x-6 text-sm">
                         <div className="flex items-center text-gray-600 dark:text-gray-400">
                           <Users className="w-4 h-4 mr-1" />
@@ -193,7 +206,7 @@ export default function AdminPlanosPage() {
                         </div>
                         <div className="flex items-center text-gray-600 dark:text-gray-400">
                           <DollarSign className="w-4 h-4 mr-1" />
-                          <span>Receita: R$ {((plano.valor || 0) * (plano.assinantes || 0)).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span>
+                          <span>Receita: R$ {((plano.preco || plano.valor || 0) * (plano.assinantes || 0)).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span>
                         </div>
                       </div>
                     </div>
