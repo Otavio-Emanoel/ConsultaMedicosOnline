@@ -19,6 +19,15 @@ import {
 	CheckCircle2,
 } from 'lucide-react';
 
+const paymentTypeLabel = (code?: string) => {
+  switch ((code || '').toUpperCase()) {
+    case 'S': return 'Recorrente';
+    case 'A': return 'Avulso';
+    case 'L': return 'Livre';
+    default: return code || '-';
+  }
+};
+
 type RapidocPlan = {
 	uuid?: string;
 	name?: string;
@@ -335,7 +344,7 @@ export default function AdminNovoPlanoPage() {
 												const payment = plan.paymentType || plan.plan?.paymentType;
 												return (
 													<option key={uuid} value={uuid || ''}>
-														{label} {payment ? `• Pagamento: ${payment}` : ''}
+														{label} {payment ? `• Pagamento: ${paymentTypeLabel(payment)}` : ''}
 													</option>
 												);
 											})}
@@ -400,7 +409,7 @@ export default function AdminNovoPlanoPage() {
 											<option value="">Selecione</option>
 											{paymentOptions.map((option) => (
 												<option key={option} value={option}>
-													{option}
+													{paymentTypeLabel(option)}
 												</option>
 											))}
 										</select>
@@ -566,7 +575,7 @@ export default function AdminNovoPlanoPage() {
 
 									<div className="flex flex-wrap gap-2">
 										{selectedPlan.paymentType && (
-											<Badge variant="info">Pagamento: {selectedPlan.paymentType}</Badge>
+											<Badge variant="info">Pagamento: {paymentTypeLabel(selectedPlan.paymentType)}</Badge>
 										)}
 										{selectedPlan.serviceType && (
 											<Badge variant="info">Serviço: {selectedPlan.serviceType}</Badge>
