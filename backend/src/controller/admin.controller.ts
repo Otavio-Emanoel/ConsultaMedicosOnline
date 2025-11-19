@@ -193,6 +193,7 @@ export class AdminController {
           .slice(0, 5);
         novosAssinantes = assinantesRecentes.map(u => {
           let nome = u.nome || u.email || 'Desconhecido';
+          let email = u.email || '';
           let plano = u.idAssinaturaAtual;
           let status = 'success';
           // Data amigável
@@ -201,10 +202,10 @@ export class AdminController {
             const criado = new Date(u.criadoEm);
             const diff = Math.floor((agora.getTime() - criado.getTime()) / (1000 * 60 * 60 * 24));
             if (diff === 0) data = 'Hoje';
-            else if (diff === -1) data = 'Ontem';
+            else if (diff === 1) data = 'Ontem';
             else data = `Há ${diff} dias`;
           }
-          return { nome, plano, data, status };
+          return { nome, email, plano, data, status };
         });
       }
 
