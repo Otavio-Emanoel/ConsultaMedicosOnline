@@ -22,7 +22,51 @@ import {
 } from 'lucide-react';
 import Link from 'next/link';
 
+import { useEffect, useState } from 'react';
+import { getAuth } from 'firebase/auth';
+import { app } from '@/lib/firebase';
+
+type DashboardData = {
+  totais: { usuarios: number };
+  faturamento: { mesAtual: number };
+};
+
 export default function AdminDashboardPage() {
+  const [dashboard, setDashboard] = useState<DashboardData | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [erro, setErro] = useState("");
+
+  useEffect(() => {
+    const fetchDashboard = async () => {
+      setLoading(true);
+      setErro("");
+      try {
+        const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:3000/api";
+        const auth = getAuth(app);
+        const user = auth.currentUser;
+        if (!user) {
+          setErro("Usuário não autenticado.");
+          setLoading(false);
+          return;
+        }
+        const token = await user.getIdToken();
+        const res = await fetch(`${API_BASE}/admin/dashboard`, {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        });
+        if (!res.ok) throw new Error('Erro ao buscar dados do dashboard');
+        const data = await res.json();
+        setDashboard(data);
+      } catch (e) {
+        setErro("Erro ao carregar dados do dashboard.");
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchDashboard();
+  }, []);
+
   return (
     <DashboardLayout title="Dashboard Administrativo">
       {/* Cards de Estatísticas Principais */}
@@ -35,10 +79,11 @@ export default function AdminDashboardPage() {
                   Total de Assinantes
                 </p>
                 <p className="text-2xl font-bold text-gray-900 dark:text-white">
-                  1,248
+                  {loading ? '...' : erro ? '-' : dashboard?.totais?.usuarios?.toLocaleString('pt-BR') ?? '-'}
                 </p>
                 <p className="text-xs text-success mt-1 flex items-center">
                   <TrendingUp className="w-3 h-3 mr-1" />
+                  {/* Placeholder, ajuste depois se quiser variação real */}
                   +12% este mês
                 </p>
               </div>
@@ -57,10 +102,11 @@ export default function AdminDashboardPage() {
                   Receita Mensal
                 </p>
                 <p className="text-2xl font-bold text-gray-900 dark:text-white">
-                  R$ 62.400
+                  {loading ? '...' : erro ? '-' : `R$ ${dashboard?.faturamento?.mesAtual?.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`}
                 </p>
                 <p className="text-xs text-success mt-1 flex items-center">
                   <TrendingUp className="w-3 h-3 mr-1" />
+                  {/* Placeholder, ajuste depois se quiser variação real */}
                   +8% este mês
                 </p>
               </div>
