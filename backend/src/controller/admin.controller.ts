@@ -178,24 +178,32 @@ export class AdminController {
           };
         });
 
-        // Assinantes aleatórios (máx 5)
+        // Novos assinantes dos últimos 7 dias (máx 5)
         const usuariosSnap = await db.collection('usuarios').get();
         const usuariosArr: any[] = [];
         (usuariosSnap as any).forEach((doc: any) => {
           const data = doc.data();
           usuariosArr.push({ id: doc.id, ...data });
         });
-        const assinantesValidos = usuariosArr.filter(u => u.idAssinaturaAtual);
-        // Embaralha e pega até 5
-        for (let i = assinantesValidos.length - 1; i > 0; i--) {
-          const j = Math.floor(Math.random() * (i + 1));
-          [assinantesValidos[i], assinantesValidos[j]] = [assinantesValidos[j], assinantesValidos[i]];
-        }
-        novosAssinantes = assinantesValidos.slice(0, 5).map(u => {
+        const agora = new Date();
+        const seteDiasAtras = new Date(agora.getTime() - 7 * 24 * 60 * 60 * 1000);
+        const assinantesRecentes = usuariosArr
+          .filter(u => u.idAssinaturaAtual && u.criadoEm && new Date(u.criadoEm) >= seteDiasAtras)
+          .sort((a, b) => new Date(b.criadoEm).getTime() - new Date(a.criadoEm).getTime())
+          .slice(0, 5);
+        novosAssinantes = assinantesRecentes.map(u => {
           let nome = u.nome || u.email || 'Desconhecido';
           let plano = u.idAssinaturaAtual;
           let status = 'success';
+          // Data amigável
           let data = '-';
+          if (u.criadoEm) {
+            const criado = new Date(u.criadoEm);
+            const diff = Math.floor((agora.getTime() - criado.getTime()) / (1000 * 60 * 60 * 24));
+            if (diff === 0) data = 'Hoje';
+            else if (diff === 1) data = 'Ontem';
+            else data = `Há ${diff} dias`;
+          }
           return { nome, plano, data, status };
         });
       }
