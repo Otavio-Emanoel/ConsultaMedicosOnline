@@ -62,6 +62,8 @@ export default function AguardandoPagamentoPage() {
   const [finalizando, setFinalizando] = useState(false);
   const [mensagem, setMensagem] = useState("");
   const [copiado, setCopiado] = useState(false);
+  const [rapidocBeneficiaryUuid, setRapidocBeneficiaryUuid] = useState<string | undefined>(undefined);
+  const [finalizado, setFinalizado] = useState(false);
 
   useEffect(() => {
     try {
@@ -149,7 +151,7 @@ export default function AguardandoPagamentoPage() {
 
     await sleep(4000);
 
-    // 1) Rapidoc
+    // 1) Rapidoc (criar beneficiário)
     let rapidocOk = false;
     let rapidocFailMsg = "";
     try {
@@ -157,20 +159,25 @@ export default function AguardandoPagamentoPage() {
       const draftObj = draftRaw ? JSON.parse(draftRaw) : null;
       const dados = (draftObj?.dados || {}) as Partial<DraftDados>;
       const assinIdToUse: string | undefined = draftObj?.assinaturaId || (typeof assinaturaId === "string" ? assinaturaId : undefined);
-      const bodyRapidoc = {
+      const phoneNormalized = (dados.telefone || "").replace(/\D/g, "");
+      if (phoneNormalized.length !== 11) {
+        setErro("Telefone inválido. Informe DDD + celular com 11 dígitos.");
+        setFinalizando(false);
+        return;
+      }
+      const bodyRapidoc: Record<string, any> = {
         assinaturaId: assinIdToUse,
-        name: dados.nome,
         nome: dados.nome,
         email: dados.email,
-        cpf: dados.cpf,
+        cpf: (dados.cpf || "").replace(/\D/g, ""),
         birthday: dados.birthday || dados.dataNascimento,
-        phone: dados.telefone,
-        zipCode: dados.zipCode,
-        address: dados.endereco,
-        paymentType: normalizePaymentType((dados as unknown as Record<string, string>)?.paymentType),
-        serviceType: normalizeServiceType(dados.serviceType),
-        holder: dados.cpf,
-        general: dados.general,
+        phone: phoneNormalized,
+        zipCode: (dados.zipCode || "").replace(/\D/g, ""),
+        endereco: dados.endereco,
+        cidade: (dados as any)?.cidade,
+        estado: (dados as any)?.estado,
+        holder: (dados.cpf || "").replace(/\D/g, ""),
+        planoId: draftObj?.plano?.id,
       };
       const camposOk = bodyRapidoc.assinaturaId && bodyRapidoc.nome && bodyRapidoc.email && bodyRapidoc.cpf && bodyRapidoc.birthday;
       if (!camposOk) {
@@ -187,9 +194,26 @@ export default function AguardandoPagamentoPage() {
           if (resp.ok) {
             try {
               const dataRapidoc = await resp.clone().json();
-              const successFlag = dataRapidoc?.beneficiario?.success === true || dataRapidoc?.success === true;
+              const beneficiarioRaw = dataRapidoc?.beneficiario;
+              const successFlag = (beneficiarioRaw && beneficiarioRaw.success === true) ||
+                (Array.isArray(beneficiarioRaw) && beneficiarioRaw[0]?.success === true) ||
+                dataRapidoc?.success === true;
+              // Extrair UUID do beneficiário (flexível para vários formatos)
+              let uuidExtraido: string | undefined;
+              if (Array.isArray(beneficiarioRaw)) {
+                uuidExtraido = beneficiarioRaw[0]?.uuid || beneficiarioRaw[0]?.beneficiary?.uuid;
+              } else if (beneficiarioRaw && typeof beneficiarioRaw === 'object') {
+                uuidExtraido = beneficiarioRaw.uuid || beneficiarioRaw?.beneficiary?.uuid;
+              }
+              if (!uuidExtraido && typeof dataRapidoc?.beneficiario?.uuid === 'string') {
+                uuidExtraido = dataRapidoc.beneficiario.uuid;
+              }
+              if (!uuidExtraido && typeof dataRapidoc?.uuid === 'string') {
+                uuidExtraido = dataRapidoc.uuid;
+              }
               if (successFlag) {
                 rapidocOk = true;
+                setRapidocBeneficiaryUuid(uuidExtraido);
               } else if (dataRapidoc?.error) {
                 rapidocFailMsg = typeof dataRapidoc.error === "string" ? dataRapidoc.error : JSON.stringify(dataRapidoc.error);
               } else if (dataRapidoc?.beneficiario?.message) {
@@ -238,6 +262,8 @@ export default function AguardandoPagamentoPage() {
         email: dados.email,
         telefone: dados.telefone,
         dataNascimento: dados.birthday || dados.dataNascimento,
+        idAssinatura: (Array.isArray(assinaturaId) ? assinaturaId[0] : assinaturaId) || draftObj?.assinaturaId,
+        rapidocBeneficiaryUuid: rapidocBeneficiaryUuid,
       };
       const planoId = draftObj?.plano?.id;
       if (body.cpf && body.nome && body.email && body.telefone && body.dataNascimento) {
@@ -264,8 +290,6 @@ export default function AguardandoPagamentoPage() {
                 idAssinatura: idAss,
                 cpfUsuario: body.cpf,
                 planoId: planoId,
-                status: "ATIVA",
-                dataInicio: new Date().toISOString().substring(0, 10),
               };
               const maxAssTentativas = 3;
               for (let t = 1; t <= maxAssTentativas; t++) {
@@ -325,18 +349,10 @@ export default function AguardandoPagamentoPage() {
       return;
     }
 
-    try {
-      localStorage.removeItem("assinaturaDraft");
-    } catch {}
-    const cpfField = draft?.dados && typeof (draft as any).dados["cpf"] === "string" ? String((draft as any).dados["cpf"]) : undefined;
-    const cpf = cpfField;
-    setMensagem("");
+    try { localStorage.removeItem("assinaturaDraft"); } catch {}
+    setFinalizado(true);
+    setMensagem("Fluxo concluído. Gere seu acesso inicial.");
     setFinalizando(false);
-    if (cpf) {
-      router.push(`/verificar-cpf?cpf=${encodeURIComponent(cpf)}`);
-    } else {
-      router.push("/verificar-cpf");
-    }
   };
 
   return (
@@ -433,9 +449,18 @@ export default function AguardandoPagamentoPage() {
                     {loading ? "Verificando..." : "Aguardando pagamento..."}
                   </button>
                 )}
-                {status?.pago && (
+                {status?.pago && !finalizado && (
                   <button onClick={finalizar} disabled={finalizando} className="w-full bg-gradient-to-r from-primary to-green-600 hover:from-green-600 hover:to-primary text-white rounded-lg py-3 px-6 font-semibold shadow-md hover:shadow-lg transition-all disabled:opacity-60">
                     {finalizando ? "Processando..." : "Continuar"}
+                  </button>
+                )}
+                {finalizado && (
+                  <button onClick={() => {
+                    const cpfField = draft?.dados && typeof (draft as any).dados["cpf"] === "string" ? String((draft as any).dados["cpf"]) : undefined;
+                    if (cpfField) router.push(`/primeiro-acesso?cpf=${encodeURIComponent(cpfField)}`);
+                    else router.push("/primeiro-acesso");
+                  }} className="w-full bg-gradient-to-r from-green-600 to-primary hover:from-primary hover:to-green-600 text-white rounded-lg py-3 px-6 font-semibold shadow-md hover:shadow-lg transition-all">
+                    Primeiro Acesso
                   </button>
                 )}
                 {(mensagem || erro) && (

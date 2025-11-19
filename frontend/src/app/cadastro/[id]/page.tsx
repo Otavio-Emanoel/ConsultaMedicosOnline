@@ -82,6 +82,11 @@ export default function CadastroPage() {
         setMensagem("Preencha todos os campos pessoais obrigatórios.");
         return;
       }
+      const phoneDigits = form.telefone.replace(/\D/g, "");
+      if (phoneDigits.length !== 11) {
+        setMensagem("Telefone deve conter 11 dígitos (DDD + celular). Ex: 11998765432");
+        return;
+      }
     }
     if (step === 1) {
       if (!form.zipCode || !form.endereco || !form.numero || !form.bairro || !form.cidade || !form.estado) {
