@@ -7,18 +7,26 @@ export class PlanosDashboardController {
     try {
       const db = getFirestore(firebaseApp);
       const planosSnap = await db.collection('planos').get();
+      const assinaturasSnap = await db.collection('assinaturas').get();
+      // Agrupa assinaturas por id do plano
+      const assinaturasPorPlano: Record<string, number> = {};
+      assinaturasSnap.forEach((doc: any) => {
+        const data = doc.data();
+        const planoId = data.planoId;
+        if (planoId) {
+          assinaturasPorPlano[planoId] = (assinaturasPorPlano[planoId] || 0) + 1;
+        }
+      });
+
       const planos = planosSnap.docs.map(doc => {
         const data = doc.data();
-        return {
+        // Copia todos os campos do plano
+        const plano = {
           id: doc.id,
-          nome: data.nome || '',
-          descricao: data.descricao || '',
-          valor: data.valor || 0,
-          assinantes: data.assinantes || 0,
-          status: data.status || 'ativo',
-          beneficios: data.beneficios || [],
-          tipo: data.tipo || '',
+          ...data,
+          assinantes: assinaturasPorPlano[doc.id] || 0
         };
+        return plano;
       });
       return res.status(200).json({ planos });
     } catch (error: any) {
