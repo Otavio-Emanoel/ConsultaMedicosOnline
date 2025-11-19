@@ -2,6 +2,26 @@ import type { Request, Response } from 'express';
 import { obterDetalhesPlanoRapidoc, atualizarPlanoRapidoc } from '../services/rapidoc.service.js';
 
 export class PlanosController {
+            // DELETE /api/planos/:id - Exclui um plano local existente
+            static async excluirPlano(req: Request, res: Response) {
+                try {
+                    const { id } = req.params;
+                    if (!id) return res.status(400).json({ error: 'id do plano é obrigatório.' });
+
+                    const { getFirestore } = await import('firebase-admin/firestore');
+                    const { firebaseApp } = await import('../config/firebase.js');
+                    const db = getFirestore(firebaseApp);
+                    const ref = db.collection('planos').doc(id);
+                    const doc = await ref.get();
+                    if (!doc.exists) {
+                        return res.status(404).json({ error: 'Plano não encontrado.' });
+                    }
+                    await ref.delete();
+                    return res.status(200).json({ success: true });
+                } catch (error: any) {
+                    return res.status(500).json({ error: error.message || 'Erro ao excluir plano.' });
+                }
+            }
         // PUT /api/planos/:id - Edita um plano local existente
         static async editarPlano(req: Request, res: Response) {
             try {

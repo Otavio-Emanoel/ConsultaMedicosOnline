@@ -20,6 +20,9 @@ router.get('/planos/:id', PlanosController.obterPlano);
 // PUT /api/planos/:id - Edita um plano local existente
 router.put('/planos/:id', autenticarAdministrador, PlanosController.editarPlano);
 
+// DELETE /api/planos/:id - Exclui um plano local existente
+router.delete('/planos/:id', autenticarAdministrador, PlanosController.excluirPlano);
+
 // PUT /api/planos/rapidoc/:uuid/especialidades - atualiza specialties do plano Rapidoc (admin)
 router.put('/planos/rapidoc/:uuid/especialidades', autenticarAdministrador, PlanosController.atualizarEspecialidadesPlanoRapidoc);
 
