@@ -14,17 +14,22 @@ export class DependenteController {
 
       // 1. Cria no Rapidoc
       console.log('[DependenteController.adicionar] Chamando Rapidoc cadastrarBeneficiario');
-      const rapidocResp = await cadastrarBeneficiarioRapidoc({
+      const rapidocPayload: any = {
         nome,
         cpf,
         birthday: birthDate,
         email,
         phone,
         zipCode,
-        paymentType,
-        serviceType,
         holder
-      });
+      };
+      // Se houver serviceType/paymentType, envia como plans conforme tipo esperado pela API
+      if (serviceType || paymentType) {
+        const planEntry: any = { plan: { uuid: serviceType || '' } };
+        if (paymentType) planEntry.paymentType = paymentType;
+        rapidocPayload.plans = [planEntry];
+      }
+      const rapidocResp = await cadastrarBeneficiarioRapidoc(rapidocPayload);
       console.log('[DependenteController.adicionar] Resposta Rapidoc', { success: rapidocResp?.success, uuid: rapidocResp?.uuid });
       if (!rapidocResp || rapidocResp.success === false) {
         return res.status(400).json({ error: rapidocResp?.message || 'Erro ao criar dependente no Rapidoc.' });
