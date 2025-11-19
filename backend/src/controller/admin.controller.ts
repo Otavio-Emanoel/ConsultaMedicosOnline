@@ -178,51 +178,26 @@ export class AdminController {
           };
         });
 
-        // Novos assinantes dos últimos 7 dias (baseado em usuários com idAssinaturaAtual)
-        const agora = new Date();
-        const seteDiasAtras = new Date(agora.getTime() - 7 * 24 * 60 * 60 * 1000);
+        // Assinantes aleatórios (máx 5)
         const usuariosSnap = await db.collection('usuarios').get();
         const usuariosArr: any[] = [];
         (usuariosSnap as any).forEach((doc: any) => {
           const data = doc.data();
           usuariosArr.push({ id: doc.id, ...data });
         });
-        novosAssinantes = usuariosArr
-          .filter(u => {
-            if (!u.idAssinaturaAtual) return false;
-            // Preferência: criadoEm, depois primeiroAcesso, depois nada
-            let criado = u.criadoEm ? new Date(u.criadoEm) : (u.primeiroAcesso && typeof u.primeiroAcesso === 'string' ? new Date(u.primeiroAcesso) : null);
-            if (!criado) return false;
-            return criado >= seteDiasAtras;
-          })
-          .sort((a, b) => {
-            // Mais recente primeiro
-            let dataA = a.criadoEm ? new Date(a.criadoEm) : (a.primeiroAcesso && typeof a.primeiroAcesso === 'string' ? new Date(a.primeiroAcesso) : new Date(0));
-            let dataB = b.criadoEm ? new Date(b.criadoEm) : (b.primeiroAcesso && typeof b.primeiroAcesso === 'string' ? new Date(b.primeiroAcesso) : new Date(0));
-            return dataB.getTime() - dataA.getTime();
-          })
-          .map(u => {
-            let nome = u.nome || u.email || 'Desconhecido';
-            // Busca plano pelo idAssinaturaAtual
-            let plano = '-';
-            if (u.idAssinaturaAtual) {
-              // Busca assinatura para pegar planoId
-              // (opcional: pode otimizar se quiser)
-              // Aqui, para performance, só mostra o idAssinaturaAtual
-              plano = u.idAssinaturaAtual;
-            }
-            let status = 'success';
-            // Data amigável
-            let data = '-';
-            let criado = u.criadoEm ? new Date(u.criadoEm) : (u.primeiroAcesso && typeof u.primeiroAcesso === 'string' ? new Date(u.primeiroAcesso) : null);
-            if (criado) {
-              const diff = Math.floor((agora.getTime() - criado.getTime()) / (1000 * 60 * 60 * 24));
-              if (diff === 0) data = 'Hoje';
-              else if (diff === 1) data = 'Ontem';
-              else data = `Há ${diff} dias`;
-            }
-            return { nome, plano, data, status };
-          });
+        const assinantesValidos = usuariosArr.filter(u => u.idAssinaturaAtual);
+        // Embaralha e pega até 5
+        for (let i = assinantesValidos.length - 1; i > 0; i--) {
+          const j = Math.floor(Math.random() * (i + 1));
+          [assinantesValidos[i], assinantesValidos[j]] = [assinantesValidos[j], assinantesValidos[i]];
+        }
+        novosAssinantes = assinantesValidos.slice(0, 5).map(u => {
+          let nome = u.nome || u.email || 'Desconhecido';
+          let plano = u.idAssinaturaAtual;
+          let status = 'success';
+          let data = '-';
+          return { nome, plano, data, status };
+        });
       }
 
       // Faturamento (Asaas) - melhor esforço, primeira página
