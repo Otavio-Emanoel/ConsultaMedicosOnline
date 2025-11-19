@@ -163,7 +163,25 @@ export default function HomePage() {
                   <Input label="Email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} icon={<Mail className="w-5 h-5" />} placeholder="seu@email.com" required />
                   <Input label="Senha" type="password" value={password} onChange={(e) => setPassword(e.target.value)} icon={<Lock className="w-5 h-5" />} placeholder="" required />
                   <Button type="submit" variant="primary" size="lg" className="w-full bg-gradient-to-r from-primary to-green-600 hover:from-green-600 hover:to-primary" disabled={!selectedRole}>{isNewUser ? 'Criar conta' : 'Entrar'}<ArrowRight className="w-5 h-5 ml-2" /></Button>
-                  <div className="text-center"><button type="button" onClick={() => setIsNewUser(!isNewUser)} className="text-sm text-primary hover:underline">{isNewUser ? 'Já tem conta? Fazer login' : 'Primeiro acesso? Criar conta'}</button></div>
+                  <div className="text-center">
+                    {isNewUser ? (
+                      <button
+                        type="button"
+                        onClick={() => setIsNewUser(false)}
+                        className="text-sm text-primary hover:underline"
+                      >
+                        Já tem conta? Fazer login
+                      </button>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => router.push('/planos')}
+                        className="text-sm text-primary hover:underline"
+                      >
+                        Primeiro acesso? Criar conta
+                      </button>
+                    )}
+                  </div>
                 </form>
                 {erro && <div className="mt-4 p-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg"><p className="text-xs text-red-800 dark:text-red-200 text-center">{erro}</p></div>}
               </CardBody>
