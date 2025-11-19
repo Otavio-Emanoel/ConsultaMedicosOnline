@@ -318,7 +318,7 @@ export default function AdminDashboardPage() {
               ) : erro ? (
                 <div className="text-center text-danger">Erro ao carregar assinantes</div>
               ) : dashboard?.novosAssinantes && dashboard.novosAssinantes.length > 0 ? (
-                dashboard.novosAssinantes.map((assinante, idx) => (
+                dashboard.novosAssinantes.slice(0, 4).map((assinante, idx) => (
                   <div
                     key={idx}
                     className="flex items-center justify-between p-4 bg-gray-50 dark:bg-gray-800/50 rounded-xl"

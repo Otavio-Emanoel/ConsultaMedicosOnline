@@ -156,13 +156,10 @@ export class AdminController {
         if (count > 0) mediaValorPlanos = soma / count;
 
         // Buscar assinaturas agrupadas por plano
-        // Supondo que cada assinatura tem um campo planoId (referência ao id do plano)
         const assinaturasSnap = await db.collection('assinaturas').get();
         const assinaturasPorPlano: Record<string, number> = {};
-        const assinaturasArr: any[] = [];
         (assinaturasSnap as any).forEach((doc: any) => {
           const data = doc.data();
-          assinaturasArr.push({ id: doc.id, ...data });
           const planoId = data.planoId;
           if (planoId) {
             assinaturasPorPlano[planoId] = (assinaturasPorPlano[planoId] || 0) + 1;
@@ -181,24 +178,44 @@ export class AdminController {
           };
         });
 
-        // Novos assinantes dos últimos 7 dias
+        // Novos assinantes dos últimos 7 dias (baseado em usuários com idAssinaturaAtual)
         const agora = new Date();
         const seteDiasAtras = new Date(agora.getTime() - 7 * 24 * 60 * 60 * 1000);
-        novosAssinantes = assinaturasArr
-          .filter(a => {
-            const criadoEm = a.criadoEm ? new Date(a.criadoEm) : null;
-            return criadoEm && criadoEm >= seteDiasAtras;
+        const usuariosSnap = await db.collection('usuarios').get();
+        const usuariosArr: any[] = [];
+        (usuariosSnap as any).forEach((doc: any) => {
+          const data = doc.data();
+          usuariosArr.push({ id: doc.id, ...data });
+        });
+        novosAssinantes = usuariosArr
+          .filter(u => {
+            if (!u.idAssinaturaAtual) return false;
+            // Preferência: criadoEm, depois primeiroAcesso, depois nada
+            let criado = u.criadoEm ? new Date(u.criadoEm) : (u.primeiroAcesso && typeof u.primeiroAcesso === 'string' ? new Date(u.primeiroAcesso) : null);
+            if (!criado) return false;
+            return criado >= seteDiasAtras;
           })
-          .map(a => {
-            // Busca nome do usuário (ou beneficiário) relacionado à assinatura
-            // e nome do plano
-            let nome = a.nome || a.nomeTitular || a.email || 'Desconhecido';
-            let plano = planosArr.find(p => p.id === a.planoId)?.tipo || 'Plano';
-            let status = a.status ? String(a.status).toLowerCase() : 'success';
+          .sort((a, b) => {
+            // Mais recente primeiro
+            let dataA = a.criadoEm ? new Date(a.criadoEm) : (a.primeiroAcesso && typeof a.primeiroAcesso === 'string' ? new Date(a.primeiroAcesso) : new Date(0));
+            let dataB = b.criadoEm ? new Date(b.criadoEm) : (b.primeiroAcesso && typeof b.primeiroAcesso === 'string' ? new Date(b.primeiroAcesso) : new Date(0));
+            return dataB.getTime() - dataA.getTime();
+          })
+          .map(u => {
+            let nome = u.nome || u.email || 'Desconhecido';
+            // Busca plano pelo idAssinaturaAtual
+            let plano = '-';
+            if (u.idAssinaturaAtual) {
+              // Busca assinatura para pegar planoId
+              // (opcional: pode otimizar se quiser)
+              // Aqui, para performance, só mostra o idAssinaturaAtual
+              plano = u.idAssinaturaAtual;
+            }
+            let status = 'success';
             // Data amigável
             let data = '-';
-            if (a.criadoEm) {
-              const criado = new Date(a.criadoEm);
+            let criado = u.criadoEm ? new Date(u.criadoEm) : (u.primeiroAcesso && typeof u.primeiroAcesso === 'string' ? new Date(u.primeiroAcesso) : null);
+            if (criado) {
               const diff = Math.floor((agora.getTime() - criado.getTime()) / (1000 * 60 * 60 * 24));
               if (diff === 0) data = 'Hoje';
               else if (diff === 1) data = 'Ontem';
