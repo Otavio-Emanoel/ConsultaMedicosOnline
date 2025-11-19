@@ -42,6 +42,7 @@ type DashboardData = {
   };
   novosAssinantes?: Array<{
     nome: string;
+    email: string;
     plano: string;
     data: string;
     status: string;
@@ -312,7 +313,7 @@ export default function AdminDashboardPage() {
             Novos Assinantes (Últimos 7 dias)
           </CardHeader>
           <CardBody>
-            <div className="space-y-3">
+            <div className="space-y-4">
               {loading ? (
                 <div className="text-center text-gray-500">Carregando...</div>
               ) : erro ? (
@@ -321,26 +322,29 @@ export default function AdminDashboardPage() {
                 dashboard.novosAssinantes.slice(0, 4).map((assinante, idx) => (
                   <div
                     key={idx}
-                    className="flex items-center justify-between p-4 bg-gray-50 dark:bg-gray-800/50 rounded-xl"
+                    className="flex items-center justify-between p-4 bg-gradient-to-r from-blue-50 via-white to-blue-100 dark:from-slate-800 dark:via-slate-900 dark:to-slate-800 rounded-2xl shadow-sm hover:shadow-lg transition-shadow border border-blue-100 dark:border-slate-700"
                   >
-                    <div className="flex items-center space-x-3">
-                      <div className="w-10 h-10 bg-primary/10 rounded-full flex items-center justify-center">
-                        <UserPlus className="w-5 h-5 text-primary" />
+                    <div className="flex items-center space-x-4">
+                      <div className="w-12 h-12 bg-primary/20 rounded-full flex items-center justify-center shadow-md">
+                        <UserPlus className="w-6 h-6 text-primary" />
                       </div>
                       <div>
-                        <p className="font-medium text-gray-900 dark:text-white text-sm">
+                        <p className="font-semibold text-gray-900 dark:text-white text-base flex items-center gap-2">
                           {assinante.nome}
+                          {assinante.status === 'success' ? (
+                            <Badge variant="success" className="ml-2">Ativo</Badge>
+                          ) : (
+                            <Badge variant="warning" className="ml-2">Pendente</Badge>
+                          )}
                         </p>
-                        <p className="text-xs text-gray-600 dark:text-gray-400">
+                        <p className="text-xs text-gray-600 dark:text-gray-400 flex items-center gap-2">
+                          <span className="font-medium text-primary">{assinante.email}</span>
+                        </p>
+                        <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
                           {assinante.plano} • {assinante.data}
                         </p>
                       </div>
                     </div>
-                    {assinante.status === 'success' ? (
-                      <Badge variant="success">Ativo</Badge>
-                    ) : (
-                      <Badge variant="warning">Pendente</Badge>
-                    )}
                   </div>
                 ))
               ) : (
