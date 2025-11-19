@@ -23,6 +23,7 @@ export class UsuarioController {
 
             // Verifica se usuário existe no Rapidoc
             let rapidocContaExiste = false;
+            let rapidocBeneficiaryUuid: string | undefined;
             try {
                 const resp = await axios.get(`${process.env.RAPIDOC_BASE_URL}/tema/api/beneficiaries/${usuario.cpf}`, {
                     headers: {
@@ -33,6 +34,9 @@ export class UsuarioController {
                 });
                 const data = resp.data && resp.data.beneficiary;
                 rapidocContaExiste = !!data && !!data.uuid && data.isActive === true;
+                if (rapidocContaExiste) {
+                    rapidocBeneficiaryUuid = data.uuid;
+                }
             } catch (err) {
                 rapidocContaExiste = false;
             }
@@ -40,12 +44,28 @@ export class UsuarioController {
                 return res.status(404).json({ error: 'Usuário não possui conta no Rapidoc.' });
             }
 
-            // Verifica se usuário existe no Asaas e pagamento está em dia
-            const asaasCheck = await verificarAssinaturaPorCpf(usuario.cpf);
-            if (!asaasCheck.assinaturaOk || !asaasCheck.cliente?.pagamentoEmDia) {
-                return res.status(402).json({ error: 'Usuário não possui assinatura ativa e paga no Asaas.' });
+            // Verifica Asaas: se idAssinatura foi enviado, usa verificação direta da assinatura; senão, usa verificação por CPF
+            const { verificarPrimeiroPagamentoAssinatura: _verificarPrimeiroPagamentoAssinatura } = await import('../services/asaas.service.js');
+            const assinaturaIdBody: string | undefined = (usuario as any).idAssinatura;
+            if (assinaturaIdBody && typeof assinaturaIdBody === 'string') {
+                const status = await _verificarPrimeiroPagamentoAssinatura(assinaturaIdBody);
+                if (!status.pago) {
+                    return res.status(402).json({ error: 'Assinatura informada não está com o primeiro pagamento confirmado.' });
+                }
+                // anota assinatura atual no objeto salvo
+                (usuario as any).idAssinaturaAtual = assinaturaIdBody;
+            } else {
+                const asaasCheck = await verificarAssinaturaPorCpf(usuario.cpf);
+                if (!asaasCheck.assinaturaOk || !asaasCheck.cliente?.pagamentoEmDia) {
+                    return res.status(402).json({ error: 'Usuário não possui assinatura ativa e paga no Asaas.' });
+                }
+                (usuario as any).idAssinaturaAtual = (usuario as any).idAssinaturaAtual || undefined;
             }
 
+            // Acrescenta rapidocBeneficiaryUuid ao objeto salvo, sem exigir que venha no body
+            if (rapidocBeneficiaryUuid) {
+                (usuario as any).rapidocBeneficiaryUuid = rapidocBeneficiaryUuid;
+            }
             const result = await salvarUsuario(usuario);
             return res.status(201).json({ message: 'Usuário salvo com sucesso.', id: result.id });
         } catch (error: any) {
