@@ -134,6 +134,12 @@ export class AdminController {
         assinantes: number;
         valorTotal: number;
       }> = [];
+      let novosAssinantes: Array<{
+        nome: string;
+        plano: string;
+        data: string;
+        status: string;
+      }> = [];
       if (numeroPlanos > 0) {
         let soma = 0;
         let count = 0;
@@ -153,8 +159,10 @@ export class AdminController {
         // Supondo que cada assinatura tem um campo planoId (referência ao id do plano)
         const assinaturasSnap = await db.collection('assinaturas').get();
         const assinaturasPorPlano: Record<string, number> = {};
+        const assinaturasArr: any[] = [];
         (assinaturasSnap as any).forEach((doc: any) => {
           const data = doc.data();
+          assinaturasArr.push({ id: doc.id, ...data });
           const planoId = data.planoId;
           if (planoId) {
             assinaturasPorPlano[planoId] = (assinaturasPorPlano[planoId] || 0) + 1;
@@ -172,6 +180,32 @@ export class AdminController {
             valorTotal: valor * assinantes,
           };
         });
+
+        // Novos assinantes dos últimos 7 dias
+        const agora = new Date();
+        const seteDiasAtras = new Date(agora.getTime() - 7 * 24 * 60 * 60 * 1000);
+        novosAssinantes = assinaturasArr
+          .filter(a => {
+            const criadoEm = a.criadoEm ? new Date(a.criadoEm) : null;
+            return criadoEm && criadoEm >= seteDiasAtras;
+          })
+          .map(a => {
+            // Busca nome do usuário (ou beneficiário) relacionado à assinatura
+            // e nome do plano
+            let nome = a.nome || a.nomeTitular || a.email || 'Desconhecido';
+            let plano = planosArr.find(p => p.id === a.planoId)?.tipo || 'Plano';
+            let status = a.status ? String(a.status).toLowerCase() : 'success';
+            // Data amigável
+            let data = '-';
+            if (a.criadoEm) {
+              const criado = new Date(a.criadoEm);
+              const diff = Math.floor((agora.getTime() - criado.getTime()) / (1000 * 60 * 60 * 24));
+              if (diff === 0) data = 'Hoje';
+              else if (diff === 1) data = 'Ontem';
+              else data = `Há ${diff} dias`;
+            }
+            return { nome, plano, data, status };
+          });
       }
 
       // Faturamento (Asaas) - melhor esforço, primeira página
@@ -213,7 +247,8 @@ export class AdminController {
           numeroPlanos,
           mediaValorPlanos,
           detalhados: planosDetalhados
-        }
+        },
+        novosAssinantes
       });
     } catch (error: any) {
       return res.status(500).json({ error: error?.message || 'Erro ao montar dashboard administrativo.' });
