@@ -215,7 +215,7 @@ export default function AdminPlanosPage() {
                     <div className="text-right">
                       <p className="text-sm text-gray-600 dark:text-gray-400">Valor mensal</p>
                       <p className="text-2xl font-bold text-primary">
-                        R$ {(plano.valor || 0).toFixed(2).replace('.', ',')}
+                        R$ {((plano.preco ?? plano.valor ?? 0).toFixed(2)).replace('.', ',')}
                       </p>
                     </div>
                     <div className="flex items-center space-x-2">
