@@ -1,6 +1,8 @@
 'use client';
 
-import { useState } from 'react';
+
+type InvoiceStatus = 'paid' | 'pending' | 'overdue';
+import { useEffect, useState } from 'react';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { Card, CardHeader, CardBody } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
@@ -17,63 +19,33 @@ import {
   Eye,
 } from 'lucide-react';
 
-type InvoiceStatus = 'paid' | 'pending' | 'overdue';
+
+type FaturaApi = {
+  id: string;
+  status: string;
+  value: number;
+  dueDate: string;
+  paymentDate?: string | null;
+  billingType?: string;
+  bankSlipUrl?: string;
+  invoiceUrl?: string;
+  description?: string;
+};
 
 interface Invoice {
-  id: number;
+  id: string;
   referenceMonth: string;
   dueDate: string;
   amount: number;
   status: InvoiceStatus;
-  paymentDate?: string;
+  paymentDate?: string | null;
   paymentMethod?: string;
+  bankSlipUrl?: string;
+  invoiceUrl?: string;
+  description?: string;
 }
 
-const MOCK_INVOICES: Invoice[] = [
-  {
-    id: 6,
-    referenceMonth: '2025-12',
-    dueDate: '2025-12-15',
-    amount: 149.9,
-    status: 'pending',
-  },
-  {
-    id: 5,
-    referenceMonth: '2025-11',
-    dueDate: '2025-11-15',
-    amount: 149.9,
-    status: 'paid',
-    paymentDate: '2025-11-12',
-    paymentMethod: 'Cartão de Crédito',
-  },
-  {
-    id: 4,
-    referenceMonth: '2025-10',
-    dueDate: '2025-10-15',
-    amount: 149.9,
-    status: 'paid',
-    paymentDate: '2025-10-14',
-    paymentMethod: 'PIX',
-  },
-  {
-    id: 3,
-    referenceMonth: '2025-09',
-    dueDate: '2025-09-15',
-    amount: 149.9,
-    status: 'paid',
-    paymentDate: '2025-09-10',
-    paymentMethod: 'Boleto',
-  },
-  {
-    id: 2,
-    referenceMonth: '2025-08',
-    dueDate: '2025-08-15',
-    amount: 149.9,
-    status: 'paid',
-    paymentDate: '2025-08-13',
-    paymentMethod: 'Cartão de Crédito',
-  },
-];
+// Não usa mais MOCK_INVOICES
 
 const STATUS_CONFIG: Record<
   InvoiceStatus,
@@ -96,8 +68,51 @@ const STATUS_CONFIG: Record<
   },
 };
 
+
 export default function FaturasPage() {
-  const [invoices] = useState<Invoice[]>(MOCK_INVOICES);
+  const [invoices, setInvoices] = useState<Invoice[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const apiBase = process.env.NEXT_PUBLIC_API_BASE_URL;
+    const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
+    fetch(`${apiBase}/dashboard`, {
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    })
+      .then((res) => res.json())
+      .then((json) => {
+        const faturas: FaturaApi[] = json.faturas || [];
+        // Mapear para Invoice
+        const invoicesMapped: Invoice[] = faturas.map((f) => {
+          // status: RECEIVED = paid, PENDING = pending, OVERDUE = overdue
+          let status: InvoiceStatus = 'pending';
+          if (f.status === 'RECEIVED') status = 'paid';
+          else if (f.status === 'OVERDUE') status = 'overdue';
+          else if (f.status === 'PENDING') status = 'pending';
+          // Referência: ano-mês do dueDate
+          let referenceMonth = '';
+          if (f.dueDate) {
+            const [ano, mes] = f.dueDate.split('-');
+            referenceMonth = `${ano}-${mes}`;
+          }
+          return {
+            id: f.id,
+            referenceMonth,
+            dueDate: f.dueDate,
+            amount: f.value,
+            status,
+            paymentDate: f.paymentDate,
+            paymentMethod: f.billingType,
+            bankSlipUrl: f.bankSlipUrl,
+            invoiceUrl: f.invoiceUrl,
+            description: f.description,
+          };
+        });
+        setInvoices(invoicesMapped);
+        setLoading(false);
+      })
+      .catch(() => setLoading(false));
+  }, []);
 
   const formatCurrency = (value: number) => {
     return value.toLocaleString('pt-BR', {
@@ -115,12 +130,20 @@ export default function FaturasPage() {
   };
 
   const totalPaid = invoices
-    .filter((inv) => inv.status === 'paid')
-    .reduce((sum, inv) => sum + inv.amount, 0);
+    .filter((inv: Invoice) => inv.status === 'paid')
+    .reduce((sum: number, inv: Invoice) => sum + inv.amount, 0);
 
   const totalPending = invoices
-    .filter((inv) => inv.status === 'pending')
-    .reduce((sum, inv) => sum + inv.amount, 0);
+    .filter((inv: Invoice) => inv.status === 'pending')
+    .reduce((sum: number, inv: Invoice) => sum + inv.amount, 0);
+
+  if (loading) {
+    return (
+      <DashboardLayout title="Faturas">
+        <div className="py-20 text-center text-gray-500">Carregando...</div>
+      </DashboardLayout>
+    );
+  }
 
   return (
     <DashboardLayout title="Faturas">
@@ -221,7 +244,7 @@ export default function FaturasPage() {
                     >
                       <td className="py-4 px-4">
                         <span className="font-medium text-gray-900 dark:text-white capitalize">
-                          {formatMonthYear(invoice.referenceMonth)}
+                          {invoice.referenceMonth ? formatMonthYear(invoice.referenceMonth) : '-'}
                         </span>
                       </td>
                       <td className="py-4 px-4">
@@ -261,12 +284,26 @@ export default function FaturasPage() {
                       </td>
                       <td className="py-4 px-4">
                         <div className="flex items-center justify-end space-x-2">
-                          <Button variant="ghost" size="sm">
-                            <Eye className="w-4 h-4" />
-                          </Button>
-                          <Button variant="ghost" size="sm">
-                            <Download className="w-4 h-4" />
-                          </Button>
+                          {invoice.invoiceUrl && (
+                            <a
+                              href={invoice.invoiceUrl}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="inline-flex items-center justify-center rounded-md text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:opacity-50 disabled:pointer-events-none bg-transparent hover:bg-accent hover:text-accent-foreground h-9 px-2 py-1 text-gray-700 dark:text-gray-300"
+                            >
+                              <Eye className="w-4 h-4" />
+                            </a>
+                          )}
+                          {invoice.bankSlipUrl && (
+                            <a
+                              href={invoice.bankSlipUrl}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="inline-flex items-center justify-center rounded-md text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:opacity-50 disabled:pointer-events-none bg-transparent hover:bg-accent hover:text-accent-foreground h-9 px-2 py-1 text-gray-700 dark:text-gray-300"
+                            >
+                              <Download className="w-4 h-4" />
+                            </a>
+                          )}
                           {invoice.status === 'pending' && (
                             <Button variant="primary" size="sm">
                               Pagar
@@ -296,7 +333,7 @@ export default function FaturasPage() {
                   <div className="flex items-start justify-between">
                     <div>
                       <h3 className="font-semibold text-gray-900 dark:text-white capitalize">
-                        {formatMonthYear(invoice.referenceMonth)}
+                        {invoice.referenceMonth ? formatMonthYear(invoice.referenceMonth) : '-'}
                       </h3>
                       <p className="text-sm text-gray-600 dark:text-gray-400">
                         Fatura #{invoice.id}
@@ -342,14 +379,28 @@ export default function FaturasPage() {
                   </div>
 
                   <div className="flex items-center space-x-2 pt-2">
-                    <Button variant="outline" size="sm" className="flex-1">
-                      <Eye className="w-4 h-4 mr-2" />
-                      Ver
-                    </Button>
-                    <Button variant="outline" size="sm" className="flex-1">
-                      <Download className="w-4 h-4 mr-2" />
-                      Baixar
-                    </Button>
+                    {invoice.invoiceUrl && (
+                      <a
+                        href={invoice.invoiceUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="flex-1 inline-flex items-center justify-center rounded-md text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:opacity-50 disabled:pointer-events-none border border-input bg-background hover:bg-accent hover:text-accent-foreground h-9 px-4 py-2 text-gray-700 dark:text-gray-300"
+                      >
+                        <Eye className="w-4 h-4 mr-2" />
+                        Ver
+                      </a>
+                    )}
+                    {invoice.bankSlipUrl && (
+                      <a
+                        href={invoice.bankSlipUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="flex-1 inline-flex items-center justify-center rounded-md text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:opacity-50 disabled:pointer-events-none border border-input bg-background hover:bg-accent hover:text-accent-foreground h-9 px-4 py-2 text-gray-700 dark:text-gray-300"
+                      >
+                        <Download className="w-4 h-4 mr-2" />
+                        Baixar
+                      </a>
+                    )}
                     {invoice.status === 'pending' && (
                       <Button variant="primary" size="sm" className="flex-1">
                         Pagar
