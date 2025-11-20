@@ -1,6 +1,8 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import { auth } from '@/lib/firebase';
+import { Dialog } from '@/components/ui/Dialog';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { Card, CardHeader, CardBody } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
@@ -18,42 +20,98 @@ import {
   FileText,
 } from 'lucide-react';
 
-interface Dependent {
-  id: number;
-  name: string;
+interface DependentBackend {
+  id: string; // Firestore doc id
+  nome: string;
   cpf: string;
   birthDate: string;
-  relationship: string;
-  photoUrl?: string;
+  parentesco?: string;
+  holder: string;
+  email?: string;
+  phone?: string;
+  zipCode?: string;
 }
 
-const MOCK_DEPENDENTS: Dependent[] = [
-  {
-    id: 1,
-    name: 'Maria Silva Santos',
-    cpf: '987.654.321-00',
-    birthDate: '2015-03-10',
-    relationship: 'Filha',
-  },
-  {
-    id: 2,
-    name: 'João Silva Santos',
-    cpf: '456.789.123-00',
-    birthDate: '2018-07-22',
-    relationship: 'Filho',
-  },
-];
+interface DependentForm {
+  nome: string;
+  cpf: string;
+  birthDate: string;
+  parentesco: string;
+  email?: string;
+  phone?: string;
+  zipCode?: string;
+}
 
 export default function DependentesPage() {
-  const [dependents, setDependents] = useState<Dependent[]>(MOCK_DEPENDENTS);
+  const [dependents, setDependents] = useState<DependentBackend[]>([]);
+  const [loading, setLoading] = useState<boolean>(true);
+  const [error, setError] = useState<string>('');
   const [showModal, setShowModal] = useState(false);
-  const [editingId, setEditingId] = useState<number | null>(null);
-  const [formData, setFormData] = useState({
-    name: '',
+  const [editingCpf, setEditingCpf] = useState<string | null>(null);
+  const [formData, setFormData] = useState<DependentForm>({
+    nome: '',
     cpf: '',
     birthDate: '',
-    relationship: '',
+    parentesco: '',
+    email: '',
+    phone: '',
+    zipCode: '',
   });
+  const [holderCpf, setHolderCpf] = useState<string>('');
+
+  // Extrai CPF do titular via custom claim do Firebase ou fallback localStorage
+  useEffect(() => {
+    (async () => {
+      try {
+        if (auth.currentUser) {
+          // Tenta claims do Firebase (caso o backend tenha setado custom claims)
+          const tokenResult = await auth.currentUser.getIdTokenResult();
+          const claims: any = tokenResult.claims || {};
+          if (claims.cpf) {
+            setHolderCpf(claims.cpf as string);
+            return;
+          }
+          // Se não houver claim cpf, tenta decodificar o próprio JWT
+          const raw = await auth.currentUser.getIdToken();
+          const payloadBase64 = raw.split('.')[1];
+          const payloadJson = JSON.parse(atob(payloadBase64));
+          if (payloadJson.cpf) setHolderCpf(payloadJson.cpf);
+        } else {
+          const token = typeof window !== 'undefined' ? localStorage.getItem('auth_token') : null;
+          if (token) {
+            const payloadBase64 = token.split('.')[1];
+            const payloadJson = JSON.parse(atob(payloadBase64));
+            if (payloadJson.cpf) setHolderCpf(payloadJson.cpf);
+          }
+        }
+      } catch {}
+    })();
+  }, []);
+
+  // Carrega dependentes do backend
+  useEffect(() => {
+    const fetchDependents = async () => {
+      if (!holderCpf) return;
+      setLoading(true);
+      setError('');
+      try {
+        let token: string | null = null;
+        if (auth.currentUser) token = await auth.currentUser.getIdToken();
+        else token = typeof window !== 'undefined' ? localStorage.getItem('auth_token') : null;
+        const headers: HeadersInit = { 'Content-Type': 'application/json' };
+        if (token) headers['Authorization'] = `Bearer ${token}`;
+        const resp = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL}/dependentes/${holderCpf}`, { headers });
+        if (!resp.ok) throw new Error('Erro ao buscar dependentes');
+        const data = await resp.json();
+        setDependents((data.dependentes || []).map((d: any) => d));
+      } catch (e: any) {
+        setError(e?.message || 'Falha ao carregar dependentes.');
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchDependents();
+  }, [holderCpf]);
 
   const calculateAge = (birthDate: string) => {
     const today = new Date();
@@ -66,22 +124,28 @@ export default function DependentesPage() {
     return age;
   };
 
-  const handleOpenModal = (dependent?: Dependent) => {
+  const handleOpenModal = (dependent?: DependentBackend) => {
     if (dependent) {
-      setEditingId(dependent.id);
+      setEditingCpf(dependent.cpf);
       setFormData({
-        name: dependent.name,
-        cpf: dependent.cpf,
-        birthDate: dependent.birthDate,
-        relationship: dependent.relationship,
+        nome: dependent.nome || '',
+        cpf: dependent.cpf || '',
+        birthDate: dependent.birthDate || '',
+        parentesco: dependent.parentesco || '',
+        email: dependent.email || '',
+        phone: dependent.phone || '',
+        zipCode: dependent.zipCode || '',
       });
     } else {
-      setEditingId(null);
+      setEditingCpf(null);
       setFormData({
-        name: '',
+        nome: '',
         cpf: '',
         birthDate: '',
-        relationship: '',
+        parentesco: '',
+        email: '',
+        phone: '',
+        zipCode: '',
       });
     }
     setShowModal(true);
@@ -89,38 +153,73 @@ export default function DependentesPage() {
 
   const handleCloseModal = () => {
     setShowModal(false);
-    setEditingId(null);
+    setEditingCpf(null);
     setFormData({
-      name: '',
+      nome: '',
       cpf: '',
       birthDate: '',
-      relationship: '',
+      parentesco: '',
+      email: '',
+      phone: '',
+      zipCode: '',
     });
   };
 
-  const handleSave = () => {
-    if (editingId) {
-      // Update existing
-      setDependents(
-        dependents.map((dep) =>
-          dep.id === editingId ? { ...dep, ...formData } : dep
-        )
-      );
-    } else {
-      // Add new
-      const newDependent: Dependent = {
-        id: Math.max(...dependents.map((d) => d.id), 0) + 1,
-        ...formData,
-      };
-      setDependents([...dependents, newDependent]);
+  const handleSave = async () => {
+    let token: string | null = null;
+    if (auth.currentUser) token = await auth.currentUser.getIdToken(true); // força refresh para evitar expiração
+    else token = typeof window !== 'undefined' ? localStorage.getItem('auth_token') : null;
+    const headers: HeadersInit = { 'Content-Type': 'application/json' };
+    if (token) headers['Authorization'] = `Bearer ${token}`;
+    try {
+      if (editingCpf) {
+        // PUT atualizar dependente (campos enviados)
+        const body: any = {};
+        if (formData.nome) body.nome = formData.nome;
+        if (formData.birthDate) body.birthDate = formData.birthDate;
+        if (formData.parentesco) body.parentesco = formData.parentesco;
+        if (formData.email) body.email = formData.email;
+        if (formData.phone) body.phone = formData.phone;
+        if (formData.zipCode) body.zipCode = formData.zipCode;
+        if (formData.cpf && formData.cpf !== editingCpf) body.cpf = formData.cpf; // alteração de cpf
+        body.holder = holderCpf;
+        const resp = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL}/dependentes/${editingCpf}`, {
+          method: 'PUT',
+          headers,
+          body: JSON.stringify(body)
+        });
+        if (!resp.ok) throw new Error('Erro ao atualizar dependente');
+        const data = await resp.json();
+        setDependents(data.dependentes || []);
+      } else {
+        // POST novo dependente
+        const payload = {
+          nome: formData.nome,
+            cpf: formData.cpf,
+            birthDate: formData.birthDate,
+            parentesco: formData.parentesco,
+            holder: holderCpf,
+            email: formData.email || undefined,
+            phone: formData.phone || undefined,
+            zipCode: formData.zipCode || undefined
+        };
+        const resp = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL}/dependentes`, {
+          method: 'POST',
+          headers,
+          body: JSON.stringify(payload)
+        });
+        if (!resp.ok) throw new Error('Erro ao adicionar dependente');
+        const data = await resp.json();
+        setDependents(data.dependentes || []);
+      }
+      handleCloseModal();
+    } catch (e: any) {
+      alert(e?.message || 'Erro ao salvar dependente');
     }
-    handleCloseModal();
   };
 
-  const handleDelete = (id: number) => {
-    if (confirm('Tem certeza que deseja remover este dependente?')) {
-      setDependents(dependents.filter((dep) => dep.id !== id));
-    }
+  const handleDelete = (cpf: string) => {
+    alert('Remoção de dependente não implementada no backend.');
   };
 
   return (
@@ -138,8 +237,43 @@ export default function DependentesPage() {
         </Button>
       </div>
 
+      {/* Estados de carregamento / erro */}
+      {loading && (
+        <Card className="mb-6">
+          <CardBody>
+            <p className="text-gray-600 dark:text-gray-400">Carregando dependentes...</p>
+          </CardBody>
+        </Card>
+      )}
+      {error && !loading && (
+        <Card className="mb-6 border border-red-300 dark:border-red-600">
+          <CardBody>
+            <p className="text-red-600 dark:text-red-400 text-sm">{error}</p>
+            <Button variant="outline" size="sm" className="mt-3" onClick={() => {
+              if (!holderCpf) return;
+              setLoading(true); setError('');
+              (async () => {
+                try {
+                  let token: string | null = null;
+                  if (auth.currentUser) token = await auth.currentUser.getIdToken();
+                  else token = typeof window !== 'undefined' ? localStorage.getItem('auth_token') : null;
+                  const headers: HeadersInit = { 'Content-Type': 'application/json' };
+                  if (token) headers['Authorization'] = `Bearer ${token}`;
+                  const resp = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL}/dependentes/${holderCpf}`, { headers });
+                  if (!resp.ok) throw new Error('Erro ao buscar dependentes');
+                  const data = await resp.json();
+                  setDependents((data.dependentes || []).map((d: any) => d));
+                } catch (e: any) {
+                  setError(e?.message || 'Falha ao carregar dependentes.');
+                } finally { setLoading(false); }
+              })();
+            }}>Tentar novamente</Button>
+          </CardBody>
+        </Card>
+      )}
+
       {/* Dependents Grid */}
-      {dependents.length > 0 ? (
+      {!loading && !error && dependents.length > 0 ? (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           {dependents.map((dependent) => {
             const age = calculateAge(dependent.birthDate);
@@ -151,16 +285,16 @@ export default function DependentesPage() {
                     {/* Avatar */}
                     <div className="w-20 h-20 bg-gradient-to-br from-primary to-blue-400 rounded-full flex items-center justify-center mb-4">
                       <span className="text-2xl font-bold text-white">
-                        {dependent.name.charAt(0)}
+                        {dependent.nome.charAt(0)}
                       </span>
                     </div>
 
                     {/* Name and Relationship */}
                     <h3 className="font-semibold text-lg text-gray-900 dark:text-white mb-1">
-                      {dependent.name}
+                      {dependent.nome}
                     </h3>
                     <Badge variant="info" className="mb-4">
-                      {dependent.relationship}
+                      {dependent.parentesco || '—'}
                     </Badge>
 
                     {/* Info */}
@@ -186,9 +320,7 @@ export default function DependentesPage() {
                           Nascimento
                         </span>
                         <span className="font-medium text-gray-900 dark:text-white">
-                          {new Date(
-                            dependent.birthDate + 'T00:00:00'
-                          ).toLocaleDateString('pt-BR')}
+                          {new Date(dependent.birthDate + 'T00:00:00').toLocaleDateString('pt-BR')}
                         </span>
                       </div>
                     </div>
@@ -207,7 +339,7 @@ export default function DependentesPage() {
                       <Button
                         variant="danger"
                         size="sm"
-                        onClick={() => handleDelete(dependent.id)}
+                        onClick={() => handleDelete(dependent.cpf)}
                       >
                         <Trash2 className="w-4 h-4" />
                       </Button>
@@ -229,115 +361,102 @@ export default function DependentesPage() {
               <p className="text-gray-600 dark:text-gray-400 mb-6">
                 Adicione dependentes para que eles também possam usar o plano
               </p>
+              {!loading && !error && (
               <Button variant="primary" onClick={() => handleOpenModal()}>
                 <Plus className="w-5 h-5 mr-2" />
                 Adicionar Primeiro Dependente
               </Button>
+              )}
             </div>
           </CardBody>
         </Card>
       )}
 
       {/* Modal */}
-      {showModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white dark:bg-gray-900 rounded-2xl max-w-md w-full max-h-[90vh] overflow-y-auto">
-            {/* Modal Header */}
-            <div className="flex items-center justify-between p-6 border-b border-gray-200 dark:border-gray-700">
-              <h2 className="text-xl font-semibold text-gray-900 dark:text-white">
-                {editingId ? 'Editar Dependente' : 'Novo Dependente'}
-              </h2>
-              <button
-                onClick={handleCloseModal}
-                className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
+      {/* Modal */}
+      <Dialog open={showModal} onOpenChange={(o) => { if (!o) handleCloseModal(); }}>
+        <div className="bg-white dark:bg-gray-900 rounded-xl p-6 w-full max-w-md mx-auto space-y-4">
+          <h2 className="text-lg font-semibold text-gray-900 dark:text-white">{editingCpf ? 'Editar Dependente' : 'Novo Dependente'}</h2>
+          <div className="space-y-4">
+            <Input
+              label="Nome Completo"
+              type="text"
+              value={formData.nome}
+              onChange={(e) => setFormData({ ...formData, nome: e.target.value })}
+              placeholder="Ex: Maria Silva Santos"
+              icon={<User className="w-5 h-5" />}
+            />
+            <Input
+              label="CPF"
+              type="text"
+              value={formData.cpf}
+              onChange={(e) => setFormData({ ...formData, cpf: e.target.value })}
+              placeholder="000.000.000-00"
+              icon={<FileText className="w-5 h-5" />}
+            />
+            <Input
+              label="Data de Nascimento"
+              type="date"
+              value={formData.birthDate}
+              onChange={(e) => setFormData({ ...formData, birthDate: e.target.value })}
+              icon={<Calendar className="w-5 h-5" />}
+            />
+            <div>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                Grau de Parentesco
+              </label>
+              <select
+                value={formData.parentesco}
+                onChange={(e) => setFormData({ ...formData, parentesco: e.target.value })}
+                className="w-full px-4 py-3 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-xl focus:ring-2 focus:ring-primary focus:border-transparent"
               >
-                <X className="w-5 h-5 text-gray-500" />
-              </button>
+                <option value="">Selecione...</option>
+                <option value="Filho(a)">Filho(a)</option>
+                <option value="Cônjuge">Cônjuge</option>
+                <option value="Pai/Mãe">Pai/Mãe</option>
+                <option value="Irmão(ã)">Irmão(ã)</option>
+                <option value="Outro">Outro</option>
+              </select>
             </div>
-
-            {/* Modal Body */}
-            <div className="p-6 space-y-4">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               <Input
-                label="Nome Completo"
+                label="Email"
+                type="email"
+                value={formData.email}
+                onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+                placeholder="email@exemplo.com"
+              />
+              <Input
+                label="Telefone"
                 type="text"
-                value={formData.name}
-                onChange={(e) =>
-                  setFormData({ ...formData, name: e.target.value })
-                }
-                placeholder="Ex: Maria Silva Santos"
-                icon={<User className="w-5 h-5" />}
+                value={formData.phone}
+                onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
+                placeholder="11999999999"
               />
-
               <Input
-                label="CPF"
+                label="CEP"
                 type="text"
-                value={formData.cpf}
-                onChange={(e) =>
-                  setFormData({ ...formData, cpf: e.target.value })
-                }
-                placeholder="000.000.000-00"
-                icon={<FileText className="w-5 h-5" />}
+                value={formData.zipCode}
+                onChange={(e) => setFormData({ ...formData, zipCode: e.target.value })}
+                placeholder="00000000"
               />
-
-              <Input
-                label="Data de Nascimento"
-                type="date"
-                value={formData.birthDate}
-                onChange={(e) =>
-                  setFormData({ ...formData, birthDate: e.target.value })
-                }
-                icon={<Calendar className="w-5 h-5" />}
-              />
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                  Grau de Parentesco
-                </label>
-                <select
-                  value={formData.relationship}
-                  onChange={(e) =>
-                    setFormData({ ...formData, relationship: e.target.value })
-                  }
-                  className="w-full px-4 py-3 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-xl focus:ring-2 focus:ring-primary focus:border-transparent"
-                >
-                  <option value="">Selecione...</option>
-                  <option value="Filho(a)">Filho(a)</option>
-                  <option value="Cônjuge">Cônjuge</option>
-                  <option value="Pai/Mãe">Pai/Mãe</option>
-                  <option value="Irmão(ã)">Irmão(ã)</option>
-                  <option value="Outro">Outro</option>
-                </select>
-              </div>
-            </div>
-
-            {/* Modal Footer */}
-            <div className="flex items-center space-x-3 p-6 border-t border-gray-200 dark:border-gray-700">
-              <Button
-                variant="outline"
-                className="flex-1"
-                onClick={handleCloseModal}
-              >
-                <X className="w-4 h-4 mr-2" />
-                Cancelar
-              </Button>
-              <Button
-                variant="primary"
-                className="flex-1"
-                onClick={handleSave}
-                disabled={
-                  !formData.name ||
-                  !formData.cpf ||
-                  !formData.birthDate ||
-                  !formData.relationship
-                }
-              >
-                <Check className="w-4 h-4 mr-2" />
-                {editingId ? 'Salvar' : 'Adicionar'}
-              </Button>
             </div>
           </div>
+          <div className="flex space-x-3 pt-4">
+            <Button variant="outline" className="flex-1" onClick={handleCloseModal}>
+              <X className="w-4 h-4 mr-2" /> Cancelar
+            </Button>
+            <Button
+              variant="primary"
+              className="flex-1"
+              onClick={handleSave}
+              disabled={!formData.nome || !formData.cpf || !formData.birthDate || !formData.parentesco}
+            >
+              <Check className="w-4 h-4 mr-2" /> {editingCpf ? 'Salvar' : 'Adicionar'}
+            </Button>
+          </div>
         </div>
-      )}
+      </Dialog>
     </DashboardLayout>
   );
 }
