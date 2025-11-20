@@ -24,7 +24,6 @@ export default function HomePage() {
   const roleOptions = [
     { role: 'admin' as UserRole, title: 'Administrador', icon: Shield, color: 'from-primary to-green-600' },
     { role: 'subscriber' as UserRole, title: 'Assinante', icon: CreditCard, color: 'from-primary to-green-600' },
-    { role: 'dependent' as UserRole, title: 'Dependente', icon: Heart, color: 'from-primary to-green-600' },
   ];
 
   const [erro, setErro] = useState<string>("");
