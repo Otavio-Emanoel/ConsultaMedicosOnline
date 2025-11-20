@@ -103,9 +103,16 @@ export class UsuarioController {
         try {
             const { senhaAtual, novaSenha } = req.body;
             const uid = req.user?.uid;
-            const email = req.user?.email;
+            let email = req.user?.email as string | undefined;
+            // Fallback: obter email via UID no Firebase Auth se não presente no token
+            if (!email && uid) {
+                try {
+                    const userRecord = await admin.auth().getUser(uid);
+                    email = userRecord.email || undefined;
+                } catch {}
+            }
             if (!uid || !email || !senhaAtual || !novaSenha) {
-                return res.status(400).json({ error: 'Dados obrigatórios não informados.' });
+                return res.status(400).json({ error: 'Dados obrigatórios não informados (uid, email, senhaAtual, novaSenha).' });
             }
 
             // 1. Valida senha atual via Firebase REST API
