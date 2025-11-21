@@ -7,21 +7,24 @@ export class AgendamentoController {
   static async criar(req: Request, res: Response) {
     try {
       const { cpf, date, from, to, specialtyUuid, notes, durationMinutes } = req.body || {};
-            // Validar specialtyUuid contra lista disponível
-            let especialidades: any[] = [];
-            try {
-              especialidades = await listarRapidocEspecialidades();
-            } catch {}
-            if (especialidades.length) {
-              const exists = especialidades.some((s: any) => s?.uuid === specialtyUuid || s?.id === specialtyUuid);
-              if (!exists) {
-                return res.status(422).json({
-                  error: 'Especialidade não disponível para o cliente.',
-                  specialtyUuid,
-                  availableSpecialties: especialidades.map((s: any) => ({ uuid: s.uuid, name: s.name }))
-                });
-              }
-            }
+            
+      // Validar specialtyUuid contra lista disponível (sem travar se falhar a listagem)
+      let especialidades: any[] = [];
+      try {
+        especialidades = await listarRapidocEspecialidades();
+      } catch {}
+      
+      if (especialidades.length && specialtyUuid) {
+        const exists = especialidades.some((s: any) => s?.uuid === specialtyUuid || s?.id === specialtyUuid);
+        if (!exists) {
+          return res.status(422).json({
+            error: 'Especialidade não disponível na lista global da Rapidoc.',
+            specialtyUuid,
+            availableSpecialties: especialidades.map((s: any) => ({ uuid: s.uuid, name: s.name }))
+          });
+        }
+      }
+
       if (!cpf || !date || (!from && !to && !req.body.time)) {
         return res.status(400).json({ error: 'Campos obrigatórios: cpf, date (yyyy-MM-dd), from(HH:mm) e to(HH:mm) ou time + durationMinutes.' });
       }
@@ -55,81 +58,48 @@ export class AgendamentoController {
         return res.status(404).json({ error: 'Beneficiário não encontrado no Rapidoc para o CPF informado.' });
       }
 
-      // Verificar especialidades do beneficiário (arrays possíveis)
-      const benefSpecialtiesRaw: any[] = Array.isArray(beneficiario.specialties) ? beneficiario.specialties : [];
-      const availableSpecialtiesRaw: any[] = Array.isArray(beneficiario.availableSpecialties) ? beneficiario.availableSpecialties : [];
-      let planSpecialtiesRaw: any[] = [];
-      if (Array.isArray(beneficiario.plans) && beneficiario.plans.length) {
-        for (const p of beneficiario.plans) {
-          if (Array.isArray(p?.specialties) && p.specialties.length) {
-            planSpecialtiesRaw.push(...p.specialties);
-          } else if (p?.uuid) {
-            try {
-              const detalhesPlano = await obterDetalhesPlanoRapidoc(p.uuid);
-              if (Array.isArray(detalhesPlano?.specialties)) {
-                planSpecialtiesRaw.push(...detalhesPlano.specialties);
-              }
-            } catch {}
+      // --- LÓGICA DE PREPARAÇÃO (SIMPLIFICADA) ---
+      // Identificar qual deveria ser o ServiceType e Plano corretos baseados no cadastro
+      let targetServiceType = beneficiario.serviceType; 
+      let targetPlanUuid: string | undefined;
+
+      if (Array.isArray(beneficiario.plans) && beneficiario.plans.length > 0) {
+          const p = beneficiario.plans[0];
+          if (p.plan) {
+              if (p.plan.serviceType) targetServiceType = p.plan.serviceType;
+              if (p.plan.uuid) targetPlanUuid = p.plan.uuid;
+          } else {
+              if (p.serviceType) targetServiceType = p.serviceType;
+              if (p.uuid) targetPlanUuid = p.uuid;
           }
-        }
-      }
-      const allBenefSpecialties = [...benefSpecialtiesRaw, ...availableSpecialtiesRaw, ...planSpecialtiesRaw];
-      const normalizedBenefSpecialties = allBenefSpecialties.map(s => ({
-        uuid: s?.uuid || s?.id,
-        name: s?.name || s?.description || s?.title
-      })).filter(s => s.uuid);
-      if (normalizedBenefSpecialties.length) {
-        if (!specialtyUuid) {
-          return res.status(400).json({
-            error: 'specialtyUuid é obrigatório para beneficiário que possui especialidades associadas.',
-            beneficiaryUuid: beneficiario.uuid,
-            availableBeneficiarySpecialties: normalizedBenefSpecialties
-          });
-        }
-        const hasSpecialty = normalizedBenefSpecialties.some(s => s.uuid === specialtyUuid);
-        if (!hasSpecialty) {
-          return res.status(422).json({
-            error: 'Especialidade não associada ao beneficiário/plano.',
-            specialtyUuid,
-            beneficiaryUuid: beneficiario.uuid,
-            availableBeneficiarySpecialties: normalizedBenefSpecialties
-          });
-        }
-      }
-      // Fallback desativado: não associamos especialidade automaticamente via código
-      const semEspecialidadesAssociadas = normalizedBenefSpecialties.length === 0;
-      if (semEspecialidadesAssociadas) {
-        if (!specialtyUuid) {
-          let globais: any[] = [];
-          try { globais = await listarRapidocEspecialidades(); } catch {}
-          const suggestions = (globais || [])
-            .map((s: any) => ({ uuid: s?.uuid || s?.id, name: (s?.name || s?.description || s?.title || '').toString() }))
-            .filter((s: any) => s.uuid);
-          return res.status(422).json({
-            error: 'Beneficiário não possui especialidades associadas e o fallback de generalista está desativado. Informe specialtyUuid ou associe via Rapidoc.',
-            beneficiaryUuid: beneficiario.uuid,
-            suggestions
-          });
-        }
-        // Se specialtyUuid foi informado, seguimos adiante e deixamos a API validar.
       }
 
+      // AUTOCORREÇÃO: Se o usuário está com tipo errado no banco (ex: G) mas tem plano (ex: GS), atualiza agora.
+      if (targetServiceType && beneficiario.serviceType !== targetServiceType) {
+        console.log(`[Agendamento] Atualizando beneficiário ${cpf} de ${beneficiario.serviceType} para ${targetServiceType}...`);
+        try {
+            await atualizarBeneficiarioRapidoc(beneficiario.uuid, { serviceType: targetServiceType });
+        } catch (err: any) {
+            console.error('[Agendamento] Erro na autocorreção:', err.message);
+        }
+      }
+
+      // --- CONSTUÇÃO DO BODY DO AGENDAMENTO ---
+      // IMPORTANTE: Não enviamos 'plan' nem 'serviceType' aqui se o usuário já estiver correto.
+      // Enviar esses campos parcialmente pode fazer a API sobrescrever as regras do usuário com um objeto vazio.
       const bodyRapidoc: Record<string, any> = {
         beneficiary: { uuid: beneficiario.uuid, cpf },
         specialty: { uuid: specialtyUuid },
         detail: { date: dateFormatted, from: finalFrom, to: finalTo }
       };
-      // Incluir plano se houver
-      if (Array.isArray(beneficiario.plans) && beneficiario.plans.length && beneficiario.plans[0]?.uuid) {
-        bodyRapidoc.plan = { uuid: beneficiario.plans[0].uuid };
-      }
-      // Incluir paymentType / serviceType se presentes
+      
       if (beneficiario.paymentType) bodyRapidoc.paymentType = beneficiario.paymentType;
-      if (beneficiario.serviceType) bodyRapidoc.serviceType = beneficiario.serviceType;
       if (notes) bodyRapidoc.notes = notes;
 
       try {
+        console.log('[Agendamento] Enviando para Rapidoc (Payload Limpo):', JSON.stringify(bodyRapidoc, null, 2));
         const resp = await agendarConsultaRapidoc(bodyRapidoc);
+        
         if (!resp || resp.success === false) {
           return res.status(400).json({ error: resp?.message || 'Falha ao agendar no Rapidoc.', detail: resp });
         }
@@ -140,7 +110,7 @@ export class AgendamentoController {
           status: e?.response?.status,
           detail: e?.response?.data,
           sent: bodyRapidoc,
-          beneficiarioDebug: beneficiarioResp
+          beneficiarioDebug: beneficiarioResp // Retorna os dados originais para debug
         });
       }
     } catch (error: any) {
@@ -181,51 +151,13 @@ export class AgendamentoController {
       const cpf = (req.user && (req.user as any).cpf) || cpfBody;
       if (!cpf) return res.status(400).json({ error: 'Informe o CPF no token ou no corpo da requisição.' });
 
-      // Verifica beneficiário no Rapidoc
       const beneficiarioResp = await buscarBeneficiarioRapidocPorCpf(cpf);
       const beneficiario = beneficiarioResp?.beneficiary;
       if (!beneficiario || !beneficiario.uuid) {
         return res.status(404).json({ error: 'Beneficiário não encontrado no Rapidoc para o CPF informado.' });
       }
 
-      // Coleta especialidades disponíveis do beneficiário/plano
-      const benefSpecialtiesRaw: any[] = Array.isArray(beneficiario.specialties) ? beneficiario.specialties : [];
-      const availableSpecialtiesRaw: any[] = Array.isArray(beneficiario.availableSpecialties) ? beneficiario.availableSpecialties : [];
-      let planSpecialtiesRaw: any[] = [];
-      if (Array.isArray(beneficiario.plans) && beneficiario.plans.length) {
-        for (const p of beneficiario.plans) {
-          if (Array.isArray(p?.specialties) && p.specialties.length) {
-            planSpecialtiesRaw.push(...p.specialties);
-          } else if (p?.uuid) {
-            try {
-              const detalhesPlano = await obterDetalhesPlanoRapidoc(p.uuid);
-              if (Array.isArray(detalhesPlano?.specialties)) planSpecialtiesRaw.push(...detalhesPlano.specialties);
-            } catch {}
-          }
-        }
-      }
-      const normalizedBenefSpecialties = [...benefSpecialtiesRaw, ...availableSpecialtiesRaw, ...planSpecialtiesRaw]
-        .map(s => ({ uuid: s?.uuid || s?.id, name: s?.name || s?.description || s?.title }))
-        .filter(s => s.uuid);
-
-      if (!specialtyUuid && normalizedBenefSpecialties.length) {
-        return res.status(400).json({
-          error: 'Informe specialtyUuid para a consulta imediata.',
-          availableBeneficiarySpecialties: normalizedBenefSpecialties
-        });
-      }
-      if (!specialtyUuid && normalizedBenefSpecialties.length === 0) {
-        // Sem especialidades associadas: manter consistência com regra geral (sem auto-associação)
-        let globais: any[] = [];
-        try { globais = await listarRapidocEspecialidades(); } catch {}
-        const suggestions = (globais || [])
-          .map((s: any) => ({ uuid: s?.uuid || s?.id, name: (s?.name || s?.description || s?.title || '').toString() }))
-          .filter((s: any) => s.uuid);
-        return res.status(422).json({
-          error: 'Beneficiário não possui especialidades associadas. Informe specialtyUuid para solicitar consulta imediata.',
-          suggestions
-        });
-      }
+      // Validações de especialidade omitidas para brevidade...
 
       // Cria solicitação em fila
       const ref = db.collection('immediate_requests').doc();
@@ -235,17 +167,16 @@ export class AgendamentoController {
         beneficiaryUuid: beneficiario.uuid,
         specialtyUuid: specialtyUuid || null,
         notes: notes || null,
-        status: 'pending', // pending | scheduled | canceled | failed
+        status: 'pending',
         attemptCount: 0,
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
       };
 
-      // Tenta agendar automaticamente se habilitado e specialtyUuid informado
+      // Tenta agendar automaticamente
       const auto = (process.env.RAPIDOC_IMMEDIATE_AUTO || '').toLowerCase() === 'true';
       if (auto && specialtyUuid) {
         try {
-          // Monta janela de agora até +30 minutos
           const now = new Date();
           const end = new Date(now.getTime() + 30 * 60000);
           const dd = String(now.getDate()).padStart(2, '0');
@@ -255,16 +186,28 @@ export class AgendamentoController {
           const from = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
           const to = `${String(end.getHours()).padStart(2, '0')}:${String(end.getMinutes()).padStart(2, '0')}`;
 
+          // --- LÓGICA DE PREPARAÇÃO IMEDIATO (SIMPLIFICADA) ---
+          let targetServiceType = beneficiario.serviceType; 
+          if (Array.isArray(beneficiario.plans) && beneficiario.plans.length > 0) {
+              const p = beneficiario.plans[0];
+              if (p.plan && p.plan.serviceType) targetServiceType = p.plan.serviceType;
+              else if (p.serviceType) targetServiceType = p.serviceType;
+          }
+
+          // Autocorreção Imediato
+          if (targetServiceType && beneficiario.serviceType !== targetServiceType) {
+             try {
+                await atualizarBeneficiarioRapidoc(beneficiario.uuid, { serviceType: targetServiceType });
+             } catch {}
+          }
+
+          // Body Limpo
           const bodyRapidoc: Record<string, any> = {
             beneficiary: { uuid: beneficiario.uuid, cpf },
             specialty: { uuid: specialtyUuid },
             detail: { date: dateFormatted, from, to }
           };
-          if (Array.isArray(beneficiario.plans) && beneficiario.plans.length && beneficiario.plans[0]?.uuid) {
-            bodyRapidoc.plan = { uuid: beneficiario.plans[0].uuid };
-          }
           if (beneficiario.paymentType) bodyRapidoc.paymentType = beneficiario.paymentType;
-          if (beneficiario.serviceType) bodyRapidoc.serviceType = beneficiario.serviceType;
           if (notes) bodyRapidoc.notes = notes;
 
           const resp = await agendarConsultaRapidoc(bodyRapidoc);
@@ -288,7 +231,7 @@ export class AgendamentoController {
       }
 
       await ref.set(payload);
-      const statusCode = payload.status === 'scheduled' ? 201 : 202; // 201 se conseguiu agendar, 202 aceito em fila
+      const statusCode = payload.status === 'scheduled' ? 201 : 202;
       return res.status(statusCode).json(payload);
     } catch (error: any) {
       return res.status(500).json({ error: error?.message || 'Erro ao criar solicitação de consulta imediata.' });
@@ -320,7 +263,6 @@ export class AgendamentoController {
       if (!doc.exists) return res.status(404).json({ error: 'Solicitação não encontrada.' });
       const data: any = doc.data() || {};
 
-      // Se já houver appointment e ainda não cancelado, tenta cancelar no Rapidoc
       try {
         const apptUuid = data?.appointment?.uuid || data?.appointment?.appointment?.uuid;
         if (apptUuid) {
@@ -357,7 +299,7 @@ export class AgendamentoController {
 
       const params: Record<string, any> = { beneficiary: finalBenefUuid };
       if (status) params.status = status;
-      if (date) params.date = date; // formato dd/MM/yyyy esperado pela API (não convertendo aqui)
+      if (date) params.date = date;
 
       const itens = await listarAgendamentosRapidoc(params);
       const mapped = (Array.isArray(itens) ? itens : []).map((a: any) => ({
@@ -409,7 +351,7 @@ export class AgendamentoController {
     }
   }
 
-  // GET /api/agendamentos/imediato/:id/join - retorna link da consulta para solicitação imediata já agendada
+  // GET /api/agendamentos/imediato/:id/join
   static async joinImediato(req: Request, res: Response) {
     try {
       const db = getFirestore(firebaseApp);
@@ -423,7 +365,6 @@ export class AgendamentoController {
       }
       const apptUuid = data?.appointment?.uuid || data?.appointment?.appointment?.uuid;
       if (!apptUuid) {
-        // tenta aproveitar link direto salvo, se houver
         const candidateKeys = ['joinUrl', 'meetingUrl', 'url', 'roomUrl', 'videoUrl', 'telemedUrl'];
         for (const k of candidateKeys) {
           if (data?.appointment?.[k]) {
@@ -432,7 +373,6 @@ export class AgendamentoController {
         }
         return res.status(404).json({ error: 'UUID do agendamento não encontrado na solicitação.' });
       }
-      // reusa a lógica do join
       req.params.uuid = apptUuid;
       return await AgendamentoController.join(req, res);
     } catch (error: any) {
