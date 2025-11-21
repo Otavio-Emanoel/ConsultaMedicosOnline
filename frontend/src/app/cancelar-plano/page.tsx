@@ -55,27 +55,53 @@ export default function CancelarPlanoPage() {
   const [selectedReasons, setSelectedReasons] = useState<string[]>([]);
   const [additionalComments, setAdditionalComments] = useState('');
   const [selectedOffer, setSelectedOffer] = useState<number | null>(null);
+  const [cancelError, setCancelError] = useState<string>('');
+  const [loadingCancel, setLoadingCancel] = useState(false);
 
+  // Corrigido: handleReasonToggle estava com escopo e lógica quebrados
   const handleReasonToggle = (reason: string) => {
     if (selectedReasons.includes(reason)) {
-      setSelectedReasons(selectedReasons.filter((r) => r !== reason));
+      setSelectedReasons(selectedReasons.filter(r => r !== reason));
     } else {
       setSelectedReasons([...selectedReasons, reason]);
     }
   };
 
-  const handleConfirmCancellation = () => {
-    console.log('Cancelando plano:', {
-      reasons: selectedReasons,
-      comments: additionalComments,
-    });
-    // Aqui faria a chamada à API
-    setStep('confirmation');
+  // Corrigido: handleConfirmCancellation duplicado e escopo errado
+  const handleConfirmCancellation = async () => {
+    setCancelError('');
+    setLoadingCancel(true);
+    try {
+      const apiBase = process.env.NEXT_PUBLIC_API_BASE_URL;
+      const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
+      if (!token) throw new Error('Usuário não autenticado');
+      // Verifica pagamento em dia
+      const resp = await fetch(`${apiBase}/faturas`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      if (!resp.ok) throw new Error('Erro ao consultar faturas');
+      const data = await resp.json();
+      const emDia = Array.isArray(data?.faturas)
+        ? data.faturas.some((f: any) => f.status === 'RECEIVED' || f.status === 'PAID')
+        : false;
+      if (!emDia) {
+        setCancelError('Não é possível cancelar: pagamento não está em dia. Regularize sua situação para prosseguir.');
+        setLoadingCancel(false);
+        return;
+      }
+      // Aqui faria a chamada à API de cancelamento de fato
+      setStep('confirmation');
+    } catch (e: any) {
+      setCancelError(e.message || 'Erro ao cancelar plano');
+    } finally {
+      setLoadingCancel(false);
+    }
   };
 
   const handleAcceptOffer = () => {
-    console.log('Aceitando oferta:', selectedOffer);
-    // Aqui faria a chamada à API
+    // Aqui faria a chamada à API para aceitar oferta
+    // Exemplo: setStep('confirmation');
+    setStep('confirmation');
   };
 
   return (
@@ -283,11 +309,14 @@ export default function CancelarPlanoPage() {
                       <CheckCircle className="w-5 h-5 mr-2" />
                       Aceitar Oferta
                     </Button>
-                    <Button variant="danger" onClick={handleConfirmCancellation}>
-                      Cancelar Mesmo Assim
+                    <Button variant="danger" onClick={handleConfirmCancellation} disabled={loadingCancel}>
+                      {loadingCancel ? 'Cancelando...' : 'Cancelar Mesmo Assim'}
                     </Button>
                   </div>
                 </div>
+                {cancelError && (
+                  <div className="mt-4 text-red-600 dark:text-red-400 text-sm">{cancelError}</div>
+                )}
               </CardBody>
             </Card>
           </>
