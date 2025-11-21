@@ -1,12 +1,16 @@
 openapi: 3.0.0
 info:
   title: API Consulta Médicos Online
-  description: Documentação da API para o sistema de agendamento e telemedicina.
+  description: >
+    Documentação completa da API. Integração entre Firebase (Firestore/Auth), 
+    Asaas (Pagamentos) e Rapidoc (Telemedicina).
   version: 1.0.0
+  contact:
+    name: Suporte Técnico
 servers:
   - url: http://localhost:3000/api
-    description: Servidor de Desenvolvimento
-  - url: https://sua-api-producao.com/api
+    description: Servidor Local
+  - url: https://api.consultamedicosonline.com.br/api
     description: Servidor de Produção
 
 components:
@@ -15,239 +19,913 @@ components:
       type: http
       scheme: bearer
       bearerFormat: JWT
-      description: Token de autenticação do Firebase Auth.
+      description: Token do Firebase Authentication.
 
   schemas:
-    # Schemas de Entrada (Requests)
-    AdminCadastroDTO:
+    # --- ERRO PADRÃO ---
+    ErrorResponse:
       type: object
-      required:
-        - nome
-        - email
-        - senha
       properties:
-        nome:
+        error:
           type: string
-          example: "Administrador Principal"
-        email:
-          type: string
-          format: email
-          example: "admin@consultamedicos.com"
-        senha:
-          type: string
-          format: password
-          minLength: 6
-          example: "SenhaForte123!"
+        detail:
+          type: object
 
-    PlanoCadastroDTO:
+    # --- AUTH & FIRST ACCESS ---
+    TipoUsuarioRequest:
       type: object
-      required:
-        - tipo
-        - periodicidade
-        - descricao
-        - especialidades
-        - preco
-        - uuidRapidocPlano
-        - paymentType
+      required: [email]
       properties:
-        tipo:
-          type: string
-          example: "Premium"
-        periodicidade:
-          type: string
-          example: "MENSAL"
-        descricao:
-          type: string
-          example: "Acesso completo a todas as especialidades."
-        especialidades:
-          type: array
-          items:
-            type: string
-          example: ["Cardiologia", "Dermatologia", "Clínica Geral"]
-        preco:
-          type: number
-          example: 89.90
-        uuidRapidocPlano:
-          type: string
-          description: UUID do plano correspondente na API Rapidoc.
-          example: "550e8400-e29b-41d4-a716-446655440000"
-        paymentType:
-          type: string
-          description: Tipo de pagamento (S, A, L). Deve bater com o Rapidoc.
-          enum: [S, A, L]
-          example: "S"
-        outrosCampos:
-          type: string
-          description: Quaisquer outros campos adicionais serão salvos no plano.
+        email: { type: string, format: email, example: "usuario@email.com" }
 
-    # Schemas de Saída (Responses)
-    DashboardResponse:
+    ValidateCpfRequest:
+      type: object
+      required: [cpf]
+      properties:
+        cpf: { type: string, example: "12345678900" }
+
+    PrimeiroAcessoRequest:
+      type: object
+      required: [cpf]
+      properties:
+        cpf: { type: string, example: "12345678900" }
+
+    # --- USUÁRIO ---
+    UsuarioUpdateDTO:
       type: object
       properties:
-        totais:
+        nome: { type: string }
+        email: { type: string }
+        telefone: { type: string }
+
+    UsuarioSenhaDTO:
+      type: object
+      required: [senhaAtual, novaSenha]
+      properties:
+        senhaAtual: { type: string }
+        novaSenha: { type: string }
+
+    # --- AGENDAMENTO ---
+    AgendamentoRequest:
+      type: object
+      required: [cpf, date, specialtyUuid]
+      properties:
+        cpf: 
+          type: string
+          description: "CPF do paciente (titular ou dependente)."
+        date: 
+          type: string
+          format: date
+          example: "2024-12-25"
+        from: 
+          type: string
+          example: "14:00"
+          description: "Obrigatório se não enviar time/duration."
+        to: 
+          type: string
+          example: "14:30"
+        time:
+          type: string
+          example: "14:00"
+          description: "Alternativa ao 'from'."
+        durationMinutes:
+          type: integer
+          example: 30
+        specialtyUuid: 
+          type: string
+          example: "uuid-da-cardiologia"
+        notes: 
+          type: string
+          description: "Queixas ou observações."
+
+    AgendamentoImediatoRequest:
+      type: object
+      properties:
+        cpf: { type: string }
+        specialtyUuid: { type: string, description: "Opcional. Se enviado, tenta agendar auto." }
+        notes: { type: string }
+
+    # --- ASSINATURA / ONBOARDING ---
+    StartSubscriptionRequest:
+      type: object
+      required: [nome, email, cpf, birthday, zipCode, endereco, numero, bairro, cidade, estado, country, valor]
+      properties:
+        nome: { type: string }
+        email: { type: string }
+        cpf: { type: string }
+        telefone: { type: string }
+        valor: { type: number }
+        ciclo: { type: string, enum: [MONTHLY, QUARTERLY, SEMIANNUALLY, YEARLY], default: MONTHLY }
+        billingType: { type: string, enum: [BOLETO, CREDIT_CARD, PIX], default: BOLETO }
+        birthday: { type: string, example: "1990-01-01" }
+        zipCode: { type: string }
+        endereco: { type: string }
+        numero: { type: string }
+        complemento: { type: string }
+        bairro: { type: string }
+        cidade: { type: string }
+        estado: { type: string }
+        country: { type: string, default: "BRA" }
+        paymentType: { type: string, description: "S, A, L (Rapidoc)" }
+        serviceType: { type: string, description: "G, P, GP (Rapidoc)" }
+        holder: { type: string }
+
+    CompleteOnboardingRequest:
+      type: object
+      required: [cpf]
+      properties:
+        cpf: { type: string }
+        overrides:
           type: object
+          description: "Dados opcionais para forçar atualização caso o Asaas esteja incompleto."
           properties:
-            usuarios:
-              type: integer
-            assinaturas:
-              type: integer
-            assinaturasAtivas:
-              type: integer
-            assinaturasCanceladas:
-              type: integer
-            assinaturasPendentes:
-              type: integer
-        faturamento:
-          type: object
-          properties:
-            mesAtual:
-              type: number
-            ultimos30Dias:
-              type: number
-            pendencias:
-              type: integer
-        planos:
-          type: object
-          properties:
-            numeroPlanos:
-              type: integer
-            mediaValorPlanos:
-              type: number
-            detalhados:
-              type: array
-              items:
-                type: object
-                properties:
-                  id:
-                    type: string
-                  nome:
-                    type: string
-                  valor:
-                    type: number
-                  assinantes:
-                    type: integer
-                  valorTotal:
-                    type: number
-        novosAssinantes:
+             nome: { type: string }
+             email: { type: string }
+             telefone: { type: string }
+             birthday: { type: string }
+             paymentType: { type: string }
+             planoId: { type: string }
+
+    CreateRapidocBeneficiaryRequest:
+      type: object
+      required: [assinaturaId, nome, email, cpf, birthday, endereco, cidade, estado, zipCode]
+      properties:
+        assinaturaId: { type: string }
+        planoId: { type: string }
+        nome: { type: string }
+        email: { type: string }
+        cpf: { type: string }
+        birthday: { type: string }
+        phone: { type: string }
+        zipCode: { type: string }
+        endereco: { type: string }
+        cidade: { type: string }
+        estado: { type: string }
+        plans:
           type: array
           items:
             type: object
             properties:
-              nome:
-                type: string
-              email:
-                type: string
-              plano:
-                type: string
-              data:
-                type: string
-              status:
-                type: string
-        logs:
-          type: object
-          properties:
-            errosPendentes:
-              type: integer
-            errosCriticos:
-              type: integer
-            errosRecentes:
-              type: integer
-            ultimosErros:
-              type: array
-              items:
+              paymentType: { type: string }
+              plan:
                 type: object
+                properties:
+                   uuid: { type: string }
+
+    # --- DEPENDENTES ---
+    DependenteDTO:
+      type: object
+      required: [nome, cpf, birthDate, holder]
+      properties:
+        nome: { type: string }
+        cpf: { type: string }
+        birthDate: { type: string }
+        holder: { type: string, description: "CPF do titular" }
+        parentesco: { type: string }
+        email: { type: string }
+        phone: { type: string }
+        zipCode: { type: string }
+        paymentType: { type: string }
+        serviceType: { type: string }
+
+    # --- PLANOS (ADMIN) ---
+    PlanoCadastroDTO:
+      type: object
+      required: [tipo, periodicidade, descricao, especialidades, preco, uuidRapidocPlano, paymentType]
+      properties:
+        tipo: { type: string }
+        periodicidade: { type: string }
+        descricao: { type: string }
+        preco: { type: number }
+        uuidRapidocPlano: { type: string }
+        paymentType: { type: string, enum: [S, A, L] }
+        especialidades:
+          type: array
+          items: { type: string }
+        maxBeneficiaries: { type: integer }
 
 tags:
+  - name: Health
+    description: Verificação de saúde e conectividade
+  - name: FirstAccess
+    description: Validação de CPF e Primeiro Acesso
+  - name: Auth
+    description: Gestão de tipos de usuário e autenticação
+  - name: Usuário
+    description: Dados do perfil, senha e atualização cadastral
+  - name: Subscription
+    description: Fluxo de assinatura (Asaas) e Onboarding (Rapidoc)
+  - name: Assinatura
+    description: Status de pagamentos e gestão da assinatura ativa
+  - name: Agendamento
+    description: Consultas eletivas (Histórico, Marcação, Join)
+  - name: Agendamento Imediato
+    description: Fila de espera e Plantão médico
+  - name: Beneficiários
+    description: Dependentes, especialidades e inativação
+  - name: Planos
+    description: Gestão de planos locais e integração Rapidoc
   - name: Admin
-    description: Gerenciamento administrativo, cadastro de planos e dashboard.
+    description: Área administrativa e Dashboards
+  - name: Faturas
+    description: Histórico financeiro do usuário
 
 paths:
-  /admin/cadastrar:
+  # ================= HEALTH =================
+  /health:
+    get:
+      summary: Status da API e Conexões
+      tags: [Health]
+      responses:
+        '200':
+          description: API Online e Firebase conectado.
+  /speedtest:
+    get:
+      summary: Teste de latência Firestore
+      tags: [Health]
+      responses:
+        '200':
+          description: Retorna latência em ms.
+  /firestore-test:
     post:
-      summary: Cadastrar novo Administrador
-      description: Cria um usuário no Firebase Auth e salva registro na coleção 'administradores'.
-      tags:
-        - Admin
+      summary: Teste de escrita no Firestore
+      tags: [Health]
+      responses:
+        '201':
+          description: Escrita realizada.
+
+  # ================= FIRST ACCESS & AUTH =================
+  /auth/tipo-usuario:
+    post:
+      summary: Identificar tipo de usuário
+      tags: [Auth]
       requestBody:
-        required: true
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/AdminCadastroDTO'
+              $ref: '#/components/schemas/TipoUsuarioRequest'
+      responses:
+        '200':
+          description: "Retorna { tipo: 'admin' | 'subscriber' | 'dependent' | null }"
+
+  /first-access/validate-cpf:
+    post:
+      summary: Validar se CPF possui assinatura no Asaas
+      tags: [FirstAccess]
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ValidateCpfRequest'
+      responses:
+        '200':
+          description: Retorna se pode cadastrar ou se já validou.
+
+  /first-access:
+    post:
+      summary: Criar usuário no Auth (Primeiro Acesso)
+      description: Cria login no Firebase Auth para um CPF que já existe no Firestore (importado).
+      tags: [FirstAccess]
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PrimeiroAcessoRequest'
       responses:
         '201':
-          description: Administrador cadastrado com sucesso.
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  message:
-                    type: string
-                  uid:
-                    type: string
-        '400':
-          description: Dados inválidos ou faltando.
+          description: Acesso criado, retorna senha temporária.
+
+  # ================= USUÁRIO =================
+  /usuario/me:
+    get:
+      summary: Dados do usuário logado
+      tags: [Usuário]
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: Dados do Firestore.
+
+  /usuario/senha:
+    patch:
+      summary: Alterar Senha
+      tags: [Usuário]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UsuarioSenhaDTO'
+      responses:
+        '200':
+          description: Senha alterada com sucesso.
+
+  /usuario/recuperar-senha:
+    post:
+      summary: Solicitar reset de senha por e-mail
+      tags: [Usuário]
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties: { email: { type: string } }
+      responses:
+        '200':
+          description: Email enviado.
+
+  /usuario/{cpf}:
+    get:
+      summary: Buscar usuário por CPF
+      tags: [Usuário]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: path
+          name: cpf
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: Dados encontrados.
+    patch:
+      summary: Atualizar dados cadastrais
+      description: Atualiza Firestore, Rapidoc e Asaas simultaneamente.
+      tags: [Usuário]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: path
+          name: cpf
+          required: true
+          schema: { type: string }
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UsuarioUpdateDTO'
+      responses:
+        '200':
+          description: Atualizado com sucesso.
+
+  /rapidoc/beneficiario/{cpf}:
+    get:
+      summary: Consultar dados brutos no Rapidoc
+      tags: [Usuário]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: path
+          name: cpf
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: Objeto beneficiary do Rapidoc.
+
+  # ================= DASHBOARD =================
+  /dashboard:
+    get:
+      summary: Dashboard do Usuário
+      description: Retorna assinaturas, beneficiários, próximas consultas e faturas.
+      tags: [Usuário]
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: Dados agregados do dashboard.
+
+  # ================= SUBSCRIPTION & ASSINATURA =================
+  /subscription/start:
+    post:
+      summary: Iniciar nova assinatura (Cria no Asaas)
+      tags: [Subscription]
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/StartSubscriptionRequest'
+      responses:
+        '201':
+          description: Assinatura criada, aguardando pagamento.
+
+  /subscription/check-payment/{assinaturaId}:
+    get:
+      summary: Verificar se assinatura está paga
+      tags: [Subscription]
+      parameters:
+        - in: path
+          name: assinaturaId
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: Retorna informações sobre o pagamento, incluindo se está pago e detalhes do pagamento.
+
+  /subscription/payment-details/{assinaturaId}:
+    get:
+      summary: Obter Boleto/Pix para pagamento
+      tags: [Subscription]
+      parameters:
+        - in: path
+          name: assinaturaId
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: Retorna URLs de boleto ou Payload Pix.
+
+  /subscription/rapidoc-beneficiary:
+    post:
+      summary: Criar Beneficiário no Rapidoc (Pós-Pagamento)
+      description: Deve ser chamado após a confirmação do pagamento para vincular usuário ao Rapidoc.
+      tags: [Subscription]
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateRapidocBeneficiaryRequest'
+      responses:
+        '201':
+          description: Beneficiário criado no Rapidoc.
+
+  /subscription/complete-onboarding:
+    post:
+      summary: Finalizar/Reparar Onboarding
+      description: >
+        Tenta completar o cadastro no Rapidoc e Firestore verificando se já existe
+        assinatura paga no Asaas. Útil para retomar drop-offs.
+      tags: [Subscription]
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CompleteOnboardingRequest'
+      responses:
+        '200':
+          description: Onboarding completado/verificado.
+
+  /subscription/onboarding-status/{cpf}:
+    get:
+      summary: Status das etapas de cadastro
+      tags: [Subscription]
+      parameters:
+        - in: path
+          name: cpf
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: Status (assinaturaAtiva, rapidocAtivo, usuarioExiste).
+
+  /subscription/cancel/{assinaturaId}:
+    delete:
+      summary: Cancelar Assinatura
+      tags: [Subscription]
+      parameters:
+        - in: path
+          name: assinaturaId
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: Cancelada com sucesso.
         '409':
-          description: Administrador com este e-mail já existe.
-        '500':
-          description: Erro interno do servidor.
+          description: Não pode cancelar (pendências financeiras).
+
+  /assinatura/status/{cpf}:
+    get:
+      summary: Obter Assinatura Ativa e Boletos Pendentes
+      tags: [Assinatura]
+      parameters:
+        - in: path
+          name: cpf
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: Dados da assinatura ativa e link de pagamento se houver.
+
+  # ================= AGENDAMENTO =================
+  /agendamentos:
+    get:
+      summary: Listar Agendamentos
+      tags: [Agendamento]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: query
+          name: status
+          schema: { type: string }
+        - in: query
+          name: date
+          schema: { type: string }
+        - in: query
+          name: beneficiaryUuid
+          schema: { type: string }
+      responses:
+        '200':
+          description: Lista de consultas.
+    post:
+      summary: Criar Agendamento
+      tags: [Agendamento]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AgendamentoRequest'
+      responses:
+        '201':
+          description: Agendado com sucesso.
+
+  /agendamentos/disponibilidade:
+    get:
+      summary: Buscar Slots Disponíveis
+      tags: [Agendamento]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: query
+          name: specialtyUuid
+          required: true
+          schema: { type: string }
+        - in: query
+          name: dateInitial
+          required: true
+          schema: { type: string }
+        - in: query
+          name: dateFinal
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: Objeto de disponibilidade do Rapidoc.
+
+  /agendamentos/{uuid}:
+    get:
+      summary: Detalhes do Agendamento
+      tags: [Agendamento]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: path
+          name: uuid
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: Detalhes.
+    delete:
+      summary: Cancelar Agendamento
+      tags: [Agendamento]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: path
+          name: uuid
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: Cancelado.
+
+  /agendamentos/{uuid}/join:
+    get:
+      summary: Link de Videochamada
+      tags: [Agendamento]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: path
+          name: uuid
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: Retorna um objeto contendo o campo joinUrl (string).
+
+  # ================= AGENDAMENTO IMEDIATO (PLANTÃO) =================
+  /agendamentos/imediato:
+    post:
+      summary: Solicitar Consulta Imediata
+      description: Cria solicitação. Se configurado e specialtyUuid fornecido, tenta agendar automaticamente.
+      tags: [Agendamento Imediato]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AgendamentoImediatoRequest'
+      responses:
+        '201':
+          description: Solicitado (status scheduled ou pending).
+
+  /agendamentos/imediato/{id}:
+    get:
+      summary: Consultar Status da Solicitação
+      tags: [Agendamento Imediato]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: Retorna status, position, appointment details.
+    delete:
+      summary: Cancelar Solicitação
+      tags: [Agendamento Imediato]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: Cancelado.
+
+  /agendamentos/imediato/{id}/join:
+    get:
+      summary: Link de Videochamada Imediata
+      tags: [Agendamento Imediato]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: Retorna um objeto contendo o campo joinUrl (string).
+
+  # ================= BENEFICIÁRIOS & DEPENDENTES =================
+  /dependentes:
+    post:
+      summary: Adicionar Dependente
+      description: Cria no Rapidoc e salva referência no Firestore.
+      tags: [Beneficiários]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DependenteDTO'
+      responses:
+        '201':
+          description: Dependente criado.
+
+  /dependentes/{cpf}:
+    get:
+      summary: Listar Dependentes do Titular
+      tags: [Beneficiários]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: path
+          name: cpf
+          description: "CPF do titular"
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: Lista de dependentes.
+    put:
+      summary: Editar Dependente
+      tags: [Beneficiários]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: path
+          name: cpf
+          description: "CPF do dependente"
+          required: true
+          schema: { type: string }
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DependenteDTO'
+      responses:
+        '200':
+          description: Atualizado.
+
+  /beneficiarios/{cpf}/especialidades:
+    get:
+      summary: Listar Especialidades do Beneficiário
+      description: Agrega especialidades diretas, do plano e disponíveis.
+      tags: [Beneficiários]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: path
+          name: cpf
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: Lista de especialidades.
+    put:
+      summary: Associar Especialidade
+      description: Tenta associar diretamente ou via plano (fallback logic).
+      tags: [Beneficiários]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: path
+          name: cpf
+          required: true
+          schema: { type: string }
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                specialtyUuid: { type: string }
+                specialtyUuids: { type: array, items: { type: string } }
+      responses:
+        '200':
+          description: Associado com sucesso.
+
+  /beneficiarios/{cpf}/inativar-rapidoc:
+    post:
+      summary: Inativar no Rapidoc
+      tags: [Beneficiários]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: path
+          name: cpf
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: Inativado.
+
+  /beneficiarios/{cpf}:
+    delete:
+      summary: Remover do Banco de Dados
+      description: Remove titular e dependentes do Firestore (Admin/Cleanup).
+      tags: [Beneficiários]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: path
+          name: cpf
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: Removidos.
+
+  # ================= FATURAS =================
+  /faturas:
+    get:
+      summary: Listar Faturas (Asaas)
+      tags: [Faturas]
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: Histórico de pagamentos.
+
+  # ================= ESPECIALIDADES GLOBAIS =================
+  /especialidades:
+    get:
+      summary: Listar Todas Especialidades (Rapidoc)
+      tags: [Agendamento]
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: Lista global.
+
+  # ================= PLANOS =================
+  /planos:
+    get:
+      summary: Listar Planos Locais
+      tags: [Planos]
+      responses:
+        '200':
+          description: Lista de planos do Firestore.
+
+  /planos/{id}:
+    get:
+      summary: Obter Plano Local
+      tags: [Planos]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: Detalhes.
+    put:
+      summary: Editar Plano Local
+      tags: [Planos]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PlanoCadastroDTO'
+      responses:
+        '200':
+          description: Atualizado.
+    delete:
+      summary: Excluir Plano Local
+      description: Remove e desvincula usuários.
+      tags: [Planos]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: Excluído.
+
+  /planos/rapidoc:
+    get:
+      summary: Listar Planos da API Rapidoc
+      tags: [Planos]
+      responses:
+        '200':
+          description: Planos remotos.
+
+  /planos/rapidoc/{uuid}:
+    get:
+      summary: Detalhes Plano Rapidoc
+      tags: [Planos]
+      parameters:
+        - in: path
+          name: uuid
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: Detalhes.
+
+  /planos/rapidoc/{uuid}/especialidades:
+    put:
+      summary: Atualizar Especialidades no Rapidoc
+      tags: [Planos]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: path
+          name: uuid
+          required: true
+          schema: { type: string }
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                 specialtyUuids: { type: array, items: { type: string } }
+      responses:
+        '200':
+          description: Atualizado.
+
+  # ================= ADMIN =================
+  /admin/cadastrar:
+    post:
+      summary: Criar novo Admin
+      tags: [Admin]
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [nome, email, senha]
+              properties:
+                nome: { type: string }
+                email: { type: string }
+                senha: { type: string }
+      responses:
+        '201':
+          description: Admin criado.
 
   /admin/cadastrar-plano:
     post:
-      summary: Cadastrar novo Plano (Vinculado ao Rapidoc)
-      description: >
-        Cadastra um plano no Firestore verificando a existência do UUID no serviço Rapidoc.
-        Requer autenticação de administrador.
-      tags:
-        - Admin
-      security:
-        - bearerAuth: []
+      summary: Cadastrar Plano Local vinculado ao Rapidoc
+      tags: [Admin]
+      security: [{ bearerAuth: [] }]
       requestBody:
-        required: true
         content:
           application/json:
             schema:
               $ref: '#/components/schemas/PlanoCadastroDTO'
       responses:
         '201':
-          description: Plano criado com sucesso.
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  message:
-                    type: string
-                  id:
-                    type: string
-        '400':
-          description: Campos obrigatórios faltando ou paymentType inválido.
-        '404':
-          description: Plano Rapidoc não encontrado para o UUID fornecido.
-        '409':
-          description: Já existe um plano local vinculado a este UUID.
-        '401':
-          description: Não autorizado (Token ausente ou inválido).
+          description: Plano criado.
 
   /admin/dashboard:
     get:
-      summary: Obter métricas do Dashboard Administrativo
-      description: >
-        Retorna contagens de usuários, assinaturas, faturamento (Asaas), logs de erro e desempenho dos planos.
-        Requer autenticação de administrador.
-      tags:
-        - Admin
-      security:
-        - bearerAuth: []
+      summary: Dashboard Geral (Métricas e Logs)
+      tags: [Admin]
+      security: [{ bearerAuth: [] }]
       responses:
         '200':
-          description: Dados do dashboard recuperados com sucesso.
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/DashboardResponse'
-        '401':
-          description: Não autorizado.
-        '500':
-          description: Erro ao montar dashboard.
+          description: Métricas de erros, faturamento e usuários.
+
+  /admin/planos/dashboard:
+    get:
+      summary: Dashboard de Performance de Planos
+      tags: [Admin]
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: Assinantes por plano.
