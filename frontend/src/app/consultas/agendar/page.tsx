@@ -34,25 +34,23 @@ export default function Page() {
   const [currentStep, setCurrentStep] = useState(1);
   const [formData, setFormData] = useState({
     specialty: '',
+    specialtyUuid: '',
     date: '',
     time: '',
+    availabilityUuid: '',
     patient: '',
     notes: '',
   });
-  const [specialties, setSpecialties] = useState<string[]>([]);
-  // Horários fixos para testes
-  const [availableTimes, setAvailableTimes] = useState<string[]>([
-    '08:00', '08:30', '09:00', '09:30', '10:00',
-    '10:30', '11:00', '11:30', '14:00', '14:30',
-    '15:00', '15:30', '16:00', '16:30', '17:00'
-  ]);
+  const [specialties, setSpecialties] = useState<Array<{ uuid: string; name: string }>>([]);
+  const [availableSlots, setAvailableSlots] = useState<Array<{ uuid: string; date: string; from: string; to: string }>>([]);
+  const [selectedSpecialtyUuid, setSelectedSpecialtyUuid] = useState<string>('');
   const [patients, setPatients] = useState<Array<{ id: string; name: string; cpf: string; relationship?: string }>>([]);
   const [loadingSpecialties, setLoadingSpecialties] = useState(false);
   const [loadingPatients, setLoadingPatients] = useState(false);
   const [loadingTimes, setLoadingTimes] = useState(false);
 
 
-  // Buscar especialidades do beneficiário principal (usuário logado) usando /dashboard
+  // Buscar especialidades do beneficiário principal (usuário logado)
   useEffect(() => {
     const apiBase = process.env.NEXT_PUBLIC_API_BASE_URL;
     const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
@@ -70,16 +68,12 @@ export default function Page() {
       })
       .then((res) => res.json())
       .then((data) => {
-        // API pode retornar um array direto ou um objeto com campo `specialties`
-        if (Array.isArray(data)) {
-          // array de strings ou objetos
-          if (data.length && typeof data[0] === 'object') {
-            setSpecialties((data as any[]).map((s) => s.name || s));
-          } else {
-            setSpecialties(data as string[]);
-          }
-        } else if (data && Array.isArray(data.specialties)) {
-          setSpecialties((data.specialties as any[]).map((s) => s.name || s));
+        // API retorna { specialties: [{ uuid, name, source }] }
+        if (data && Array.isArray(data.specialties)) {
+          setSpecialties(data.specialties.map((s: any) => ({
+            uuid: s.uuid,
+            name: s.name || s.description || s.title || 'Especialidade'
+          })));
         } else {
           setSpecialties([]);
         }
@@ -126,7 +120,82 @@ export default function Page() {
       .catch(() => setLoadingPatients(false));
   }, []);
 
-  // Remover busca de horários da API: horários são fixos para testes
+  // Buscar disponibilidade quando especialidade e data são selecionados
+  useEffect(() => {
+    if (!selectedSpecialtyUuid || !formData.date || currentStep !== 3) return;
+    
+    const apiBase = process.env.NEXT_PUBLIC_API_BASE_URL;
+    const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
+    if (!token) return;
+
+    setLoadingTimes(true);
+    
+    // Converter data de yyyy-MM-dd para dd/MM/yyyy
+    const [year, month, day] = formData.date.split('-');
+    const dateInitial = `${day}/${month}/${year}`;
+    
+    // Calcular data final (7 dias após a data inicial)
+    const dateObj = new Date(formData.date);
+    dateObj.setDate(dateObj.getDate() + 7);
+    const dateFinal = `${String(dateObj.getDate()).padStart(2, '0')}/${String(dateObj.getMonth() + 1).padStart(2, '0')}/${dateObj.getFullYear()}`;
+
+    fetch(`${apiBase}/agendamentos/disponibilidade?specialtyUuid=${selectedSpecialtyUuid}&dateInitial=${dateInitial}&dateFinal=${dateFinal}`, {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+      .then((res) => {
+        if (!res.ok) throw new Error('Erro ao buscar disponibilidade');
+        return res.json();
+      })
+      .then((data) => {
+        // A resposta pode vir em diferentes formatos
+        let slots: any[] = [];
+        if (Array.isArray(data.disponibilidade)) {
+          slots = data.disponibilidade;
+        } else if (Array.isArray(data)) {
+          slots = data;
+        } else if (data?.data && Array.isArray(data.data)) {
+          slots = data.data;
+        } else if (data?.availability && Array.isArray(data.availability)) {
+          slots = data.availability;
+        }
+        
+        // Mapear slots para formato { uuid, date, from, to }
+        const mappedSlots = slots
+          .filter((slot: any) => slot?.uuid || slot?.availabilityUuid)
+          .map((slot: any) => {
+            // Tentar extrair data e horário de diferentes formatos
+            let slotDate = slot.date;
+            let slotFrom = slot.from || slot.time;
+            let slotTo = slot.to;
+            
+            // Se vier dateTime no formato "dd/MM/yyyy HH:mm-HH:mm"
+            if (slot.dateTime && !slotDate) {
+              const parts = slot.dateTime.split(' ');
+              if (parts.length >= 1) slotDate = parts[0];
+              if (parts.length >= 2) {
+                const times = parts[1].split('-');
+                if (times.length >= 1) slotFrom = times[0];
+                if (times.length >= 2) slotTo = times[1];
+              }
+            }
+            
+            return {
+              uuid: slot.uuid || slot.availabilityUuid,
+              date: slotDate,
+              from: slotFrom,
+              to: slotTo
+            };
+          });
+        
+        setAvailableSlots(mappedSlots);
+        setLoadingTimes(false);
+      })
+      .catch((err) => {
+        console.error('Erro ao buscar disponibilidade:', err);
+        setAvailableSlots([]);
+        setLoadingTimes(false);
+      });
+  }, [selectedSpecialtyUuid, formData.date, currentStep]);
 
   const handleNext = () => {
     if (currentStep < STEPS.length) {
@@ -144,6 +213,11 @@ export default function Page() {
     const apiBase = process.env.NEXT_PUBLIC_API_BASE_URL;
     const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
     if (!token) return alert('Usuário não autenticado!');
+    
+    if (!formData.availabilityUuid || !formData.specialtyUuid) {
+      return alert('Por favor, selecione um horário disponível.');
+    }
+    
     try {
       const res = await fetch(`${apiBase}/agendamentos`, {
         method: 'POST',
@@ -152,15 +226,33 @@ export default function Page() {
           Authorization: `Bearer ${token}`,
         },
         body: JSON.stringify({
-          especialidade: formData.specialty,
-          data: formData.date,
-          horario: formData.time,
-          pacienteId: formData.patient,
-          observacoes: formData.notes,
+          availabilityUuid: formData.availabilityUuid,
+          specialtyUuid: formData.specialtyUuid,
+          // Opcional: para especialidades que requerem encaminhamento
+          // beneficiaryMedicalReferralUuid: formData.referralUuid,
+          // Para nutrição e psicologia (sem encaminhamento):
+          approveAdditionalPayment: true,
         }),
       });
-      if (!res.ok) throw new Error('Erro ao agendar consulta');
+      
+      if (!res.ok) {
+        const errorData = await res.json().catch(() => ({}));
+        throw new Error(errorData.error || 'Erro ao agendar consulta');
+      }
+      
+      const result = await res.json();
       alert('Consulta agendada com sucesso!');
+      // Redirecionar ou resetar formulário
+      setFormData({
+        specialty: '',
+        specialtyUuid: '',
+        date: '',
+        time: '',
+        availabilityUuid: '',
+        patient: '',
+        notes: '',
+      });
+      setCurrentStep(1);
     } catch (err: any) {
       alert(err.message || 'Erro ao agendar consulta');
     }
@@ -240,25 +332,26 @@ export default function Page() {
                   <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
                     {specialties.map((specialty) => (
                       <button
-                        key={specialty}
-                        onClick={() =>
-                          setFormData({ ...formData, specialty })
-                        }
+                        key={specialty.uuid}
+                        onClick={() => {
+                          setSelectedSpecialtyUuid(specialty.uuid);
+                          setFormData({ ...formData, specialty: specialty.name, specialtyUuid: specialty.uuid });
+                        }}
                         className={`p-4 rounded-xl border-2 transition-all text-left ${
-                          formData.specialty === specialty
+                          formData.specialtyUuid === specialty.uuid
                             ? 'border-primary bg-primary/5'
                             : 'border-gray-200 dark:border-gray-700 hover:border-primary/50'
                         }`}
                       >
                         <Stethoscope
                           className={`w-6 h-6 mb-2 ${
-                            formData.specialty === specialty
+                            formData.specialtyUuid === specialty.uuid
                               ? 'text-primary'
                               : 'text-gray-400'
                           }`}
                         />
                         <p className="font-medium text-gray-900 dark:text-white">
-                          {specialty}
+                          {specialty.name}
                         </p>
                       </button>
                     ))}
@@ -298,24 +391,46 @@ export default function Page() {
                   Selecione o horário disponível
                 </p>
                 {loadingTimes ? (
-                  <div className="text-center text-gray-400">Carregando horários...</div>
-                ) : availableTimes.length === 0 ? (
-                  <div className="text-center text-gray-500 dark:text-gray-400">Nenhum horário disponível para esta especialidade e data.</div>
+                  <div className="text-center text-gray-400">Carregando horários disponíveis...</div>
+                ) : availableSlots.length === 0 ? (
+                  <div className="text-center text-gray-500 dark:text-gray-400">
+                    Nenhum horário disponível para esta especialidade e data. Tente selecionar outra data.
+                  </div>
                 ) : (
                   <div className="grid grid-cols-4 md:grid-cols-6 gap-3">
-                    {availableTimes.map((time) => (
-                      <button
-                        key={time}
-                        onClick={() => setFormData({ ...formData, time })}
-                        className={`p-3 rounded-lg border-2 transition-all font-medium ${
-                          formData.time === time
-                            ? 'border-primary bg-primary text-white'
-                            : 'border-gray-200 dark:border-gray-700 hover:border-primary/50'
-                        }`}
-                      >
-                        {time}
-                      </button>
-                    ))}
+                    {availableSlots
+                      .filter((slot) => {
+                        // Filtrar slots pela data selecionada
+                        if (!formData.date || !slot.date) return true;
+                        // Converter slot.date (dd/MM/yyyy) para comparar com formData.date (yyyy-MM-dd)
+                        if (slot.date.includes('/')) {
+                          const [d, m, y] = slot.date.split('/');
+                          const slotDateFormatted = `${y}-${m.padStart(2, '0')}-${d.padStart(2, '0')}`;
+                          return slotDateFormatted === formData.date;
+                        }
+                        return slot.date === formData.date;
+                      })
+                      .map((slot) => {
+                        const timeLabel = slot.from || 'Horário';
+                        return (
+                          <button
+                            key={slot.uuid}
+                            onClick={() => setFormData({ 
+                              ...formData, 
+                              time: timeLabel,
+                              availabilityUuid: slot.uuid
+                            })}
+                            className={`p-3 rounded-lg border-2 transition-all font-medium ${
+                              formData.availabilityUuid === slot.uuid
+                                ? 'border-primary bg-primary text-white'
+                                : 'border-gray-200 dark:border-gray-700 hover:border-primary/50'
+                            }`}
+                            title={slot.to ? `${slot.from} - ${slot.to}` : slot.from}
+                          >
+                            {timeLabel}
+                          </button>
+                        );
+                      })}
                   </div>
                 )}
               </div>
@@ -487,9 +602,9 @@ export default function Page() {
                   variant="primary"
                   onClick={handleNext}
                   disabled={
-                    (currentStep === 1 && !formData.specialty) ||
+                    (currentStep === 1 && !formData.specialtyUuid) ||
                     (currentStep === 2 && !formData.date) ||
-                    (currentStep === 3 && !formData.time) ||
+                    (currentStep === 3 && !formData.availabilityUuid) ||
                     (currentStep === 4 && !formData.patient)
                   }
                 >

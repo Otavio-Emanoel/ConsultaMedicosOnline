@@ -285,3 +285,42 @@ export async function inativarBeneficiarioRapidoc(uuid: string) {
     }
   }
 }
+
+// Busca disponibilidade de especialidades para um beneficiário
+export async function buscarDisponibilidadeEspecialidade(params: {
+  specialtyUuid: string;
+  beneficiaryUuid: string;
+  dateInitial: string; // formato dd/MM/yyyy
+  dateFinal: string; // formato dd/MM/yyyy
+}) {
+  if (!RAPIDOC_BASE_URL || !RAPIDOC_TOKEN || !RAPIDOC_CLIENT_ID) throw new Error('Configuração Rapidoc ausente');
+  const url = `${RAPIDOC_BASE_URL}/tema/api/specialty-availability`;
+  const resp = await axios.get(url, {
+    params: {
+      specialtyUuid: params.specialtyUuid,
+      beneficiaryUuid: params.beneficiaryUuid,
+      dateInitial: params.dateInitial,
+      dateFinal: params.dateFinal,
+    },
+    headers: {
+      Authorization: `Bearer ${RAPIDOC_TOKEN}`,
+      clientId: RAPIDOC_CLIENT_ID,
+      'Content-Type': 'application/vnd.rapidoc.tema-v2+json'
+    }
+  });
+  return resp.data;
+}
+
+// Solicita consulta imediata para um beneficiário (GET request-appointment)
+export async function solicitarConsultaImediataRapidoc(beneficiaryUuid: string) {
+  if (!RAPIDOC_BASE_URL || !RAPIDOC_TOKEN || !RAPIDOC_CLIENT_ID) throw new Error('Configuração Rapidoc ausente');
+  const url = `${RAPIDOC_BASE_URL}/tema/api/beneficiaries/${beneficiaryUuid}/request-appointment`;
+  const resp = await axios.get(url, {
+    headers: {
+      Authorization: `Bearer ${RAPIDOC_TOKEN}`,
+      clientId: RAPIDOC_CLIENT_ID,
+      'Content-Type': 'application/vnd.rapidoc.tema-v2+json'
+    }
+  });
+  return resp.data;
+}

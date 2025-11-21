@@ -6,6 +6,8 @@ const router = Router();
 
 // POST /api/agendamentos - agenda consulta no Rapidoc
 router.post('/agendamentos', autenticarFirebase, AgendamentoController.criar);
+// GET /api/agendamentos/disponibilidade - busca disponibilidade de especialidades para o usuário logado
+router.get('/agendamentos/disponibilidade', autenticarFirebase, AgendamentoController.buscarDisponibilidade);
 // GET /api/agendamentos - lista consultas do beneficiário (por cpf/beneficiaryUuid)
 router.get('/agendamentos', autenticarFirebase, AgendamentoController.listar);
 router.get('/agendamentos/:uuid', autenticarFirebase, AgendamentoController.ler);
