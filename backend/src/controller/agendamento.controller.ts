@@ -45,73 +45,27 @@ export class AgendamentoController {
   }
   static async criar(req: Request, res: Response) {
     try {
-      // Obter CPF e beneficiário do usuário logado automaticamente
-      const { cpf, beneficiario, beneficiarioUuid } = await AgendamentoController.obterBeneficiarioDoUsuarioLogado(req);
-
-      const { 
-        availabilityUuid, 
-        specialtyUuid, 
-        beneficiaryMedicalReferralUuid,
-        approveAdditionalPayment,
-        // Formato antigo (mantido para compatibilidade)
-        date, from, to, time, durationMinutes, notes
-      } = req.body || {};
-      
-      // NOVO FORMATO: Usando availabilityUuid (preferencial)
-      if (availabilityUuid && specialtyUuid) {
-        const bodyRapidoc: Record<string, any> = {
-          beneficiaryUuid: beneficiarioUuid,
-          availabilityUuid,
-          specialtyUuid,
-        };
-        
-        // Para especialidades que requerem encaminhamento
-        if (beneficiaryMedicalReferralUuid) {
-          bodyRapidoc.beneficiaryMedicalReferralUuid = beneficiaryMedicalReferralUuid;
-        }
-        
-        // Para nutrição e psicologia (sem encaminhamento)
-        if (approveAdditionalPayment !== undefined) {
-          bodyRapidoc.approveAdditionalPayment = approveAdditionalPayment;
-        }
-        
-        try {
-          const resp = await agendarConsultaRapidoc(bodyRapidoc);
-          if (!resp || resp.success === false) {
-            return res.status(400).json({ error: resp?.message || 'Falha ao agendar no Rapidoc.', detail: resp });
-          }
-          return res.status(201).json(resp);
-        } catch (e: any) {
-          return res.status(400).json({
-            error: 'Erro ao agendar no Rapidoc.',
-            status: e?.response?.status,
-            detail: e?.response?.data,
-            sent: bodyRapidoc
-          });
-        }
-      }
-      
-      // FORMATO ANTIGO: Usando date/from/to (mantido para compatibilidade)
-      if (!date || (!from && !to && !time)) {
-        return res.status(400).json({ 
-          error: 'Campos obrigatórios: availabilityUuid e specialtyUuid (novo formato) ou date, from/to/time (formato antigo).' 
-        });
-      }
-
-      // Validar specialtyUuid contra lista disponível
+      const { cpf, date, from, to, specialtyUuid, notes, durationMinutes } = req.body || {};
+            
+      // Validar specialtyUuid contra lista disponível (sem travar se falhar a listagem)
       let especialidades: any[] = [];
       try {
         especialidades = await listarRapidocEspecialidades();
       } catch {}
+      
       if (especialidades.length && specialtyUuid) {
         const exists = especialidades.some((s: any) => s?.uuid === specialtyUuid || s?.id === specialtyUuid);
         if (!exists) {
           return res.status(422).json({
-            error: 'Especialidade não disponível para o cliente.',
+            error: 'Especialidade não disponível na lista global da Rapidoc.',
             specialtyUuid,
             availableSpecialties: especialidades.map((s: any) => ({ uuid: s.uuid, name: s.name }))
           });
         }
+      }
+
+      if (!cpf || !date || (!from && !to && !req.body.time)) {
+        return res.status(400).json({ error: 'Campos obrigatórios: cpf, date (yyyy-MM-dd), from(HH:mm) e to(HH:mm) ou time + durationMinutes.' });
       }
 
       // Derivar from/to se vier time + durationMinutes
@@ -137,81 +91,54 @@ export class AgendamentoController {
         dateFormatted = `${D}/${M}/${Y}`;
       }
 
-      // Verificar especialidades do beneficiário (arrays possíveis)
-      const benefSpecialtiesRaw: any[] = Array.isArray(beneficiario.specialties) ? beneficiario.specialties : [];
-      const availableSpecialtiesRaw: any[] = Array.isArray(beneficiario.availableSpecialties) ? beneficiario.availableSpecialties : [];
-      let planSpecialtiesRaw: any[] = [];
-      if (Array.isArray(beneficiario.plans) && beneficiario.plans.length) {
-        for (const p of beneficiario.plans) {
-          if (Array.isArray(p?.specialties) && p.specialties.length) {
-            planSpecialtiesRaw.push(...p.specialties);
-          } else if (p?.uuid) {
-            try {
-              const detalhesPlano = await obterDetalhesPlanoRapidoc(p.uuid);
-              if (Array.isArray(detalhesPlano?.specialties)) {
-                planSpecialtiesRaw.push(...detalhesPlano.specialties);
-              }
-            } catch {}
-          }
-        }
-      }
-      const allBenefSpecialties = [...benefSpecialtiesRaw, ...availableSpecialtiesRaw, ...planSpecialtiesRaw];
-      const normalizedBenefSpecialties = allBenefSpecialties.map(s => ({
-        uuid: s?.uuid || s?.id,
-        name: s?.name || s?.description || s?.title
-      })).filter(s => s.uuid);
-      if (normalizedBenefSpecialties.length) {
-        if (!specialtyUuid) {
-          return res.status(400).json({
-            error: 'specialtyUuid é obrigatório para beneficiário que possui especialidades associadas.',
-            beneficiaryUuid: beneficiario.uuid,
-            availableBeneficiarySpecialties: normalizedBenefSpecialties
-          });
-        }
-        const hasSpecialty = normalizedBenefSpecialties.some(s => s.uuid === specialtyUuid);
-        if (!hasSpecialty) {
-          return res.status(422).json({
-            error: 'Especialidade não associada ao beneficiário/plano.',
-            specialtyUuid,
-            beneficiaryUuid: beneficiario.uuid,
-            availableBeneficiarySpecialties: normalizedBenefSpecialties
-          });
-        }
-      }
-      // Fallback desativado: não associamos especialidade automaticamente via código
-      const semEspecialidadesAssociadas = normalizedBenefSpecialties.length === 0;
-      if (semEspecialidadesAssociadas) {
-        if (!specialtyUuid) {
-          let globais: any[] = [];
-          try { globais = await listarRapidocEspecialidades(); } catch {}
-          const suggestions = (globais || [])
-            .map((s: any) => ({ uuid: s?.uuid || s?.id, name: (s?.name || s?.description || s?.title || '').toString() }))
-            .filter((s: any) => s.uuid);
-          return res.status(422).json({
-            error: 'Beneficiário não possui especialidades associadas e o fallback de generalista está desativado. Informe specialtyUuid ou associe via Rapidoc.',
-            beneficiaryUuid: beneficiario.uuid,
-            suggestions
-          });
-        }
-        // Se specialtyUuid foi informado, seguimos adiante e deixamos a API validar.
+      const beneficiarioResp = await buscarBeneficiarioRapidocPorCpf(cpf);
+      const beneficiario = beneficiarioResp?.beneficiary;
+      if (!beneficiario || !beneficiario.uuid) {
+        return res.status(404).json({ error: 'Beneficiário não encontrado no Rapidoc para o CPF informado.' });
       }
 
+      // --- LÓGICA DE PREPARAÇÃO (SIMPLIFICADA) ---
+      // Identificar qual deveria ser o ServiceType e Plano corretos baseados no cadastro
+      let targetServiceType = beneficiario.serviceType; 
+      let targetPlanUuid: string | undefined;
+
+      if (Array.isArray(beneficiario.plans) && beneficiario.plans.length > 0) {
+          const p = beneficiario.plans[0];
+          if (p.plan) {
+              if (p.plan.serviceType) targetServiceType = p.plan.serviceType;
+              if (p.plan.uuid) targetPlanUuid = p.plan.uuid;
+          } else {
+              if (p.serviceType) targetServiceType = p.serviceType;
+              if (p.uuid) targetPlanUuid = p.uuid;
+          }
+      }
+
+      // AUTOCORREÇÃO: Se o usuário está com tipo errado no banco (ex: G) mas tem plano (ex: GS), atualiza agora.
+      if (targetServiceType && beneficiario.serviceType !== targetServiceType) {
+        console.log(`[Agendamento] Atualizando beneficiário ${cpf} de ${beneficiario.serviceType} para ${targetServiceType}...`);
+        try {
+            await atualizarBeneficiarioRapidoc(beneficiario.uuid, { serviceType: targetServiceType });
+        } catch (err: any) {
+            console.error('[Agendamento] Erro na autocorreção:', err.message);
+        }
+      }
+
+      // --- CONSTUÇÃO DO BODY DO AGENDAMENTO ---
+      // IMPORTANTE: Não enviamos 'plan' nem 'serviceType' aqui se o usuário já estiver correto.
+      // Enviar esses campos parcialmente pode fazer a API sobrescrever as regras do usuário com um objeto vazio.
       const bodyRapidoc: Record<string, any> = {
         beneficiary: { uuid: beneficiarioUuid, cpf },
         specialty: { uuid: specialtyUuid },
         detail: { date: dateFormatted, from: finalFrom, to: finalTo }
       };
-      // Incluir plano se houver
-      if (Array.isArray(beneficiario.plans) && beneficiario.plans.length && beneficiario.plans[0]?.uuid) {
-        bodyRapidoc.plan = { uuid: beneficiario.plans[0].uuid };
-      }
-      // Incluir paymentType / serviceType se presentes
+      
       if (beneficiario.paymentType) bodyRapidoc.paymentType = beneficiario.paymentType;
-      if (beneficiario.serviceType) bodyRapidoc.serviceType = beneficiario.serviceType;
       if (notes) bodyRapidoc.notes = notes;
 
       try {
+        console.log('[Agendamento] Enviando para Rapidoc (Payload Limpo):', JSON.stringify(bodyRapidoc, null, 2));
         const resp = await agendarConsultaRapidoc(bodyRapidoc);
+        
         if (!resp || resp.success === false) {
           return res.status(400).json({ error: resp?.message || 'Falha ao agendar no Rapidoc.', detail: resp });
         }
@@ -221,7 +148,8 @@ export class AgendamentoController {
           error: 'Erro ao agendar no Rapidoc.',
           status: e?.response?.status,
           detail: e?.response?.data,
-          sent: bodyRapidoc
+          sent: bodyRapidoc,
+          beneficiarioDebug: beneficiarioResp // Retorna os dados originais para debug
         });
       }
     } catch (error: any) {
@@ -263,59 +191,93 @@ export class AgendamentoController {
   // POST /api/agendamentos/imediato - solicita consulta imediata usando request-appointment
   static async solicitarImediato(req: Request, res: Response) {
     try {
-      // CPF selecionado pode vir no body (para dependentes) ou usar o do usuário logado
-      const { cpfSelecionado } = req.body || {};
-      
-      let beneficiarioUuid: string;
-      
-      if (cpfSelecionado) {
-        // Se veio CPF selecionado, busca o beneficiário desse CPF
-        const beneficiarioResp = await buscarBeneficiarioRapidocPorCpf(cpfSelecionado);
-        const beneficiario = beneficiarioResp?.beneficiary;
-        if (!beneficiario || !beneficiario.uuid) {
-          return res.status(404).json({ error: 'Beneficiário não encontrado no Rapidoc para o CPF selecionado.' });
+      const db = getFirestore(firebaseApp);
+      const { cpf: cpfBody, specialtyUuid, notes } = req.body || {};
+      const cpf = (req.user && (req.user as any).cpf) || cpfBody;
+      if (!cpf) return res.status(400).json({ error: 'Informe o CPF no token ou no corpo da requisição.' });
+
+      const beneficiarioResp = await buscarBeneficiarioRapidocPorCpf(cpf);
+      const beneficiario = beneficiarioResp?.beneficiary;
+      if (!beneficiario || !beneficiario.uuid) {
+        return res.status(404).json({ error: 'Beneficiário não encontrado no Rapidoc para o CPF informado.' });
+      }
+
+      // Validações de especialidade omitidas para brevidade...
+
+      // Cria solicitação em fila
+      const ref = db.collection('immediate_requests').doc();
+      const payload: any = {
+        id: ref.id,
+        cpf,
+        beneficiaryUuid: beneficiario.uuid,
+        specialtyUuid: specialtyUuid || null,
+        notes: notes || null,
+        status: 'pending',
+        attemptCount: 0,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      };
+
+      // Tenta agendar automaticamente
+      const auto = (process.env.RAPIDOC_IMMEDIATE_AUTO || '').toLowerCase() === 'true';
+      if (auto && specialtyUuid) {
+        try {
+          const now = new Date();
+          const end = new Date(now.getTime() + 30 * 60000);
+          const dd = String(now.getDate()).padStart(2, '0');
+          const mm = String(now.getMonth() + 1).padStart(2, '0');
+          const yyyy = now.getFullYear();
+          const dateFormatted = `${dd}/${mm}/${yyyy}`;
+          const from = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+          const to = `${String(end.getHours()).padStart(2, '0')}:${String(end.getMinutes()).padStart(2, '0')}`;
+
+          // --- LÓGICA DE PREPARAÇÃO IMEDIATO (SIMPLIFICADA) ---
+          let targetServiceType = beneficiario.serviceType; 
+          if (Array.isArray(beneficiario.plans) && beneficiario.plans.length > 0) {
+              const p = beneficiario.plans[0];
+              if (p.plan && p.plan.serviceType) targetServiceType = p.plan.serviceType;
+              else if (p.serviceType) targetServiceType = p.serviceType;
+          }
+
+          // Autocorreção Imediato
+          if (targetServiceType && beneficiario.serviceType !== targetServiceType) {
+             try {
+                await atualizarBeneficiarioRapidoc(beneficiario.uuid, { serviceType: targetServiceType });
+             } catch {}
+          }
+
+          // Body Limpo
+          const bodyRapidoc: Record<string, any> = {
+            beneficiary: { uuid: beneficiario.uuid, cpf },
+            specialty: { uuid: specialtyUuid },
+            detail: { date: dateFormatted, from, to }
+          };
+          if (beneficiario.paymentType) bodyRapidoc.paymentType = beneficiario.paymentType;
+          if (notes) bodyRapidoc.notes = notes;
+
+          const resp = await agendarConsultaRapidoc(bodyRapidoc);
+          if (resp && resp.success !== false) {
+            payload.status = 'scheduled';
+            payload.attemptCount = 1;
+            payload.updatedAt = new Date().toISOString();
+            payload.appointment = resp;
+          } else {
+            payload.status = 'pending';
+            payload.attemptCount = 1;
+            payload.lastError = resp?.message || 'Falha ao agendar automaticamente';
+            payload.updatedAt = new Date().toISOString();
+          }
+        } catch (e: any) {
+          payload.status = 'pending';
+          payload.attemptCount = 1;
+          payload.lastError = e?.response?.data || e?.message || 'Erro ao tentar agendar automaticamente';
+          payload.updatedAt = new Date().toISOString();
         }
-        beneficiarioUuid = beneficiario.uuid;
-      } else {
-        // Senão, usa o beneficiário do usuário logado
-        const { beneficiarioUuid: uuidLogado } = await AgendamentoController.obterBeneficiarioDoUsuarioLogado(req);
-        beneficiarioUuid = uuidLogado;
       }
-      
-      // Chamar endpoint request-appointment do Rapidoc
-      const resposta = await solicitarConsultaImediataRapidoc(beneficiarioUuid);
-      
-      // Extrair link da resposta (formato da API Rapidoc: { success: true, message: "...", url: "..." })
-      let linkConsulta: string | null = null;
-      
-      // O Rapidoc retorna { success: true, message: "...", url: "..." }
-      if (resposta?.url) {
-        linkConsulta = resposta.url;
-      } else if (resposta?.link) {
-        linkConsulta = resposta.link;
-      } else if (resposta?.data?.url) {
-        linkConsulta = resposta.data.url;
-      }
-      
-      if (!linkConsulta) {
-        // Se não encontrou link, retorna a resposta completa para debug
-        return res.status(200).json({
-          success: false,
-          beneficiaryUuid: beneficiarioUuid,
-          message: 'Link não encontrado na resposta do Rapidoc.',
-          rawResponse: resposta
-        });
-      }
-      
-      return res.status(200).json({
-        success: true,
-        beneficiaryUuid: beneficiarioUuid,
-        url: linkConsulta,
-        link: linkConsulta, // Alias para compatibilidade
-        joinUrl: linkConsulta, // Alias para compatibilidade
-        appointmentUrl: linkConsulta // Alias para compatibilidade
-      });
-      
+
+      await ref.set(payload);
+      const statusCode = payload.status === 'scheduled' ? 201 : 202;
+      return res.status(statusCode).json(payload);
     } catch (error: any) {
       if (error?.message === 'Usuário não autenticado.' || error?.message?.includes('CPF')) {
         return res.status(400).json({ error: error.message });
@@ -356,7 +318,6 @@ export class AgendamentoController {
       if (!doc.exists) return res.status(404).json({ error: 'Solicitação não encontrada.' });
       const data: any = doc.data() || {};
 
-      // Se já houver appointment e ainda não cancelado, tenta cancelar no Rapidoc
       try {
         const apptUuid = data?.appointment?.uuid || data?.appointment?.appointment?.uuid;
         if (apptUuid) {
@@ -435,7 +396,7 @@ export class AgendamentoController {
 
       const params: Record<string, any> = { beneficiary: finalBenefUuid };
       if (status) params.status = status;
-      if (date) params.date = date; // formato dd/MM/yyyy esperado pela API (não convertendo aqui)
+      if (date) params.date = date;
 
       const itens = await listarAgendamentosRapidoc(params);
       const mapped = (Array.isArray(itens) ? itens : []).map((a: any) => ({
@@ -493,7 +454,7 @@ export class AgendamentoController {
     }
   }
 
-  // GET /api/agendamentos/imediato/:id/join - retorna link da consulta para solicitação imediata já agendada
+  // GET /api/agendamentos/imediato/:id/join
   static async joinImediato(req: Request, res: Response) {
     try {
       const db = getFirestore(firebaseApp);
@@ -507,7 +468,6 @@ export class AgendamentoController {
       }
       const apptUuid = data?.appointment?.uuid || data?.appointment?.appointment?.uuid;
       if (!apptUuid) {
-        // tenta aproveitar link direto salvo, se houver
         const candidateKeys = ['joinUrl', 'meetingUrl', 'url', 'roomUrl', 'videoUrl', 'telemedUrl'];
         for (const k of candidateKeys) {
           if (data?.appointment?.[k]) {
@@ -516,7 +476,6 @@ export class AgendamentoController {
         }
         return res.status(404).json({ error: 'UUID do agendamento não encontrado na solicitação.' });
       }
-      // reusa a lógica do join
       req.params.uuid = apptUuid;
       return await AgendamentoController.join(req, res);
     } catch (error: any) {

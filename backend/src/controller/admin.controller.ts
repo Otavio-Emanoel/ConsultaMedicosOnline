@@ -1,9 +1,37 @@
+import type { Firestore } from 'firebase-admin/firestore';
 import type { Request, Response } from 'express';
 import admin from 'firebase-admin';
 import { getAuth } from 'firebase-admin/auth';
 import { getFirestore } from 'firebase-admin/firestore';
 import { firebaseApp } from '../config/firebase.js';
 import axios from 'axios';
+
+// BUG FIX: getLogsCounts estava sendo declarada dentro da classe como função aninhada, 
+// mas usada como função externa (fora do escopo da classe). 
+// O correto é declarar fora da classe, como função utilitária.
+
+async function getLogsCounts(db: Firestore) {
+  // Erros pendentes: status 500
+  const pendentesSnap = await db.collection('logs_api').where('status', '==', 500).get();
+  const errosPendentes = pendentesSnap.size;
+
+  // Erros críticos: status 500 e método POST (exemplo de critério)
+  const criticosSnap = await db.collection('logs_api')
+    .where('status', '==', 500)
+    .where('method', '==', 'POST')
+    .get();
+  const errosCriticos = criticosSnap.size;
+
+  // Erros recentes: últimos 7 dias
+  const seteDiasAtras = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+  const recentesSnap = await db.collection('logs_api')
+    .where('status', '==', 500)
+    .where('ts', '>=', seteDiasAtras)
+    .get();
+  const errosRecentes = recentesSnap.size;
+
+  return { errosPendentes, errosCriticos, errosRecentes };
+}
 
 export class AdminController {
   // Cadastro de administrador (apenas outro admin pode cadastrar)
@@ -105,6 +133,17 @@ export class AdminController {
   static async dashboard(req: Request, res: Response) {
     try {
       const db = getFirestore(firebaseApp);
+
+      // Busca contagem de erros (logs)
+      const { errosPendentes, errosCriticos, errosRecentes } = await getLogsCounts(db);
+
+      // Busca os 10 últimos erros (status 500), ordenados por ts desc
+      const ultimosErrosSnap = await db.collection('logs_api')
+        .where('status', '==', 500)
+        .orderBy('ts', 'desc')
+        .limit(10)
+        .get();
+      const ultimosErros = ultimosErrosSnap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
 
       // Totais básicos (Firestore)
       const [usuariosSnap, assinSnap, ativasSnap, canceladasSnap, pendentesSnap, planosSnap] = await Promise.all([
@@ -250,7 +289,13 @@ export class AdminController {
           mediaValorPlanos,
           detalhados: planosDetalhados
         },
-        novosAssinantes
+        novosAssinantes,
+        logs: {
+          errosPendentes,
+          errosCriticos,
+          errosRecentes,
+          ultimosErros
+        }
       });
     } catch (error: any) {
       return res.status(500).json({ error: error?.message || 'Erro ao montar dashboard administrativo.' });

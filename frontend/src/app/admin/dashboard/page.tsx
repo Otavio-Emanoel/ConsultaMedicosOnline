@@ -26,6 +26,19 @@ import { useEffect, useState } from 'react';
 import { getAuth } from 'firebase/auth';
 import { app } from '@/lib/firebase';
 
+type LogErro = {
+  id: string;
+  ts: string;
+  method: string;
+  url: string;
+  status: number;
+  latencyMs: number;
+  uid: string | null;
+  cpf: string | null;
+  ip: string;
+  userAgent: string;
+};
+
 type DashboardData = {
   totais: { usuarios: number };
   faturamento: { mesAtual: number };
@@ -47,6 +60,12 @@ type DashboardData = {
     data: string;
     status: string;
   }>;
+  logs?: {
+    errosPendentes: number;
+    errosCriticos: number;
+    errosRecentes: number;
+    ultimosErros: LogErro[];
+  };
 };
 
 export default function AdminDashboardPage() {
@@ -59,7 +78,7 @@ export default function AdminDashboardPage() {
       setLoading(true);
       setErro("");
       try {
-        const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:3000/api";
+        const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL;
         const auth = getAuth(app);
         const user = auth.currentUser;
         if (!user) {
@@ -164,11 +183,11 @@ export default function AdminDashboardPage() {
                   Erros Pendentes
                 </p>
                 <p className="text-2xl font-bold text-gray-900 dark:text-white">
-                  12
+                  {loading ? '...' : erro ? '-' : dashboard?.logs?.errosPendentes ?? '-'}
                 </p>
                 <p className="text-xs text-danger mt-1 flex items-center">
                   <AlertTriangle className="w-3 h-3 mr-1" />
-                  3 críticos
+                  {loading ? '...' : erro ? '-' : `${dashboard?.logs?.errosCriticos ?? 0} críticos`}
                 </p>
               </div>
               <div className="w-12 h-12 bg-red-100 dark:bg-slate-700 rounded-xl flex items-center justify-center">
@@ -370,36 +389,65 @@ export default function AdminDashboardPage() {
         </CardHeader>
         <CardBody>
           <div className="space-y-3">
-            {[
-              { tipo: 'Crítico', mensagem: 'Falha na integração de pagamento - Asaas', tempo: 'Há 10 min', icon: XCircle, color: 'text-danger' },
-              { tipo: 'Alerta', mensagem: 'Taxa de erro elevada no endpoint /api/appointments', tempo: 'Há 1 hora', icon: AlertTriangle, color: 'text-warning' },
-              { tipo: 'Info', mensagem: 'Backup automático concluído com sucesso', tempo: 'Há 2 horas', icon: CheckCircle, color: 'text-success' },
-              { tipo: 'Alerta', mensagem: 'Limite de requisições próximo (85%)', tempo: 'Há 3 horas', icon: Activity, color: 'text-warning' },
-            ].map((log, idx) => {
-              const Icon = log.icon;
-              return (
-                <div
-                  key={idx}
-                  className="flex items-start space-x-3 p-4 bg-gray-50 dark:bg-gray-800/50 rounded-xl"
-                >
-                  <Icon className={`w-5 h-5 ${log.color} flex-shrink-0 mt-0.5`} />
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center justify-between mb-1">
-                      <span className={`text-xs font-semibold ${log.color}`}>
-                        {log.tipo}
-                      </span>
-                      <span className="text-xs text-gray-500 flex items-center">
-                        <Clock className="w-3 h-3 mr-1" />
-                        {log.tempo}
-                      </span>
+            {loading ? (
+              <div className="text-center text-gray-500">Carregando...</div>
+            ) : erro ? (
+              <div className="text-center text-danger">Erro ao carregar logs</div>
+            ) : dashboard?.logs?.ultimosErros && dashboard.logs.ultimosErros.length > 0 ? (
+              dashboard.logs.ultimosErros.map((log, idx) => {
+                // Formatação de data/tempo
+                const data = new Date(log.ts);
+                const agora = new Date();
+                const diffMs = agora.getTime() - data.getTime();
+                let tempo = '';
+                const diffMin = Math.floor(diffMs / 60000);
+                if (diffMin < 1) tempo = 'Agora';
+                else if (diffMin < 60) tempo = `Há ${diffMin} min`;
+                else if (diffMin < 1440) tempo = `Há ${Math.floor(diffMin / 60)}h`;
+                else tempo = data.toLocaleString('pt-BR');
+
+                // Severidade visual: POST = crítico, GET = alerta
+                let Icon = XCircle;
+                let color = 'text-danger';
+                if (log.method === 'POST') {
+                  Icon = XCircle;
+                  color = 'text-danger';
+                } else if (log.method === 'GET') {
+                  Icon = AlertTriangle;
+                  color = 'text-warning';
+                } else {
+                  Icon = Activity;
+                  color = 'text-gray-500';
+                }
+
+                return (
+                  <div
+                    key={log.id}
+                    className="flex items-start space-x-3 p-4 bg-gray-50 dark:bg-gray-800/50 rounded-xl"
+                  >
+                    <Icon className={`w-5 h-5 ${color} flex-shrink-0 mt-0.5`} />
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center justify-between mb-1">
+                        <span className={`text-xs font-semibold ${color}`}>
+                          {log.method}
+                        </span>
+                        <span className="text-xs text-gray-500 flex items-center">
+                          <Clock className="w-3 h-3 mr-1" />
+                          {tempo}
+                        </span>
+                      </div>
+                      <p className="text-sm text-gray-900 dark:text-white break-all">
+                        <span className="font-mono text-xs text-gray-500">{log.url}</span><br />
+                        <span className="text-xs text-gray-500">Status: {log.status} | Latência: {log.latencyMs?.toFixed(0)}ms</span><br />
+                        <span className="text-xs text-gray-500">User: {log.uid || log.cpf || '-'}</span>
+                      </p>
                     </div>
-                    <p className="text-sm text-gray-900 dark:text-white">
-                      {log.mensagem}
-                    </p>
                   </div>
-                </div>
-              );
-            })}
+                );
+              })
+            ) : (
+              <div className="text-center text-gray-500">Nenhum erro recente</div>
+            )}
           </div>
         </CardBody>
       </Card>

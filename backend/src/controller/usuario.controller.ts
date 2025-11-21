@@ -71,6 +71,20 @@ export class UsuarioController {
             const result = await salvarUsuario(usuario);
             return res.status(201).json({ message: 'Usuário salvo com sucesso.', id: result.id });
         } catch (error: any) {
+            // Salva log detalhado do erro no Firestore
+            try {
+                const usuario = req.body || {};
+                const logData = {
+                    cpf: usuario.cpf || null,
+                    body: usuario,
+                    errorMessage: error?.message || 'Erro ao salvar usuário.',
+                    stack: error?.stack || null,
+                    data: new Date().toISOString(),
+                };
+                await admin.firestore().collection('logsErros').add(logData);
+            } catch (logErr) {
+                // Se falhar o log, apenas ignora
+            }
             return res.status(500).json({ error: error.message || 'Erro ao salvar usuário.' });
         }
     }
@@ -81,6 +95,14 @@ export class UsuarioController {
             const usuarios = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
             return res.status(200).json(usuarios);
         } catch (error: any) {
+            try {
+                await admin.firestore().collection('logsErros').add({
+                    endpoint: 'listarUsuarios',
+                    errorMessage: error?.message || 'Erro ao listar usuários.',
+                    stack: error?.stack || null,
+                    data: new Date().toISOString(),
+                });
+            } catch {}
             return res.status(500).json({ error: error.message || 'Erro ao listar usuários.' });
         }
     }
@@ -95,6 +117,15 @@ export class UsuarioController {
             if (!usuarioDoc.exists) return res.status(404).json({ error: 'Usuário não encontrado.' });
             return res.status(200).json(usuarioDoc.data());
         } catch (error: any) {
+            try {
+                await admin.firestore().collection('logsErros').add({
+                    endpoint: 'obterDadosUsuario',
+                    cpf,
+                    errorMessage: error?.message || 'Erro ao obter usuário.',
+                    stack: error?.stack || null,
+                    data: new Date().toISOString(),
+                });
+            } catch {}
             return res.status(500).json({ error: error.message || 'Erro ao obter usuário.' });
         }
     }
@@ -139,6 +170,16 @@ export class UsuarioController {
 
             return res.status(200).json({ ok: true, message: 'Senha alterada com sucesso.' });
         } catch (error: any) {
+            try {
+                await admin.firestore().collection('logsErros').add({
+                    endpoint: 'atualizarSenha',
+                    uid: req.user?.uid || null,
+                    email: req.user?.email || null,
+                    errorMessage: error?.message || 'Erro ao alterar senha.',
+                    stack: error?.stack || null,
+                    data: new Date().toISOString(),
+                });
+            } catch {}
             return res.status(500).json({ error: error.message || 'Erro ao alterar senha.' });
         }
     }
@@ -162,6 +203,15 @@ export class UsuarioController {
 
         return res.status(200).json({ ok: true, message: 'E-mail de recuperação enviado com sucesso.' });
     } catch (error: any) {
+        try {
+            await admin.firestore().collection('logsErros').add({
+                endpoint: 'recuperarSenha',
+                email: req.body?.email || null,
+                errorMessage: error?.message || 'Erro ao enviar e-mail de recuperação.',
+                stack: error?.stack || null,
+                data: new Date().toISOString(),
+            });
+        } catch {}
         return res.status(500).json({ error: error.message || 'Erro ao enviar e-mail de recuperação.' });
     }
 }
@@ -176,6 +226,15 @@ export class UsuarioController {
             if (!usuarioDoc.exists) return res.status(404).json({ error: 'Usuário não encontrado.' });
             return res.status(200).json(usuarioDoc.data());
         } catch (error: any) {
+            try {
+                await admin.firestore().collection('logsErros').add({
+                    endpoint: 'obterDadosAutenticado',
+                    cpf,
+                    errorMessage: error?.message || 'Erro ao obter usuário autenticado.',
+                    stack: error?.stack || null,
+                    data: new Date().toISOString(),
+                });
+            } catch {}
             return res.status(500).json({ error: error.message || 'Erro ao obter usuário.' });
         }
     }
@@ -263,6 +322,16 @@ export class UsuarioController {
 
             return res.status(200).json({ message: 'Dados atualizados com sucesso.' });
         } catch (error: any) {
+            try {
+                await admin.firestore().collection('logsErros').add({
+                    endpoint: 'atualizarDados',
+                    cpf,
+                    body: req.body,
+                    errorMessage: error?.message || 'Erro ao atualizar dados.',
+                    stack: error?.stack || null,
+                    data: new Date().toISOString(),
+                });
+            } catch {}
             return res.status(500).json({ error: error.message || 'Erro ao atualizar dados.' });
         }
     }
@@ -283,6 +352,15 @@ export class UsuarioController {
             if (!data) return res.status(404).json({ error: 'Beneficiário não encontrado no Rapidoc.' });
             return res.status(200).json(data);
         } catch (error: any) {
+            try {
+                await admin.firestore().collection('logsErros').add({
+                    endpoint: 'obterBeneficiarioRapidoc',
+                    cpf,
+                    errorMessage: error?.message || 'Erro ao obter beneficiário no Rapidoc.',
+                    stack: error?.stack || null,
+                    data: new Date().toISOString(),
+                });
+            } catch {}
             return res.status(500).json({ error: error.message || 'Erro ao obter beneficiário no Rapidoc.' });
         }
     }
