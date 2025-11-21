@@ -242,84 +242,28 @@ export default function CancelarPlanoPage() {
 
         {/* Retention Offers */}
         {step === 'retention' && (
-          <>
-            <div className="text-center mb-6">
-              <Heart className="w-16 h-16 text-danger mx-auto mb-4" />
-              <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-2">
-                Não queremos que você vá!
-              </h2>
-              <p className="text-gray-600 dark:text-gray-400">
-                Temos ofertas especiais apenas para você
-              </p>
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
-              {RETENTION_OFFERS.map((offer) => {
-                const Icon = offer.icon;
-                return (
-                  <button
-                    key={offer.id}
-                    onClick={() => setSelectedOffer(offer.id)}
-                    className={`p-6 rounded-xl border-2 transition-all text-left ${
-                      selectedOffer === offer.id
-                        ? 'border-primary bg-primary/5'
-                        : 'border-gray-200 dark:border-gray-700 hover:border-primary/50'
-                    }`}
+          <Card>
+            <CardBody>
+              <div className="flex items-center justify-between">
+                <div>
+                  <Button
+                    variant="outline"
+                    onClick={() => setStep('reasons')}
                   >
-                    <div
-                      className={`w-12 h-12 rounded-xl flex items-center justify-center mb-4 ${
-                        selectedOffer === offer.id
-                          ? 'bg-primary text-white'
-                          : 'bg-gray-100 dark:bg-gray-800 text-gray-400'
-                      }`}
-                    >
-                      <Icon className="w-6 h-6" />
-                    </div>
-                    <h3 className="font-semibold text-gray-900 dark:text-white mb-2">
-                      {offer.title}
-                    </h3>
-                    <p className="text-sm text-gray-600 dark:text-gray-400 mb-3">
-                      {offer.description}
-                    </p>
-                    <div className="inline-block px-3 py-1 bg-success/10 text-success text-xs font-semibold rounded-full">
-                      {offer.highlight}
-                    </div>
-                  </button>
-                );
-              })}
-            </div>
-
-            <Card>
-              <CardBody>
-                <div className="flex items-center justify-between">
-                  <div>
-                    <Button
-                      variant="outline"
-                      onClick={() => setStep('reasons')}
-                    >
-                      Voltar
-                    </Button>
-                  </div>
-                  <div className="flex items-center space-x-3">
-                    <Button
-                      variant="primary"
-                      onClick={handleAcceptOffer}
-                      disabled={!selectedOffer}
-                    >
-                      <CheckCircle className="w-5 h-5 mr-2" />
-                      Aceitar Oferta
-                    </Button>
-                    <Button variant="danger" onClick={handleConfirmCancellation} disabled={loadingCancel}>
-                      {loadingCancel ? 'Cancelando...' : 'Cancelar Mesmo Assim'}
-                    </Button>
-                  </div>
+                    Voltar
+                  </Button>
                 </div>
-                {cancelError && (
-                  <div className="mt-4 text-red-600 dark:text-red-400 text-sm">{cancelError}</div>
-                )}
-              </CardBody>
-            </Card>
-          </>
+                <div className="flex items-center space-x-3">
+                  <Button variant="danger" onClick={handleConfirmCancellation} disabled={loadingCancel}>
+                    {loadingCancel ? 'Cancelando...' : 'Cancelar Mesmo Assim'}
+                  </Button>
+                </div>
+              </div>
+              {cancelError && (
+                <div className="mt-4 text-red-600 dark:text-red-400 text-sm">{cancelError}</div>
+              )}
+            </CardBody>
+          </Card>
         )}
 
         {/* Confirmation */}

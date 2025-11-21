@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { Dialog } from '@/components/ui/Dialog';
 import { useParams, useRouter } from "next/navigation";
 import { ArrowLeft, ArrowRight, Check } from "lucide-react";
 
@@ -16,7 +17,7 @@ type Plano = {
 export default function CadastroPage() {
   const params = useParams();
   const router = useRouter();
-  const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:3000/api";
+  const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL;
   const planoId = Array.isArray(params?.id) ? params.id[0] : params?.id;
   
   const [plano, setPlano] = useState<Plano | null>(null);
@@ -40,6 +41,16 @@ export default function CadastroPage() {
     estado: "",
     country: "BR",
     billingType: "BOLETO" as "BOLETO" | "CREDIT_CARD" | "PIX",
+  });
+
+  // Corrigido: Removido duplicidade dos estados de cartão e modal
+  const [showCardModal, setShowCardModal] = useState(false);
+  const [cardData, setCardData] = useState({
+    holderName: '',
+    number: '',
+    expiryMonth: '',
+    expiryYear: '',
+    ccv: '',
   });
 
   useEffect(() => {
@@ -133,7 +144,7 @@ export default function CadastroPage() {
     setMensagem("");
     
     try {
-      const body = {
+      const body: any = {
         nome: form.nome,
         email: form.email,
         cpf: form.cpf.replace(/\D/g, ""),
@@ -150,7 +161,16 @@ export default function CadastroPage() {
         billingType: form.billingType,
         ciclo: cicloAsaas,
       };
-      
+      // Se for cartão, inclui dados do cartão
+      if (form.billingType === 'CREDIT_CARD') {
+        body.creditCard = {
+          holderName: cardData.holderName,
+          number: cardData.number,
+          expiryMonth: cardData.expiryMonth,
+          expiryYear: cardData.expiryYear,
+          ccv: cardData.ccv,
+        };
+      }
       const resp = await fetch(`${API_BASE}/subscription/start`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -414,7 +434,88 @@ export default function CadastroPage() {
                       <option value="CREDIT_CARD">Cartão de Crédito</option>
                       <option value="PIX">PIX</option>
                     </select>
+                    {form.billingType === 'CREDIT_CARD' && (
+                      <button
+                        type="button"
+                        className="mt-3 px-4 py-2 bg-primary text-white rounded-lg hover:bg-green-700 transition"
+                        onClick={() => setShowCardModal(true)}
+                      >
+                        Configurar Cartão
+                      </button>
+                    )}
                   </div>
+                  {/* Modal de Cartão de Crédito */}
+                  <Dialog open={showCardModal} onOpenChange={setShowCardModal}>
+                    <Dialog.Content>
+                      <Dialog.Title>Dados do Cartão de Crédito</Dialog.Title>
+                      <div className="space-y-4 mt-2">
+                        <input
+                          type="text"
+                          placeholder="Nome impresso no cartão"
+                          value={cardData.holderName}
+                          onChange={e => setCardData({ ...cardData, holderName: e.target.value })}
+                          className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-primary dark:bg-gray-700 dark:text-white"
+                        />
+                        <input
+                          type="text"
+                          placeholder="Número do cartão"
+                          value={cardData.number}
+                          onChange={e => setCardData({ ...cardData, number: e.target.value.replace(/\D/g, '') })}
+                          maxLength={16}
+                          className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-primary dark:bg-gray-700 dark:text-white"
+                        />
+                        <div className="flex gap-4">
+                          <input
+                            type="text"
+                            placeholder="Mês (MM)"
+                            value={cardData.expiryMonth}
+                            onChange={e => setCardData({ ...cardData, expiryMonth: e.target.value.replace(/\D/g, '').slice(0,2) })}
+                            maxLength={2}
+                            className="w-1/2 px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-primary dark:bg-gray-700 dark:text-white"
+                          />
+                          <input
+                            type="text"
+                            placeholder="Ano (AA ou AAAA)"
+                            value={cardData.expiryYear}
+                            onChange={e => setCardData({ ...cardData, expiryYear: e.target.value.replace(/\D/g, '').slice(0,4) })}
+                            maxLength={4}
+                            className="w-1/2 px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-primary dark:bg-gray-700 dark:text-white"
+                          />
+                        </div>
+                        <input
+                          type="text"
+                          placeholder="CVV"
+                          value={cardData.ccv}
+                          onChange={e => setCardData({ ...cardData, ccv: e.target.value.replace(/\D/g, '').slice(0,4) })}
+                          maxLength={4}
+                          className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-primary dark:bg-gray-700 dark:text-white"
+                        />
+                        <div className="flex justify-end gap-2 mt-4">
+                          <button
+                            type="button"
+                            className="px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700"
+                            onClick={() => setShowCardModal(false)}
+                          >
+                            Cancelar
+                          </button>
+                          <button
+                            type="button"
+                            className="px-4 py-2 rounded-lg bg-primary text-white hover:bg-green-700"
+                            onClick={() => setShowCardModal(false)}
+                            disabled={
+                              !cardData.holderName ||
+                              cardData.number.length < 13 ||
+                              cardData.expiryMonth.length < 1 ||
+                              cardData.expiryYear.length < 2 ||
+                              cardData.ccv.length < 3
+                            }
+                          >
+                            Salvar Cartão
+                          </button>
+                        </div>
+                      </div>
+                    </Dialog.Content>
+                  </Dialog>
                   <div className="text-xs text-gray-600 dark:text-gray-400">
                     Ciclo de cobrança: {plano.periodicidade}
                   </div>
