@@ -17,132 +17,86 @@ import {
   Download,
   Trash2,
   RefreshCw,
+  Activity,
 } from 'lucide-react';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
+import { getAuth } from 'firebase/auth';
+import { app } from '@/lib/firebase';
+
+type LogErro = {
+  id: string;
+  ts: string;
+  method: string;
+  url: string;
+  status: number;
+  latencyMs: number;
+  uid: string | null;
+  cpf: string | null;
+  ip: string;
+  userAgent: string;
+};
+
+type LogsResumo = {
+  errosPendentes: number;
+  errosCriticos: number;
+  errosRecentes: number;
+  ultimosErros: LogErro[];
+};
 
 export default function AdminLogsPage() {
   const [searchTerm, setSearchTerm] = useState('');
-  const [logs] = useState([
-    {
-      id: 1,
-      tipo: 'error',
-      nivel: 'Crítico',
-      mensagem: 'Falha na integração de pagamento - Gateway Asaas retornou timeout',
-      timestamp: '2025-11-06 14:32:15',
-      endpoint: '/api/payments/process',
-      usuario: 'Sistema',
-      detalhes: 'Connection timeout after 30s',
-      stackTrace: 'Error: ETIMEDOUT at...',
-    },
-    {
-      id: 2,
-      tipo: 'warning',
-      nivel: 'Alerta',
-      mensagem: 'Taxa de erro elevada no endpoint de consultas (15% nos últimos 5min)',
-      timestamp: '2025-11-06 13:15:42',
-      endpoint: '/api/appointments/create',
-      usuario: 'Sistema',
-      detalhes: '45 falhas de 300 requisições',
-      stackTrace: null,
-    },
-    {
-      id: 3,
-      tipo: 'info',
-      nivel: 'Info',
-      mensagem: 'Backup automático concluído com sucesso',
-      timestamp: '2025-11-06 12:00:00',
-      endpoint: '/system/backup',
-      usuario: 'Cron Job',
-      detalhes: 'Database: 2.5GB, Files: 500MB',
-      stackTrace: null,
-    },
-    {
-      id: 4,
-      tipo: 'error',
-      nivel: 'Crítico',
-      mensagem: 'Falha ao enviar email de confirmação',
-      timestamp: '2025-11-06 11:45:23',
-      endpoint: '/api/notifications/email',
-      usuario: 'joao.silva@email.com',
-      detalhes: 'SMTP connection refused',
-      stackTrace: 'Error: Connection refused at...',
-    },
-    {
-      id: 5,
-      tipo: 'warning',
-      nivel: 'Alerta',
-      mensagem: 'Limite de requisições API próximo do limite (85%)',
-      timestamp: '2025-11-06 10:30:11',
-      endpoint: '/api/*',
-      usuario: 'Sistema',
-      detalhes: '8500 de 10000 requisições/hora',
-      stackTrace: null,
-    },
-    {
-      id: 6,
-      tipo: 'error',
-      nivel: 'Crítico',
-      mensagem: 'Erro ao processar webhook do Asaas',
-      timestamp: '2025-11-06 09:22:05',
-      endpoint: '/webhooks/asaas',
-      usuario: 'Asaas Gateway',
-      detalhes: 'Invalid signature',
-      stackTrace: 'ValidationError: Invalid signature...',
-    },
-    {
-      id: 7,
-      tipo: 'info',
-      nivel: 'Info',
-      mensagem: 'Usuário admin fez login no sistema',
-      timestamp: '2025-11-06 08:00:33',
-      endpoint: '/api/auth/login',
-      usuario: 'admin@sistema.com',
-      detalhes: 'IP: 192.168.1.100',
-      stackTrace: null,
-    },
-    {
-      id: 8,
-      tipo: 'warning',
-      nivel: 'Alerta',
-      mensagem: 'Múltiplas tentativas de login falhadas',
-      timestamp: '2025-11-06 07:45:12',
-      endpoint: '/api/auth/login',
-      usuario: 'unknown@test.com',
-      detalhes: '5 tentativas em 2 minutos',
-      stackTrace: null,
-    },
-  ]);
+  const [logsResumo, setLogsResumo] = useState<LogsResumo | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [erro, setErro] = useState('');
 
-  const filteredLogs = logs.filter(log => 
-    log.mensagem.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    log.endpoint.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    log.usuario.toLowerCase().includes(searchTerm.toLowerCase())
-  );
+  useEffect(() => {
+    const fetchLogs = async () => {
+      setLoading(true);
+      setErro('');
+      try {
+        const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:3000/api";
+        const auth = getAuth(app);
+        const user = auth.currentUser;
+        if (!user) {
+          setErro("Usuário não autenticado.");
+          setLoading(false);
+          return;
+        }
+        const token = await user.getIdToken();
+        const res = await fetch(`${API_BASE}/admin/dashboard`, {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        });
+        if (!res.ok) throw new Error('Erro ao buscar logs');
+        const data = await res.json();
+        setLogsResumo(data.logs);
+      } catch (e) {
+        setErro("Erro ao carregar logs.");
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchLogs();
+  }, []);
 
-  const getLogIcon = (tipo: string) => {
-    switch (tipo) {
-      case 'error':
-        return <XCircle className="w-5 h-5 text-danger" />;
-      case 'warning':
-        return <AlertTriangle className="w-5 h-5 text-warning" />;
-      case 'info':
-        return <Info className="w-5 h-5 text-info" />;
-      default:
-        return <CheckCircle className="w-5 h-5 text-success" />;
-    }
+  const filteredLogs = logsResumo?.ultimosErros?.filter(log =>
+    log.url?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    log.method?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    (log.uid || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+    (log.cpf || '').toLowerCase().includes(searchTerm.toLowerCase())
+  ) || [];
+
+  const getLogIcon = (log: LogErro) => {
+    if (log.method === 'POST') return <XCircle className="w-5 h-5 text-danger" />;
+    if (log.method === 'GET') return <AlertTriangle className="w-5 h-5 text-warning" />;
+    return <Activity className="w-5 h-5 text-gray-500" />;
   };
 
-  const getLogBadge = (nivel: string) => {
-    switch (nivel) {
-      case 'Crítico':
-        return <Badge variant="danger">Crítico</Badge>;
-      case 'Alerta':
-        return <Badge variant="warning">Alerta</Badge>;
-      case 'Info':
-        return <Badge variant="info">Info</Badge>;
-      default:
-        return <Badge>Desconhecido</Badge>;
-    }
+  const getLogBadge = (log: LogErro) => {
+    if (log.method === 'POST') return <Badge variant="danger">Crítico</Badge>;
+    if (log.method === 'GET') return <Badge variant="warning">Alerta</Badge>;
+    return <Badge variant="info">Info</Badge>;
   };
 
   return (
@@ -179,7 +133,7 @@ export default function AdminLogsPage() {
                   Total de Logs
                 </p>
                 <p className="text-2xl font-bold text-gray-900 dark:text-white">
-                  {logs.length}
+                  {loading ? '...' : erro ? '-' : logsResumo?.errosRecentes ?? '-'}
                 </p>
               </div>
               <FileText className="w-10 h-10 text-primary opacity-20" />
@@ -195,7 +149,7 @@ export default function AdminLogsPage() {
                   Críticos
                 </p>
                 <p className="text-2xl font-bold text-gray-900 dark:text-white">
-                  {logs.filter(l => l.nivel === 'Crítico').length}
+                  {loading ? '...' : erro ? '-' : logsResumo?.errosCriticos ?? '-'}
                 </p>
               </div>
               <XCircle className="w-10 h-10 text-danger opacity-20" />
@@ -211,7 +165,7 @@ export default function AdminLogsPage() {
                   Alertas
                 </p>
                 <p className="text-2xl font-bold text-gray-900 dark:text-white">
-                  {logs.filter(l => l.nivel === 'Alerta').length}
+                  {loading ? '...' : erro ? '-' : (logsResumo?.ultimosErros?.filter(l => l.method === 'GET').length ?? '-')} 
                 </p>
               </div>
               <AlertTriangle className="w-10 h-10 text-warning opacity-20" />
@@ -227,7 +181,7 @@ export default function AdminLogsPage() {
                   Info
                 </p>
                 <p className="text-2xl font-bold text-gray-900 dark:text-white">
-                  {logs.filter(l => l.nivel === 'Info').length}
+                  -
                 </p>
               </div>
               <Info className="w-10 h-10 text-info opacity-20" />
@@ -249,74 +203,77 @@ export default function AdminLogsPage() {
                 icon={<Search className="w-5 h-5" />}
               />
             </div>
-            <Button variant="outline">
-              <Filter className="w-5 h-5 mr-2" />
-              Filtros
-            </Button>
-            <Button variant="danger">
-              <Trash2 className="w-5 h-5 mr-2" />
-              Limpar Logs
-            </Button>
           </div>
         </CardBody>
       </Card>
 
       {/* Lista de Logs */}
       <div className="space-y-3">
-        {filteredLogs.map((log) => (
-          <Card key={log.id} className="hover:shadow-md transition-shadow">
-            <CardBody>
-              <div className="flex items-start space-x-4">
-                <div className="flex-shrink-0 mt-1">
-                  {getLogIcon(log.tipo)}
-                </div>
-                
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center space-x-3 mb-2">
-                    {getLogBadge(log.nivel)}
-                    <span className="text-xs text-gray-500 dark:text-gray-400 flex items-center">
-                      <Clock className="w-3 h-3 mr-1" />
-                      {log.timestamp}
-                    </span>
+        {loading ? (
+          <div className="text-center text-gray-500">Carregando...</div>
+        ) : erro ? (
+          <div className="text-center text-danger">Erro ao carregar logs</div>
+        ) : filteredLogs.length > 0 ? (
+          filteredLogs.map((log) => {
+            // Formatação de data/tempo
+            const data = new Date(log.ts);
+            const agora = new Date();
+            const diffMs = agora.getTime() - data.getTime();
+            let tempo = '';
+            const diffMin = Math.floor(diffMs / 60000);
+            if (diffMin < 1) tempo = 'Agora';
+            else if (diffMin < 60) tempo = `Há ${diffMin} min`;
+            else if (diffMin < 1440) tempo = `Há ${Math.floor(diffMin / 60)}h`;
+            else tempo = data.toLocaleString('pt-BR');
+
+            return (
+              <Card key={log.id} className="hover:shadow-md transition-shadow">
+                <CardBody>
+                  <div className="flex items-start space-x-4">
+                    <div className="flex-shrink-0 mt-1">
+                      {getLogIcon(log)}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center space-x-3 mb-2">
+                        {getLogBadge(log)}
+                        <span className="text-xs text-gray-500 dark:text-gray-400 flex items-center">
+                          <Clock className="w-3 h-3 mr-1" />
+                          {tempo}
+                        </span>
+                      </div>
+                      <h4 className="text-sm font-semibold text-gray-900 dark:text-white mb-2">
+                        {log.url}
+                      </h4>
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-2 text-xs text-gray-600 dark:text-gray-400 mb-2">
+                        <div>
+                          <span className="font-medium">Método:</span> {log.method}
+                        </div>
+                        <div>
+                          <span className="font-medium">Status:</span> {log.status}
+                        </div>
+                        <div>
+                          <span className="font-medium">Latência:</span> {log.latencyMs?.toFixed(0)}ms
+                        </div>
+                        <div>
+                          <span className="font-medium">Usuário:</span> {log.uid || log.cpf || '-'}
+                        </div>
+                        <div>
+                          <span className="font-medium">IP:</span> {log.ip}
+                        </div>
+                        <div>
+                          <span className="font-medium">User-Agent:</span> {log.userAgent}
+                        </div>
+                      </div>
+                    </div>
+                    <Button variant="ghost" size="sm">
+                      <Trash2 className="w-4 h-4" />
+                    </Button>
                   </div>
-                  
-                  <h4 className="text-sm font-semibold text-gray-900 dark:text-white mb-2">
-                    {log.mensagem}
-                  </h4>
-
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-2 text-xs text-gray-600 dark:text-gray-400 mb-2">
-                    <div>
-                      <span className="font-medium">Endpoint:</span> {log.endpoint}
-                    </div>
-                    <div>
-                      <span className="font-medium">Usuário:</span> {log.usuario}
-                    </div>
-                    <div>
-                      <span className="font-medium">Detalhes:</span> {log.detalhes}
-                    </div>
-                  </div>
-
-                  {log.stackTrace && (
-                    <details className="mt-2">
-                      <summary className="text-xs text-primary cursor-pointer hover:underline">
-                        Ver Stack Trace
-                      </summary>
-                      <pre className="mt-2 p-3 bg-gray-900 dark:bg-black text-gray-100 text-xs rounded-lg overflow-x-auto">
-                        {log.stackTrace}
-                      </pre>
-                    </details>
-                  )}
-                </div>
-
-                <Button variant="ghost" size="sm">
-                  <Trash2 className="w-4 h-4" />
-                </Button>
-              </div>
-            </CardBody>
-          </Card>
-        ))}
-
-        {filteredLogs.length === 0 && (
+                </CardBody>
+              </Card>
+            );
+          })
+        ) : (
           <Card>
             <CardBody>
               <div className="text-center py-12">
