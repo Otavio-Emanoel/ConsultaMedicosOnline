@@ -1,0 +1,253 @@
+openapi: 3.0.0
+info:
+  title: API Consulta Médicos Online
+  description: Documentação da API para o sistema de agendamento e telemedicina.
+  version: 1.0.0
+servers:
+  - url: http://localhost:3000/api
+    description: Servidor de Desenvolvimento
+  - url: https://sua-api-producao.com/api
+    description: Servidor de Produção
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: Token de autenticação do Firebase Auth.
+
+  schemas:
+    # Schemas de Entrada (Requests)
+    AdminCadastroDTO:
+      type: object
+      required:
+        - nome
+        - email
+        - senha
+      properties:
+        nome:
+          type: string
+          example: "Administrador Principal"
+        email:
+          type: string
+          format: email
+          example: "admin@consultamedicos.com"
+        senha:
+          type: string
+          format: password
+          minLength: 6
+          example: "SenhaForte123!"
+
+    PlanoCadastroDTO:
+      type: object
+      required:
+        - tipo
+        - periodicidade
+        - descricao
+        - especialidades
+        - preco
+        - uuidRapidocPlano
+        - paymentType
+      properties:
+        tipo:
+          type: string
+          example: "Premium"
+        periodicidade:
+          type: string
+          example: "MENSAL"
+        descricao:
+          type: string
+          example: "Acesso completo a todas as especialidades."
+        especialidades:
+          type: array
+          items:
+            type: string
+          example: ["Cardiologia", "Dermatologia", "Clínica Geral"]
+        preco:
+          type: number
+          example: 89.90
+        uuidRapidocPlano:
+          type: string
+          description: UUID do plano correspondente na API Rapidoc.
+          example: "550e8400-e29b-41d4-a716-446655440000"
+        paymentType:
+          type: string
+          description: Tipo de pagamento (S, A, L). Deve bater com o Rapidoc.
+          enum: [S, A, L]
+          example: "S"
+        outrosCampos:
+          type: string
+          description: Quaisquer outros campos adicionais serão salvos no plano.
+
+    # Schemas de Saída (Responses)
+    DashboardResponse:
+      type: object
+      properties:
+        totais:
+          type: object
+          properties:
+            usuarios:
+              type: integer
+            assinaturas:
+              type: integer
+            assinaturasAtivas:
+              type: integer
+            assinaturasCanceladas:
+              type: integer
+            assinaturasPendentes:
+              type: integer
+        faturamento:
+          type: object
+          properties:
+            mesAtual:
+              type: number
+            ultimos30Dias:
+              type: number
+            pendencias:
+              type: integer
+        planos:
+          type: object
+          properties:
+            numeroPlanos:
+              type: integer
+            mediaValorPlanos:
+              type: number
+            detalhados:
+              type: array
+              items:
+                type: object
+                properties:
+                  id:
+                    type: string
+                  nome:
+                    type: string
+                  valor:
+                    type: number
+                  assinantes:
+                    type: integer
+                  valorTotal:
+                    type: number
+        novosAssinantes:
+          type: array
+          items:
+            type: object
+            properties:
+              nome:
+                type: string
+              email:
+                type: string
+              plano:
+                type: string
+              data:
+                type: string
+              status:
+                type: string
+        logs:
+          type: object
+          properties:
+            errosPendentes:
+              type: integer
+            errosCriticos:
+              type: integer
+            errosRecentes:
+              type: integer
+            ultimosErros:
+              type: array
+              items:
+                type: object
+
+tags:
+  - name: Admin
+    description: Gerenciamento administrativo, cadastro de planos e dashboard.
+
+paths:
+  /admin/cadastrar:
+    post:
+      summary: Cadastrar novo Administrador
+      description: Cria um usuário no Firebase Auth e salva registro na coleção 'administradores'.
+      tags:
+        - Admin
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdminCadastroDTO'
+      responses:
+        '201':
+          description: Administrador cadastrado com sucesso.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                  uid:
+                    type: string
+        '400':
+          description: Dados inválidos ou faltando.
+        '409':
+          description: Administrador com este e-mail já existe.
+        '500':
+          description: Erro interno do servidor.
+
+  /admin/cadastrar-plano:
+    post:
+      summary: Cadastrar novo Plano (Vinculado ao Rapidoc)
+      description: >
+        Cadastra um plano no Firestore verificando a existência do UUID no serviço Rapidoc.
+        Requer autenticação de administrador.
+      tags:
+        - Admin
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PlanoCadastroDTO'
+      responses:
+        '201':
+          description: Plano criado com sucesso.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                  id:
+                    type: string
+        '400':
+          description: Campos obrigatórios faltando ou paymentType inválido.
+        '404':
+          description: Plano Rapidoc não encontrado para o UUID fornecido.
+        '409':
+          description: Já existe um plano local vinculado a este UUID.
+        '401':
+          description: Não autorizado (Token ausente ou inválido).
+
+  /admin/dashboard:
+    get:
+      summary: Obter métricas do Dashboard Administrativo
+      description: >
+        Retorna contagens de usuários, assinaturas, faturamento (Asaas), logs de erro e desempenho dos planos.
+        Requer autenticação de administrador.
+      tags:
+        - Admin
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Dados do dashboard recuperados com sucesso.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DashboardResponse'
+        '401':
+          description: Não autorizado.
+        '500':
+          description: Erro ao montar dashboard.

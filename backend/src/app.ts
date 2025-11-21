@@ -17,6 +17,9 @@ import agendamentoRoutes from './routes/agendamento.routes.js';
 import beneficiarioRoutes from './routes/beneficiario.routes.js';
 import especialidadesRoutes from './routes/especialidades.routes.js';
 import { auditLogger } from './middlewares/audit.middleware.js';
+import swaggerUi from 'swagger-ui-express';
+import YAML from 'yamljs';
+import path from 'path';
 
 const app = express();
 app.use(cors());
@@ -25,10 +28,15 @@ app.use(cors());
 app.use(express.json());
 app.use(auditLogger);
 
+const swaggerDocument = YAML.load(path.join(process.cwd(), './swagger.yaml'));
+
 // Rota raiz simples
 app.get('/', (_req, res) => {
 	res.send('Essa é a API do Consulta Médicos Online.');
 });
+
+// Rota da Documentação
+app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerDocument));
 
 // Agrupa rotas da API
 app.use('/api', healthRoutes);
