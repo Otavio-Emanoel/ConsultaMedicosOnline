@@ -13,78 +13,256 @@ import {
   CheckCircle,
   XCircle,
   AlertCircle,
+  Trash2,
+  FileText,
+  Loader2,
 } from 'lucide-react';
 import Link from 'next/link';
+import { useEffect, useState } from 'react';
+
+interface Appointment {
+  uuid: string;
+  status: string;
+  date?: string;
+  from?: string;
+  to?: string;
+  specialty?: {
+    name?: string;
+    uuid?: string;
+  };
+  professional?: {
+    name?: string;
+  };
+  beneficiaryUrl?: string;
+  detail?: {
+    date?: string;
+    from?: string;
+    to?: string;
+  };
+}
+
+interface MedicalReferral {
+  uuid?: string;
+  specialty?: {
+    name?: string;
+    uuid?: string;
+  };
+  professional?: {
+    name?: string;
+  };
+  date?: string;
+  status?: string;
+  description?: string;
+}
 
 export default function ConsultasPage() {
-  const proximasConsultas = [
-    {
-      id: 1,
-      especialidade: 'Cardiologia',
-      medico: 'Dr. João Silva',
-      data: '20/11/2025',
-      hora: '14:00',
-      status: 'confirmada',
-      tipo: 'video',
-    },
-    {
-      id: 2,
-      especialidade: 'Dermatologia',
-      medico: 'Dra. Maria Santos',
-      data: '22/11/2025',
-      hora: '10:30',
-      status: 'confirmada',
-      tipo: 'video',
-    },
-    {
-      id: 3,
-      especialidade: 'Pediatria',
-      medico: 'Dr. Carlos Mendes',
-      data: '25/11/2025',
-      hora: '16:00',
-      status: 'pendente',
-      tipo: 'video',
-    },
-  ];
+  const [appointments, setAppointments] = useState<Appointment[]>([]);
+  const [referrals, setReferrals] = useState<MedicalReferral[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [cancelingId, setCancelingId] = useState<string | null>(null);
+  const [beneficiaryUuid, setBeneficiaryUuid] = useState<string | null>(null);
 
-  const consultasRecentes = [
-    {
-      id: 1,
-      especialidade: 'Clínico Geral',
-      medico: 'Dr. Pedro Costa',
-      data: '05/11/2025',
-      status: 'realizada',
-    },
-    {
-      id: 2,
-      especialidade: 'Oftalmologia',
-      medico: 'Dra. Ana Paula',
-      data: '28/10/2025',
-      status: 'realizada',
-    },
-    {
-      id: 3,
-      especialidade: 'Ortopedia',
-      medico: 'Dr. Roberto Lima',
-      data: '15/10/2025',
-      status: 'realizada',
-    },
-  ];
+  // Buscar UUID do beneficiário e carregar dados
+  useEffect(() => {
+    const loadData = async () => {
+      try {
+        const apiBase = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:3000/api';
+        const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
+        
+        if (!token) {
+          setLoading(false);
+          return;
+        }
 
-  const getStatusBadge = (status: string) => {
-    switch (status) {
-      case 'confirmada':
-        return <Badge variant="success">Confirmada</Badge>;
-      case 'pendente':
-        return <Badge variant="warning">Pendente</Badge>;
-      case 'realizada':
-        return <Badge variant="info">Realizada</Badge>;
-      case 'cancelada':
-        return <Badge variant="danger">Cancelada</Badge>;
-      default:
-        return <Badge>Desconhecido</Badge>;
+        // Buscar dados do dashboard para obter CPF e UUID do beneficiário
+        const dashboardRes = await fetch(`${apiBase}/dashboard`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+
+        if (!dashboardRes.ok) {
+          throw new Error('Erro ao buscar dados do dashboard');
+        }
+
+        const dashboardData = await dashboardRes.json();
+        const cpf = dashboardData?.usuario?.cpf;
+
+        if (!cpf) {
+          throw new Error('CPF não encontrado');
+        }
+
+        // Buscar beneficiário pelo CPF para obter UUID
+        const beneficiaryRes = await fetch(`${apiBase}/rapidoc/beneficiario/${cpf}`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+
+        if (!beneficiaryRes.ok) {
+          throw new Error('Erro ao buscar beneficiário');
+        }
+
+        const beneficiaryData = await beneficiaryRes.json();
+        const uuid = beneficiaryData?.uuid;
+
+        if (!uuid) {
+          throw new Error('UUID do beneficiário não encontrado');
+        }
+
+        setBeneficiaryUuid(uuid);
+
+        // Buscar agendamentos
+        const appointmentsRes = await fetch(`${apiBase}/beneficiarios/${uuid}/appointments`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+
+        if (appointmentsRes.ok) {
+          const appointmentsData = await appointmentsRes.json();
+          const allAppointments = appointmentsData?.appointments || [];
+          
+          // Filtrar apenas agendamentos não atendidos (SCHEDULED, PENDING, etc)
+          const nonCompletedAppointments = allAppointments.filter((apt: Appointment) => {
+            const status = apt?.status?.toUpperCase();
+            return status === 'SCHEDULED' || status === 'PENDING' || status === 'CONFIRMED';
+          });
+
+          setAppointments(nonCompletedAppointments);
+        }
+
+        // Buscar encaminhamentos
+        const referralsRes = await fetch(`${apiBase}/beneficiarios/${cpf}/encaminhamentos`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+
+        if (referralsRes.ok) {
+          const referralsData = await referralsRes.json();
+          setReferrals(referralsData?.encaminhamentos || []);
+        }
+      } catch (error) {
+        console.error('Erro ao carregar dados:', error);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    loadData();
+  }, []);
+
+  const handleCancelAppointment = async (uuid: string) => {
+    if (!confirm('Tem certeza que deseja cancelar esta consulta?')) {
+      return;
+    }
+
+    setCancelingId(uuid);
+    try {
+      const apiBase = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:3000/api';
+      const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
+
+      if (!token) {
+        alert('Token não encontrado. Por favor, faça login novamente.');
+        return;
+      }
+
+      const res = await fetch(`${apiBase}/agendamentos/${uuid}`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${token}` },
+      });
+
+      if (res.ok || res.status === 204) {
+        // Remover da lista
+        setAppointments((prev) => prev.filter((apt) => apt.uuid !== uuid));
+        alert('Consulta cancelada com sucesso!');
+      } else {
+        const errorData = await res.json().catch(() => ({}));
+        alert(errorData?.error || 'Erro ao cancelar consulta');
+      }
+    } catch (error) {
+      console.error('Erro ao cancelar consulta:', error);
+      alert('Erro ao cancelar consulta. Tente novamente.');
+    } finally {
+      setCancelingId(null);
     }
   };
+
+  const handleAccessConsultation = async (appointment: Appointment) => {
+    try {
+      const apiBase = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:3000/api';
+      const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
+
+      if (!token) {
+        alert('Token não encontrado. Por favor, faça login novamente.');
+        return;
+      }
+
+      // Tentar obter o link de acesso
+      const res = await fetch(`${apiBase}/agendamentos/${appointment.uuid}/join`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        const joinUrl = data?.joinUrl || appointment.beneficiaryUrl;
+
+        if (joinUrl) {
+          window.open(joinUrl, '_blank');
+        } else {
+          alert('Link de acesso não disponível no momento. Tente novamente mais tarde.');
+        }
+      } else {
+        // Se não conseguir o link, tenta usar o beneficiaryUrl direto
+        if (appointment.beneficiaryUrl) {
+          window.open(appointment.beneficiaryUrl, '_blank');
+        } else {
+          alert('Link de acesso não disponível no momento. Tente novamente mais tarde.');
+        }
+      }
+    } catch (error) {
+      console.error('Erro ao acessar consulta:', error);
+      alert('Erro ao acessar consulta. Tente novamente.');
+    }
+  };
+
+  const getStatusBadge = (status: string) => {
+    const statusUpper = status?.toUpperCase();
+    switch (statusUpper) {
+      case 'SCHEDULED':
+      case 'CONFIRMED':
+        return <Badge variant="success">Agendada</Badge>;
+      case 'PENDING':
+        return <Badge variant="warning">Pendente</Badge>;
+      case 'COMPLETED':
+        return <Badge variant="info">Realizada</Badge>;
+      case 'CANCELED':
+      case 'CANCELLED':
+        return <Badge variant="danger">Cancelada</Badge>;
+      default:
+        return <Badge>{status || 'Desconhecido'}</Badge>;
+    }
+  };
+
+  const getReferralStatusBadge = (status?: string) => {
+    if (!status) return null;
+    const statusUpper = status.toUpperCase();
+    switch (statusUpper) {
+      case 'ACTIVE':
+      case 'VALID':
+        return <Badge variant="success">Ativo</Badge>;
+      case 'USED':
+        return <Badge variant="info">Utilizado</Badge>;
+      case 'EXPIRED':
+        return <Badge variant="danger">Expirado</Badge>;
+      default:
+        return <Badge>{status}</Badge>;
+    }
+  };
+
+  if (loading) {
+    return (
+      <DashboardLayout title="Consultas">
+        <div className="flex items-center justify-center py-20">
+          <Loader2 className="w-8 h-8 animate-spin text-primary" />
+          <span className="ml-3 text-gray-600 dark:text-gray-400">Carregando...</span>
+        </div>
+      </DashboardLayout>
+    );
+  }
 
   return (
     <DashboardLayout title="Consultas">
@@ -143,7 +321,7 @@ export default function ConsultasPage() {
                   Próximas Consultas
                 </p>
                 <p className="text-2xl font-bold text-gray-900 dark:text-white">
-                  {proximasConsultas.length}
+                  {appointments.length}
                 </p>
               </div>
               <Calendar className="w-10 h-10 text-primary opacity-20" />
@@ -156,13 +334,13 @@ export default function ConsultasPage() {
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm text-gray-600 dark:text-gray-400 mb-1">
-                  Este Mês
+                  Encaminhamentos
                 </p>
                 <p className="text-2xl font-bold text-gray-900 dark:text-white">
-                  5
+                  {referrals.length}
                 </p>
               </div>
-              <Stethoscope className="w-10 h-10 text-success opacity-20" />
+              <FileText className="w-10 h-10 text-primary opacity-20" />
             </div>
           </CardBody>
         </Card>
@@ -172,10 +350,10 @@ export default function ConsultasPage() {
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm text-gray-600 dark:text-gray-400 mb-1">
-                  Confirmadas
+                  Agendadas
                 </p>
                 <p className="text-2xl font-bold text-gray-900 dark:text-white">
-                  {proximasConsultas.filter(c => c.status === 'confirmada').length}
+                  {appointments.filter(a => a.status?.toUpperCase() === 'SCHEDULED' || a.status?.toUpperCase() === 'CONFIRMED').length}
                 </p>
               </div>
               <CheckCircle className="w-10 h-10 text-success opacity-20" />
@@ -191,7 +369,7 @@ export default function ConsultasPage() {
                   Pendentes
                 </p>
                 <p className="text-2xl font-bold text-gray-900 dark:text-white">
-                  {proximasConsultas.filter(c => c.status === 'pendente').length}
+                  {appointments.filter(a => a.status?.toUpperCase() === 'PENDING').length}
                 </p>
               </div>
               <AlertCircle className="w-10 h-10 text-warning opacity-20" />
@@ -200,14 +378,14 @@ export default function ConsultasPage() {
         </Card>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
         {/* Próximas Consultas */}
         <Card>
           <CardHeader
             action={
               <Link href="/consultas/historico">
                 <Button variant="ghost" size="sm">
-                  Ver todas
+                  Ver histórico
                 </Button>
               </Link>
             }
@@ -216,41 +394,7 @@ export default function ConsultasPage() {
           </CardHeader>
           <CardBody>
             <div className="space-y-4">
-              {proximasConsultas.map((consulta) => (
-                <div
-                  key={consulta.id}
-                  className="flex items-start space-x-4 p-4 bg-gray-50 dark:bg-gray-800/50 rounded-xl hover:shadow-md transition-shadow"
-                >
-                  <div className="w-12 h-12 bg-primary/10 rounded-xl flex items-center justify-center flex-shrink-0">
-                    <Stethoscope className="w-6 h-6 text-primary" />
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center justify-between mb-1">
-                      <p className="font-medium text-gray-900 dark:text-white">
-                        {consulta.especialidade}
-                      </p>
-                      {getStatusBadge(consulta.status)}
-                    </div>
-                    <p className="text-sm text-gray-600 dark:text-gray-400 mb-2">
-                      {consulta.medico}
-                    </p>
-                    <div className="flex items-center text-sm text-gray-500">
-                      <Calendar className="w-4 h-4 mr-1" />
-                      {consulta.data}
-                      <Clock className="w-4 h-4 ml-3 mr-1" />
-                      {consulta.hora}
-                    </div>
-                  </div>
-                  {consulta.status === 'confirmada' && (
-                    <Button variant="primary" size="sm">
-                      <Video className="w-4 h-4 mr-1" />
-                      Entrar
-                    </Button>
-                  )}
-                </div>
-              ))}
-
-              {proximasConsultas.length === 0 && (
+              {appointments.length === 0 ? (
                 <div className="text-center py-8">
                   <Calendar className="w-12 h-12 text-gray-400 mx-auto mb-3" />
                   <p className="text-gray-600 dark:text-gray-400 mb-2">
@@ -262,58 +406,134 @@ export default function ConsultasPage() {
                     </Button>
                   </Link>
                 </div>
+              ) : (
+                appointments.map((appointment) => {
+                  const date = appointment.detail?.date || appointment.date || '';
+                  const from = appointment.detail?.from || appointment.from || '';
+                  const to = appointment.detail?.to || appointment.to || '';
+                  const doctorName = appointment.professional?.name || 'Médico não informado';
+                  const specialtyName = appointment.specialty?.name || 'Especialidade não informada';
+
+                  return (
+                    <div
+                      key={appointment.uuid}
+                      className="flex items-start space-x-4 p-4 bg-gray-50 dark:bg-gray-800/50 rounded-xl hover:shadow-md transition-shadow"
+                    >
+                      <div className="w-12 h-12 bg-primary/10 rounded-xl flex items-center justify-center flex-shrink-0">
+                        <Stethoscope className="w-6 h-6 text-primary" />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center justify-between mb-1">
+                          <p className="font-medium text-gray-900 dark:text-white">
+                            {specialtyName}
+                          </p>
+                          {getStatusBadge(appointment.status)}
+                        </div>
+                        <p className="text-sm text-gray-600 dark:text-gray-400 mb-2">
+                          {doctorName}
+                        </p>
+                        <div className="flex items-center text-sm text-gray-500 mb-2">
+                          {date && (
+                            <>
+                              <Calendar className="w-4 h-4 mr-1" />
+                              {date}
+                            </>
+                          )}
+                          {from && (
+                            <>
+                              <Clock className="w-4 h-4 ml-3 mr-1" />
+                              {from}
+                              {to && ` - ${to}`}
+                            </>
+                          )}
+                        </div>
+                        <div className="flex items-center gap-2 mt-2">
+                          {(appointment.status?.toUpperCase() === 'SCHEDULED' || 
+                            appointment.status?.toUpperCase() === 'CONFIRMED') && (
+                            <Button 
+                              variant="primary" 
+                              size="sm"
+                              onClick={() => handleAccessConsultation(appointment)}
+                            >
+                              <Video className="w-4 h-4 mr-1" />
+                              Acessar Consulta
+                            </Button>
+                          )}
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => handleCancelAppointment(appointment.uuid)}
+                            disabled={cancelingId === appointment.uuid}
+                          >
+                            {cancelingId === appointment.uuid ? (
+                              <Loader2 className="w-4 h-4 animate-spin" />
+                            ) : (
+                              <>
+                                <Trash2 className="w-4 h-4 mr-1" />
+                                Cancelar
+                              </>
+                            )}
+                          </Button>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })
               )}
             </div>
           </CardBody>
         </Card>
 
-        {/* Consultas Recentes */}
+        {/* Encaminhamentos */}
         <Card>
-          <CardHeader
-            action={
-              <Link href="/consultas/historico">
-                <Button variant="ghost" size="sm">
-                  Ver histórico completo
-                </Button>
-              </Link>
-            }
-          >
-            Consultas Recentes
+          <CardHeader>
+            Encaminhamentos
           </CardHeader>
           <CardBody>
             <div className="space-y-4">
-              {consultasRecentes.map((consulta) => (
-                <div
-                  key={consulta.id}
-                  className="flex items-start justify-between p-4 bg-gray-50 dark:bg-gray-800/50 rounded-xl"
-                >
-                  <div className="flex items-start space-x-3">
-                    <div className="w-10 h-10 bg-green-100 dark:bg-slate-700 rounded-lg flex items-center justify-center flex-shrink-0">
-                      <CheckCircle className="w-5 h-5 text-success" />
-                    </div>
-                    <div>
-                      <p className="font-medium text-gray-900 dark:text-white text-sm">
-                        {consulta.especialidade}
-                      </p>
-                      <p className="text-xs text-gray-600 dark:text-gray-400 mb-1">
-                        {consulta.medico}
-                      </p>
-                      <p className="text-xs text-gray-500">
-                        {consulta.data}
-                      </p>
-                    </div>
-                  </div>
-                  {getStatusBadge(consulta.status)}
-                </div>
-              ))}
-
-              {consultasRecentes.length === 0 && (
+              {referrals.length === 0 ? (
                 <div className="text-center py-8">
-                  <Stethoscope className="w-12 h-12 text-gray-400 mx-auto mb-3" />
+                  <FileText className="w-12 h-12 text-gray-400 mx-auto mb-3" />
                   <p className="text-gray-600 dark:text-gray-400">
-                    Nenhuma consulta realizada ainda
+                    Nenhum encaminhamento encontrado
                   </p>
                 </div>
+              ) : (
+                referrals.map((referral, index) => {
+                  const specialtyName = referral.specialty?.name || 'Especialidade não informada';
+                  const doctorName = referral.professional?.name || 'Médico não informado';
+                  const date = referral.date || 'Data não informada';
+
+                  return (
+                    <div
+                      key={referral.uuid || index}
+                      className="flex items-start justify-between p-4 bg-gray-50 dark:bg-gray-800/50 rounded-xl"
+                    >
+                      <div className="flex items-start space-x-3 flex-1">
+                        <div className="w-10 h-10 bg-blue-100 dark:bg-blue-900/30 rounded-lg flex items-center justify-center flex-shrink-0">
+                          <FileText className="w-5 h-5 text-blue-600 dark:text-blue-400" />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="font-medium text-gray-900 dark:text-white text-sm">
+                            {specialtyName}
+                          </p>
+                          <p className="text-xs text-gray-600 dark:text-gray-400 mb-1">
+                            {doctorName}
+                          </p>
+                          <p className="text-xs text-gray-500">
+                            {date}
+                          </p>
+                          {referral.description && (
+                            <p className="text-xs text-gray-500 mt-1">
+                              {referral.description}
+                            </p>
+                          )}
+                        </div>
+                      </div>
+                      {getReferralStatusBadge(referral.status)}
+                    </div>
+                  );
+                })
               )}
             </div>
           </CardBody>

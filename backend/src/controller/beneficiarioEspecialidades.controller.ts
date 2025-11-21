@@ -1,16 +1,44 @@
 import type { Request, Response } from 'express';
 import { buscarBeneficiarioRapidocPorCpf, obterDetalhesPlanoRapidoc, atualizarBeneficiarioRapidoc, listarRapidocEspecialidades } from '../services/rapidoc.service.js';
+import { getFirestore } from 'firebase-admin/firestore';
+import { firebaseApp } from '../config/firebase.js';
 
 export class BeneficiarioEspecialidadesController {
   static async listarEspecialidades(req: Request, res: Response) {
     try {
-      const { cpf } = req.params;
-      if (!cpf) return res.status(400).json({ error: 'CPF é obrigatório.' });
+      let { cpf } = req.params;
+      
+      // Se não veio CPF no parâmetro, tenta obter do usuário logado
+      if (!cpf) {
+        const uid = req.user?.uid || req.user?.sub;
+        if (!uid) {
+          return res.status(401).json({ error: 'Usuário não autenticado.' });
+        }
+        
+        // Buscar CPF do usuário no Firestore
+        const db = getFirestore(firebaseApp);
+        const usuarioRef = db.collection('usuarios').doc(uid);
+        const usuarioDoc = await usuarioRef.get();
+        
+        if (usuarioDoc.exists) {
+          const usuarioData = usuarioDoc.data();
+          cpf = usuarioData?.cpf;
+        }
+        
+        // Se não encontrou CPF no Firestore, usa o UID (que pode ser o CPF)
+        if (!cpf) {
+          cpf = (req.user as any)?.cpf || uid;
+        }
+      }
+      
+      if (!cpf) {
+        return res.status(400).json({ error: 'CPF é obrigatório.' });
+      }
 
       const beneficiarioResp = await buscarBeneficiarioRapidocPorCpf(cpf);
       const beneficiario = beneficiarioResp?.beneficiary;
       if (!beneficiario || !beneficiario.uuid) {
-        return res.status(404).json({ error: 'Beneficiário não encontrado no Rapidoc.' });
+        return res.status(404).json({ error: 'Beneficiário não encontrado no Rapidoc para o CPF informado.' });
       }
 
       const sources: { uuid: string; name?: string; source: string }[] = [];

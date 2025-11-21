@@ -1,6 +1,6 @@
 import type { Request, Response } from 'express';
 import admin from 'firebase-admin';
-import { buscarBeneficiarioRapidocPorCpf, inativarBeneficiarioRapidoc } from '../services/rapidoc.service.js';
+import { buscarBeneficiarioRapidocPorCpf, inativarBeneficiarioRapidoc, buscarEncaminhamentosBeneficiarioRapidoc, listarAgendamentosBeneficiarioRapidoc } from '../services/rapidoc.service.js';
 
 export class BeneficiarioController {
   // Inativar beneficiário no Rapidoc via CPF
@@ -60,6 +60,84 @@ export class BeneficiarioController {
       }});
     } catch (error: any) {
       return res.status(500).json({ error: error?.message || 'Erro ao remover do banco de dados.' });
+    }
+  }
+
+  // Buscar encaminhamentos médicos do beneficiário
+  static async listarEncaminhamentos(req: Request, res: Response) {
+    try {
+      const { cpf } = req.params as { cpf?: string };
+      if (!cpf) return res.status(400).json({ error: 'CPF é obrigatório.' });
+
+      // Buscar beneficiário pelo CPF para obter o UUID
+      const r = await buscarBeneficiarioRapidocPorCpf(cpf);
+      const beneficiario = r?.beneficiary;
+      if (!beneficiario || !beneficiario.uuid) {
+        return res.status(404).json({ error: 'Beneficiário não encontrado no Rapidoc.' });
+      }
+
+      try {
+        console.log('[BeneficiarioController] Buscando encaminhamentos para beneficiário:', beneficiario.uuid);
+        const encaminhamentos = await buscarEncaminhamentosBeneficiarioRapidoc(beneficiario.uuid);
+        console.log('[BeneficiarioController] Resposta do Rapidoc:', JSON.stringify(encaminhamentos, null, 2));
+        
+        // A resposta pode vir como array ou objeto com array
+        const lista = Array.isArray(encaminhamentos) 
+          ? encaminhamentos 
+          : Array.isArray(encaminhamentos?.medicalReferrals) 
+            ? encaminhamentos.medicalReferrals 
+            : Array.isArray(encaminhamentos?.data)
+              ? encaminhamentos.data
+              : Array.isArray(encaminhamentos?.referrals)
+                ? encaminhamentos.referrals
+                : [];
+        
+        return res.status(200).json({ count: lista.length, encaminhamentos: lista });
+      } catch (e: any) {
+        console.error('[BeneficiarioController] Erro ao buscar encaminhamentos:', {
+          status: e?.response?.status,
+          statusText: e?.response?.statusText,
+          data: e?.response?.data,
+          message: e?.message
+        });
+        
+        return res.status(400).json({ 
+          error: 'Erro ao buscar encaminhamentos no Rapidoc.', 
+          detail: e?.response?.data || e?.message 
+        });
+      }
+    } catch (error: any) {
+      return res.status(500).json({ error: error?.message || 'Erro ao buscar encaminhamentos.' });
+    }
+  }
+
+  // Listar agendamentos do beneficiário por UUID
+  static async listarAgendamentos(req: Request, res: Response) {
+    try {
+      const { uuid } = req.params as { uuid?: string };
+      if (!uuid) return res.status(400).json({ error: 'UUID do beneficiário é obrigatório.' });
+
+      try {
+        console.log('[BeneficiarioController] Buscando agendamentos para beneficiário:', uuid);
+        const agendamentos = await listarAgendamentosBeneficiarioRapidoc(uuid);
+        console.log('[BeneficiarioController] Resposta do Rapidoc:', JSON.stringify(agendamentos, null, 2));
+        
+        return res.status(200).json({ count: agendamentos.length, appointments: agendamentos });
+      } catch (e: any) {
+        console.error('[BeneficiarioController] Erro ao buscar agendamentos:', {
+          status: e?.response?.status,
+          statusText: e?.response?.statusText,
+          data: e?.response?.data,
+          message: e?.message
+        });
+        
+        return res.status(400).json({ 
+          error: 'Erro ao buscar agendamentos no Rapidoc.', 
+          detail: e?.response?.data || e?.message 
+        });
+      }
+    } catch (error: any) {
+      return res.status(500).json({ error: error?.message || 'Erro ao buscar agendamentos.' });
     }
   }
 }

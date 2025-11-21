@@ -324,3 +324,83 @@ export async function solicitarConsultaImediataRapidoc(beneficiaryUuid: string) 
   });
   return resp.data;
 }
+
+// Buscar encaminhamentos médicos do beneficiário
+export async function buscarEncaminhamentosBeneficiarioRapidoc(beneficiaryUuid: string) {
+  if (!RAPIDOC_BASE_URL || !RAPIDOC_TOKEN || !RAPIDOC_CLIENT_ID) throw new Error('Configuração Rapidoc ausente');
+  const url = `${RAPIDOC_BASE_URL}/tema/api/beneficiaries/${beneficiaryUuid}/medical-referrals`;
+  const resp = await axios.get(url, {
+    headers: {
+      Authorization: `Bearer ${RAPIDOC_TOKEN}`,
+      clientId: RAPIDOC_CLIENT_ID,
+      'Content-Type': 'application/vnd.rapidoc.tema-v2+json'
+    }
+  });
+  return resp.data;
+}
+
+// Listar agendamentos do beneficiário por UUID (endpoint específico)
+export async function listarAgendamentosBeneficiarioRapidoc(beneficiaryUuid: string) {
+  if (!RAPIDOC_BASE_URL || !RAPIDOC_TOKEN || !RAPIDOC_CLIENT_ID) throw new Error('Configuração Rapidoc ausente');
+  const url = `${RAPIDOC_BASE_URL}/tema/api/beneficiaries/${beneficiaryUuid}/appointments`;
+  const resp = await axios.get(url, {
+    headers: {
+      Authorization: `Bearer ${RAPIDOC_TOKEN}`,
+      clientId: RAPIDOC_CLIENT_ID,
+      'Content-Type': 'application/vnd.rapidoc.tema-v2+json'
+    }
+  });
+  // A resposta pode vir como array ou objeto com array
+  if (Array.isArray(resp.data)) return resp.data;
+  if (Array.isArray(resp.data?.appointments)) return resp.data.appointments;
+  if (Array.isArray(resp.data?.data)) return resp.data.data;
+  return [];
+}
+
+// Listar todos os beneficiários do Rapidoc
+export async function listarBeneficiariosRapidoc(): Promise<any[]> {
+  if (!RAPIDOC_BASE_URL || !RAPIDOC_TOKEN || !RAPIDOC_CLIENT_ID) {
+    throw new Error('Configuração Rapidoc ausente');
+  }
+  const url = `${RAPIDOC_BASE_URL}/tema/api/beneficiaries`;
+  console.log('[Rapidoc] Buscando beneficiários em:', url);
+  try {
+    const resp = await axios.get(url, {
+      headers: {
+        Authorization: `Bearer ${RAPIDOC_TOKEN}`,
+        clientId: RAPIDOC_CLIENT_ID,
+        'Content-Type': 'application/vnd.rapidoc.tema-v2+json'
+      }
+    });
+    console.log('[Rapidoc] Resposta recebida, estrutura:', {
+      isArray: Array.isArray(resp.data),
+      hasBeneficiaries: !!resp.data?.beneficiaries,
+      hasData: !!resp.data?.data,
+      keys: resp.data ? Object.keys(resp.data) : []
+    });
+    
+    // A resposta pode vir como array ou objeto com array
+    if (Array.isArray(resp.data)) {
+      console.log(`[Rapidoc] Retornando array direto com ${resp.data.length} itens`);
+      return resp.data;
+    }
+    if (Array.isArray(resp.data?.beneficiaries)) {
+      console.log(`[Rapidoc] Retornando array de beneficiaries com ${resp.data.beneficiaries.length} itens`);
+      return resp.data.beneficiaries;
+    }
+    if (Array.isArray(resp.data?.data)) {
+      console.log(`[Rapidoc] Retornando array de data com ${resp.data.data.length} itens`);
+      return resp.data.data;
+    }
+    console.warn('[Rapidoc] Estrutura de resposta não reconhecida, retornando array vazio');
+    return [];
+  } catch (error: any) {
+    console.error('[Rapidoc] Erro ao listar beneficiários:', {
+      message: error?.message,
+      status: error?.response?.status,
+      statusText: error?.response?.statusText,
+      data: error?.response?.data
+    });
+    throw new Error(`Erro ao buscar beneficiários do Rapidoc: ${error?.message || 'Erro desconhecido'}`);
+  }
+}

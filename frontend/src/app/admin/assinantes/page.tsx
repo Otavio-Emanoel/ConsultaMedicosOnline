@@ -17,8 +17,14 @@ import {
   CreditCard,
   UserPlus,
   Package,
+  AlertCircle,
+  RefreshCw,
+  Key,
+  Copy,
+  EyeOff,
 } from 'lucide-react';
 import { useState, useEffect, useMemo } from 'react';
+import { useRouter } from 'next/navigation';
 import { Dialog } from '@/components/ui/Dialog';
 
 // Corrigido: definição da interface AssinanteItem estava fora do lugar e sem o "interface"
@@ -54,12 +60,23 @@ interface UsuarioDoc {
   email?: string;
 }
 
+interface BeneficiarioSemConta {
+  uuid: string;
+  nome: string;
+  cpf: string;
+  email: string;
+  temUsuarioFirestore: boolean;
+  temUsuarioAuth: boolean;
+  temAssinaturaAsaas: boolean;
+}
+
 function formatarDataBR(dataISO: string | null | undefined) {
   if (!dataISO) return '—';
   return dataISO.split('-').reverse().join('/');
 }
 
 export default function AdminAssinantesPage() {
+  const router = useRouter();
   const [searchTerm, setSearchTerm] = useState('');
   const [assinantes, setAssinantes] = useState<AssinanteItem[]>([]);
   const [assinantesPagamentos, setAssinantesPagamentos] = useState<Record<string, string>>({});
@@ -68,14 +85,22 @@ export default function AdminAssinantesPage() {
   const [modalLoading, setModalLoading] = useState(false);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string>('');
+  const [beneficiariosSemConta, setBeneficiariosSemConta] = useState<BeneficiarioSemConta[]>([]);
+  const [loadingBeneficiarios, setLoadingBeneficiarios] = useState<boolean>(false);
+  const [mostrarBeneficiariosSemConta, setMostrarBeneficiariosSemConta] = useState<boolean>(false);
+  const [modalSenha, setModalSenha] = useState<{ cpf: string; nome: string; email: string; senha: string } | null>(null);
+  const [mostrarSenha, setMostrarSenha] = useState<boolean>(false);
+  const [gerandoSenha, setGerandoSenha] = useState<boolean>(false);
 
   useEffect(() => {
     const fetchData = async () => {
       setLoading(true);
       setError('');
       try {
-        // Pega token do localStorage se existir
-        const token = typeof window !== 'undefined' ? localStorage.getItem('auth_token') : null;
+        // Pega token do localStorage se existir (tenta ambos os nomes possíveis)
+        const token = typeof window !== 'undefined' 
+          ? (localStorage.getItem('token') || localStorage.getItem('auth_token')) 
+          : null;
         const headers: HeadersInit = {
           'Content-Type': 'application/json',
         };
@@ -151,6 +176,90 @@ export default function AdminAssinantesPage() {
     };
     fetchData();
   }, []);
+
+  const buscarBeneficiariosSemConta = async () => {
+    setLoadingBeneficiarios(true);
+    setError('');
+    try {
+      // Tenta buscar o token com ambos os nomes possíveis
+      const token = typeof window !== 'undefined' 
+        ? (localStorage.getItem('token') || localStorage.getItem('auth_token')) 
+        : null;
+      
+      if (!token) {
+        throw new Error('Token de autenticação não encontrado. Faça login novamente.');
+      }
+
+      const headers: HeadersInit = {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`,
+      };
+
+      const resp = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL}/admin/beneficiarios-sem-conta`, { headers });
+      
+      if (!resp.ok) {
+        const errorData = await resp.json().catch(() => ({ error: 'Erro desconhecido' }));
+        throw new Error(errorData.error || `Erro ${resp.status}: ${resp.statusText}`);
+      }
+      
+      const data = await resp.json();
+      setBeneficiariosSemConta(data.beneficiarios || []);
+      setMostrarBeneficiariosSemConta(true);
+    } catch (e: any) {
+      setError(e?.message || 'Falha ao carregar beneficiários sem conta.');
+    } finally {
+      setLoadingBeneficiarios(false);
+    }
+  };
+
+  const gerarNovaSenha = async (cpf: string, nome: string, email: string) => {
+    setGerandoSenha(true);
+    try {
+      const token = typeof window !== 'undefined' 
+        ? (localStorage.getItem('token') || localStorage.getItem('auth_token')) 
+        : null;
+
+      if (!token) {
+        throw new Error('Token de autenticação não encontrado.');
+      }
+
+      const headers: HeadersInit = {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`,
+      };
+
+      const resp = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL}/admin/gerar-nova-senha`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ cpf }),
+      });
+
+      const data = await resp.json();
+
+      if (!resp.ok) {
+        throw new Error(data.error || 'Erro ao gerar nova senha.');
+      }
+
+      setModalSenha({
+        cpf: data.usuario?.cpf || cpf,
+        nome: data.usuario?.nome || nome,
+        email: data.usuario?.email || email,
+        senha: data.senhaTemporaria,
+      });
+      setMostrarSenha(false);
+    } catch (e: any) {
+      setError(e?.message || 'Erro ao gerar nova senha.');
+    } finally {
+      setGerandoSenha(false);
+    }
+  };
+
+  const copiarSenha = () => {
+    if (modalSenha?.senha) {
+      navigator.clipboard.writeText(modalSenha.senha);
+      // Feedback visual pode ser adicionado aqui
+    }
+  };
 
   const filteredAssinantes = useMemo(() => {
     return assinantes.map(a => ({
@@ -255,6 +364,86 @@ export default function AdminAssinantesPage() {
         </Card>
       </div>
 
+      {/* Seção de Beneficiários sem Conta */}
+      <Card className="mb-6 border-orange-200 dark:border-orange-800">
+        <CardHeader>
+          <div className="flex items-center justify-between">
+            <div className="flex items-center">
+              <AlertCircle className="w-5 h-5 text-orange-500 mr-2" />
+              <h2 className="text-lg font-semibold text-gray-900 dark:text-white">
+                Beneficiários sem Conta de Usuário
+              </h2>
+            </div>
+            <Button
+              variant="outline"
+              onClick={buscarBeneficiariosSemConta}
+              isLoading={loadingBeneficiarios}
+              disabled={loadingBeneficiarios}
+            >
+              <RefreshCw className={`w-4 h-4 mr-2 ${loadingBeneficiarios ? 'animate-spin' : ''}`} />
+              Buscar do Rapidoc
+            </Button>
+          </div>
+        </CardHeader>
+        {mostrarBeneficiariosSemConta && (
+          <CardBody>
+            {loadingBeneficiarios ? (
+              <p className="text-gray-600 dark:text-gray-400">Carregando beneficiários...</p>
+            ) : beneficiariosSemConta.length === 0 ? (
+              <div className="text-center py-8">
+                <CheckCircle className="w-12 h-12 text-green-500 mx-auto mb-2" />
+                <p className="text-gray-600 dark:text-gray-400">
+                  Todos os beneficiários do Rapidoc já possuem conta de usuário ou assinatura no Asaas.
+                </p>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">
+                  Encontrados <strong>{beneficiariosSemConta.length}</strong> beneficiário(s) sem conta de usuário e sem cobrança no Asaas:
+                </p>
+                {beneficiariosSemConta.map((beneficiario) => (
+                  <Card key={beneficiario.uuid} className="bg-orange-50 dark:bg-orange-900/20">
+                    <CardBody>
+                      <div className="flex items-start justify-between">
+                        <div className="flex-1">
+                          <div className="flex items-center space-x-3 mb-2">
+                            <h3 className="text-base font-semibold text-gray-900 dark:text-white">
+                              {beneficiario.nome}
+                            </h3>
+                            <Badge variant="warning">Sem Conta</Badge>
+                          </div>
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-sm text-gray-600 dark:text-gray-400">
+                            <div>📧 {beneficiario.email}</div>
+                            <div>🆔 {beneficiario.cpf}</div>
+                            <div className="text-xs text-gray-500 dark:text-gray-500">
+                              Firestore: {beneficiario.temUsuarioFirestore ? '✓' : '✗'} | 
+                              Auth: {beneficiario.temUsuarioAuth ? '✓' : '✗'} | 
+                              Asaas: {beneficiario.temAssinaturaAsaas ? '✓' : '✗'}
+                            </div>
+                          </div>
+                        </div>
+                        <div className="ml-4">
+                          <Button
+                            variant="primary"
+                            size="sm"
+                            onClick={() => {
+                              router.push(`/admin/criar-usuario/${beneficiario.uuid}`);
+                            }}
+                          >
+                            <UserPlus className="w-4 h-4 mr-1" />
+                            Criar Usuário
+                          </Button>
+                        </div>
+                      </div>
+                    </CardBody>
+                  </Card>
+                ))}
+              </div>
+            )}
+          </CardBody>
+        )}
+      </Card>
+
       {/* Filtros e Busca */}
       <Card className="mb-6">
         <CardBody>
@@ -292,7 +481,9 @@ export default function AdminAssinantesPage() {
               setLoading(true); setError('');
               (async () => {
                 try {
-                  const token = typeof window !== 'undefined' ? localStorage.getItem('auth_token') : null;
+                  const token = typeof window !== 'undefined' 
+                    ? (localStorage.getItem('token') || localStorage.getItem('auth_token')) 
+                    : null;
                   const headers: HeadersInit = {
                     'Content-Type': 'application/json',
                   };
@@ -381,7 +572,9 @@ export default function AdminAssinantesPage() {
                       setModalLoading(true);
                       setModalFaturas(null);
                       try {
-                        const token = typeof window !== 'undefined' ? localStorage.getItem('auth_token') : null;
+                        const token = typeof window !== 'undefined' 
+                          ? (localStorage.getItem('token') || localStorage.getItem('auth_token')) 
+                          : null;
                         const headers: HeadersInit = { 'Content-Type': 'application/json' };
                         if (token) headers['Authorization'] = `Bearer ${token}`;
                         const resp = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/faturas?cpf=${assinante.cpf}`, { headers });
@@ -396,6 +589,16 @@ export default function AdminAssinantesPage() {
                     }}>
                       <Eye className="w-4 h-4 mr-1" />
                       Detalhes
+                    </Button>
+                    <Button 
+                      variant="outline" 
+                      size="sm" 
+                      onClick={() => gerarNovaSenha(assinante.cpf, assinante.nome, assinante.email)}
+                      isLoading={gerandoSenha}
+                      disabled={gerandoSenha}
+                    >
+                      <Key className="w-4 h-4 mr-1" />
+                      Nova Senha
                     </Button>
                     {assinante.status === 'ativo' ? (
                       <Button variant="danger" size="sm">
@@ -430,6 +633,74 @@ export default function AdminAssinantesPage() {
                 <div><b>Data de adesão:</b> {modalAssinante.dataAdesao}</div>
                 <div><b>Valor mensal:</b> R$ {modalAssinante.valorMensal.toFixed(2).replace('.', ',')}</div>
                 <div><b>Dependentes:</b> {modalAssinante.dependentes}</div>
+              </div>
+            )}
+          </Dialog.Content>
+        </Dialog>
+
+        {/* Modal de senha gerada */}
+        <Dialog open={!!modalSenha} onOpenChange={v => { if (!v) { setModalSenha(null); setMostrarSenha(false); } }}>
+          <Dialog.Content>
+            <div className="mb-4">
+              <h2 className="text-lg font-semibold flex items-center">
+                <Key className="w-5 h-5 text-primary mr-2" />
+                Nova Senha Gerada
+              </h2>
+            </div>
+            {modalSenha && (
+              <div className="space-y-4">
+                <div className="bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg p-3">
+                  <p className="text-sm text-yellow-800 dark:text-yellow-200">
+                    <AlertCircle className="w-4 h-4 inline mr-1" />
+                    Esta senha deve ser compartilhada com o cliente de forma segura. Recomenda-se que o cliente altere a senha após o primeiro login.
+                  </p>
+                </div>
+                <div className="space-y-2">
+                  <div><b>Nome:</b> {modalSenha.nome}</div>
+                  <div><b>Email:</b> {modalSenha.email}</div>
+                  <div><b>CPF:</b> {modalSenha.cpf}</div>
+                </div>
+                <div>
+                  <label className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2 block">
+                    Nova Senha:
+                  </label>
+                  <div className="flex items-center gap-2">
+                    <div className="flex-1 relative">
+                      <input
+                        type={mostrarSenha ? 'text' : 'password'}
+                        value={modalSenha.senha}
+                        readOnly
+                        className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-gray-50 dark:bg-gray-800 font-mono text-sm"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setMostrarSenha(!mostrarSenha)}
+                        className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
+                      >
+                        {mostrarSenha ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                      </button>
+                    </div>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={copiarSenha}
+                      title="Copiar senha"
+                    >
+                      <Copy className="w-4 h-4" />
+                    </Button>
+                  </div>
+                </div>
+                <div className="flex justify-end gap-2 pt-2">
+                  <Button
+                    variant="primary"
+                    onClick={() => {
+                      setModalSenha(null);
+                      setMostrarSenha(false);
+                    }}
+                  >
+                    Fechar
+                  </Button>
+                </div>
               </div>
             )}
           </Dialog.Content>
