@@ -359,4 +359,321 @@ export class AdminController {
       return res.status(500).json({ error: error?.message || 'Erro ao buscar beneficiários sem conta.' });
     }
   }
+
+  // Criar usuário completo para beneficiário do Rapidoc
+  static async criarUsuarioCompleto(req: Request, res: Response) {
+    try {
+      const {
+        beneficiarioUuid,
+        cpf,
+        nome,
+        email,
+        telefone,
+        birthday,
+        planoId,
+        billingType = 'BOLETO',
+        ciclo = 'MONTHLY',
+      } = req.body;
+
+      if (!cpf || !nome || !email || !planoId) {
+        return res.status(400).json({ error: 'CPF, nome, email e planoId são obrigatórios.' });
+      }
+
+      // Buscar dados completos do beneficiário no Rapidoc se necessário
+      let dadosCompletos: any = { nome, email, cpf, telefone, birthday };
+      if (beneficiarioUuid || cpf) {
+        try {
+          const { buscarBeneficiarioRapidocPorCpf } = await import('../services/rapidoc.service.js');
+          const rapidocData = await buscarBeneficiarioRapidocPorCpf(cpf);
+          const beneficiario = rapidocData?.beneficiary || rapidocData;
+          if (beneficiario) {
+            dadosCompletos = {
+              nome: beneficiario.name || nome,
+              email: beneficiario.email || email,
+              cpf: beneficiario.cpf || cpf,
+              telefone: beneficiario.phone || telefone,
+              birthday: beneficiario.birthday || birthday,
+            };
+          }
+        } catch (error: any) {
+          console.warn('[AdminController] Erro ao buscar dados do Rapidoc (usando dados fornecidos):', error?.message);
+          // Continua com os dados fornecidos
+        }
+      }
+
+      const db = getFirestore(firebaseApp);
+      const auth = getAuth(firebaseApp);
+      const { criarClienteAsaas, criarAssinaturaAsaas } = await import('../services/asaas.service.js');
+      const { buscarBeneficiarioRapidocPorCpf, atualizarBeneficiarioRapidoc } = await import('../services/rapidoc.service.js');
+      const axios = (await import('axios')).default;
+
+      // 1. Buscar dados do plano
+      const planoDoc = await db.collection('planos').doc(planoId).get();
+      if (!planoDoc.exists) {
+        return res.status(404).json({ error: 'Plano não encontrado.' });
+      }
+      const plano = planoDoc.data();
+      const valor = Number(plano?.preco);
+      if (!valor || isNaN(valor) || valor <= 0) {
+        return res.status(400).json({ error: 'Plano sem valor válido.' });
+      }
+
+      // 2. Verificar/Criar cliente no Asaas
+      let clienteAsaas: any;
+      try {
+        const clientesResp = await axios.get(`${process.env.ASAAS_BASE_URL || 'https://sandbox.asaas.com/api/v3'}/customers`, {
+          params: { cpfCnpj: dadosCompletos.cpf },
+          headers: { access_token: process.env.ASAAS_API_KEY },
+        });
+        const clientes = clientesResp.data?.data || [];
+        if (clientes.length > 0) {
+          clienteAsaas = clientes[0];
+          console.log('[AdminController] Cliente Asaas já existe:', clienteAsaas.id);
+        } else {
+          clienteAsaas = await criarClienteAsaas({ 
+            nome: dadosCompletos.nome, 
+            email: dadosCompletos.email, 
+            cpf: dadosCompletos.cpf, 
+            telefone: dadosCompletos.telefone 
+          });
+          console.log('[AdminController] Cliente Asaas criado:', clienteAsaas.id);
+        }
+      } catch (error: any) {
+        console.error('[AdminController] Erro ao criar/buscar cliente Asaas:', error);
+        return res.status(500).json({ error: 'Erro ao criar cliente no Asaas: ' + (error?.message || 'Erro desconhecido') });
+      }
+
+      // 3. Criar assinatura no Asaas
+      let assinaturaAsaas: any;
+      try {
+        const description = `Assinatura ${plano?.tipo || 'Plano'} - ${plano?.descricao || 'Consulta Médicos Online'}`;
+        assinaturaAsaas = await criarAssinaturaAsaas({
+          customer: clienteAsaas.id,
+          value: valor,
+          cycle: ciclo,
+          billingType,
+          description,
+        });
+        console.log('[AdminController] Assinatura Asaas criada:', assinaturaAsaas.id);
+      } catch (error: any) {
+        console.error('[AdminController] Erro ao criar assinatura Asaas:', error);
+        return res.status(500).json({ error: 'Erro ao criar assinatura no Asaas: ' + (error?.message || 'Erro desconhecido') });
+      }
+
+      // 4. Criar/Atualizar usuário no Firestore
+      const usuarioRef = db.collection('usuarios').doc(dadosCompletos.cpf);
+      const usuarioDoc = await usuarioRef.get();
+      const userData: any = {
+        cpf: dadosCompletos.cpf,
+        nome: dadosCompletos.nome,
+        email: dadosCompletos.email,
+        tipo: 'subscriber',
+        criadoEm: new Date().toISOString(),
+      };
+      if (dadosCompletos.telefone) userData.telefone = dadosCompletos.telefone;
+      if (dadosCompletos.birthday) userData.dataNascimento = dadosCompletos.birthday;
+      if (beneficiarioUuid) userData.rapidocBeneficiaryUuid = beneficiarioUuid;
+
+      if (!usuarioDoc.exists) {
+        await usuarioRef.set(userData);
+        console.log('[AdminController] Usuário Firestore criado');
+      } else {
+        await usuarioRef.update(userData);
+        console.log('[AdminController] Usuário Firestore atualizado');
+      }
+
+      // 5. Criar usuário no Firebase Auth (se não existir)
+      let usuarioAuthExiste = false;
+      try {
+        if (email) {
+          await auth.getUserByEmail(email);
+          usuarioAuthExiste = true;
+          console.log('[AdminController] Usuário Auth já existe');
+        }
+      } catch (error: any) {
+        if (error?.code === 'auth/user-not-found') {
+          // Criar usuário no Auth
+          try {
+            const senhaTemporaria = Math.random().toString(36).slice(-8) + Math.random().toString(36).slice(-8).toUpperCase() + '1!';
+            await auth.createUser({
+              uid: dadosCompletos.cpf,
+              email: dadosCompletos.email,
+              password: senhaTemporaria,
+              displayName: dadosCompletos.nome,
+            });
+            console.log('[AdminController] Usuário Auth criado');
+            // Marcar primeiro acesso como false para que o usuário possa fazer primeiro acesso
+            await usuarioRef.update({ primeiroAcesso: false });
+          } catch (authError: any) {
+            console.error('[AdminController] Erro ao criar usuário Auth:', authError);
+            // Não bloqueia o processo se falhar
+          }
+        }
+      }
+
+      // 6. Criar assinatura no Firestore
+      const assinaturaRef = db.collection('assinaturas').doc(assinaturaAsaas.id);
+      const assinaturaData: any = {
+        idAssinatura: assinaturaAsaas.id,
+        cpfUsuario: dadosCompletos.cpf,
+        planoId,
+        planoTipo: plano?.tipo,
+        planoDescricao: plano?.descricao,
+        planoPreco: valor,
+        status: 'ATIVA',
+        dataInicio: new Date().toISOString().substring(0, 10),
+        ciclo,
+        formaPagamento: billingType,
+        criadoEm: new Date().toISOString(),
+      };
+      await assinaturaRef.set(assinaturaData, { merge: true });
+      console.log('[AdminController] Assinatura Firestore criada');
+
+      // 7. Atualizar beneficiário no Rapidoc (vincular ao plano se necessário)
+      try {
+        if (beneficiarioUuid && plano?.uuidRapidocPlano) {
+          const beneficiarioRapidoc = await buscarBeneficiarioRapidocPorCpf(dadosCompletos.cpf);
+          const beneficiario = beneficiarioRapidoc?.beneficiary || beneficiarioRapidoc;
+          if (beneficiario) {
+            // Verificar se já tem o plano vinculado
+            const temPlano = beneficiario.plans?.some((p: any) => p.plan?.uuid === plano.uuidRapidocPlano);
+            if (!temPlano) {
+              const plans = beneficiario.plans || [];
+              plans.push({
+                paymentType: plano.paymentType || 'S',
+                plan: { uuid: plano.uuidRapidocPlano },
+              });
+              await atualizarBeneficiarioRapidoc(beneficiarioUuid, {
+                plans,
+              });
+              console.log('[AdminController] Beneficiário Rapidoc atualizado com plano');
+            }
+          }
+        }
+      } catch (error: any) {
+        console.warn('[AdminController] Erro ao atualizar beneficiário Rapidoc (não bloqueia):', error?.message);
+        // Não bloqueia o processo
+      }
+
+      return res.status(201).json({
+        message: 'Usuário criado com sucesso.',
+        usuario: {
+          cpf: dadosCompletos.cpf,
+          nome: dadosCompletos.nome,
+          email: dadosCompletos.email,
+        },
+        assinatura: {
+          id: assinaturaAsaas.id,
+          clienteId: clienteAsaas.id,
+          valor,
+          status: assinaturaAsaas.status,
+        },
+        plano: {
+          id: planoId,
+          tipo: plano?.tipo,
+          valor,
+        },
+      });
+    } catch (error: any) {
+      console.error('[AdminController] Erro ao criar usuário completo:', error);
+      return res.status(500).json({ error: error?.message || 'Erro ao criar usuário completo.' });
+    }
+  }
+
+  // Gerar nova senha para um cliente
+  static async gerarNovaSenha(req: Request, res: Response) {
+    try {
+      const { cpf, email } = req.body;
+
+      if (!cpf && !email) {
+        return res.status(400).json({ error: 'CPF ou email é obrigatório.' });
+      }
+
+      const db = getFirestore(firebaseApp);
+      const auth = getAuth(firebaseApp);
+
+      // Buscar usuário no Firestore
+      let usuarioDoc: any = null;
+      let usuarioData: any = null;
+
+      if (cpf) {
+        usuarioDoc = await db.collection('usuarios').doc(cpf).get();
+        if (usuarioDoc.exists) {
+          usuarioData = usuarioDoc.data();
+        }
+      }
+
+      if (!usuarioData && email) {
+        const usuariosSnap = await db.collection('usuarios').where('email', '==', email).limit(1).get();
+        if (!usuariosSnap.empty) {
+          usuarioDoc = usuariosSnap.docs[0];
+          usuarioData = usuarioDoc.data();
+        }
+      }
+
+      if (!usuarioData) {
+        return res.status(404).json({ error: 'Usuário não encontrado no sistema.' });
+      }
+
+      const usuarioCpf = usuarioData.cpf || usuarioDoc.id;
+      const usuarioEmail = usuarioData.email;
+
+      if (!usuarioEmail) {
+        return res.status(400).json({ error: 'Usuário não possui email cadastrado.' });
+      }
+
+      // Gerar senha temporária
+      const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!@#$%';
+      let senhaTemporaria = '';
+      for (let i = 0; i < 12; i++) {
+        senhaTemporaria += chars.charAt(Math.floor(Math.random() * chars.length));
+      }
+
+      // Atualizar senha no Firebase Auth
+      try {
+        // Buscar usuário no Auth pelo email ou UID
+        let userRecord;
+        try {
+          userRecord = await auth.getUserByEmail(usuarioEmail);
+        } catch (error: any) {
+          if (error?.code === 'auth/user-not-found') {
+            // Tentar pelo UID (CPF)
+            try {
+              userRecord = await auth.getUser(usuarioCpf);
+            } catch {
+              return res.status(404).json({ error: 'Usuário não encontrado no Firebase Auth.' });
+            }
+          } else {
+            throw error;
+          }
+        }
+
+        // Atualizar senha
+        await auth.updateUser(userRecord.uid, {
+          password: senhaTemporaria,
+        });
+
+        console.log(`[AdminController] Nova senha gerada para usuário ${usuarioCpf} (${usuarioEmail})`);
+
+        return res.status(200).json({
+          message: 'Nova senha gerada com sucesso.',
+          usuario: {
+            cpf: usuarioCpf,
+            nome: usuarioData.nome,
+            email: usuarioEmail,
+          },
+          senhaTemporaria,
+          aviso: 'Esta senha deve ser compartilhada com o cliente de forma segura. Recomenda-se que o cliente altere a senha após o primeiro login.',
+        });
+      } catch (error: any) {
+        console.error('[AdminController] Erro ao gerar nova senha:', error);
+        return res.status(500).json({ 
+          error: 'Erro ao gerar nova senha: ' + (error?.message || 'Erro desconhecido') 
+        });
+      }
+    } catch (error: any) {
+      console.error('[AdminController] Erro ao gerar nova senha:', error);
+      return res.status(500).json({ error: error?.message || 'Erro ao gerar nova senha.' });
+    }
+  }
 }

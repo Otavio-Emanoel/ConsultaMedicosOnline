@@ -19,8 +19,12 @@ import {
   Package,
   AlertCircle,
   RefreshCw,
+  Key,
+  Copy,
+  EyeOff,
 } from 'lucide-react';
 import { useState, useEffect, useMemo } from 'react';
+import { useRouter } from 'next/navigation';
 import { Dialog } from '@/components/ui/Dialog';
 
 // Corrigido: definição da interface AssinanteItem estava fora do lugar e sem o "interface"
@@ -72,6 +76,7 @@ function formatarDataBR(dataISO: string | null | undefined) {
 }
 
 export default function AdminAssinantesPage() {
+  const router = useRouter();
   const [searchTerm, setSearchTerm] = useState('');
   const [assinantes, setAssinantes] = useState<AssinanteItem[]>([]);
   const [assinantesPagamentos, setAssinantesPagamentos] = useState<Record<string, string>>({});
@@ -83,6 +88,9 @@ export default function AdminAssinantesPage() {
   const [beneficiariosSemConta, setBeneficiariosSemConta] = useState<BeneficiarioSemConta[]>([]);
   const [loadingBeneficiarios, setLoadingBeneficiarios] = useState<boolean>(false);
   const [mostrarBeneficiariosSemConta, setMostrarBeneficiariosSemConta] = useState<boolean>(false);
+  const [modalSenha, setModalSenha] = useState<{ cpf: string; nome: string; email: string; senha: string } | null>(null);
+  const [mostrarSenha, setMostrarSenha] = useState<boolean>(false);
+  const [gerandoSenha, setGerandoSenha] = useState<boolean>(false);
 
   useEffect(() => {
     const fetchData = async () => {
@@ -201,6 +209,55 @@ export default function AdminAssinantesPage() {
       setError(e?.message || 'Falha ao carregar beneficiários sem conta.');
     } finally {
       setLoadingBeneficiarios(false);
+    }
+  };
+
+  const gerarNovaSenha = async (cpf: string, nome: string, email: string) => {
+    setGerandoSenha(true);
+    try {
+      const token = typeof window !== 'undefined' 
+        ? (localStorage.getItem('token') || localStorage.getItem('auth_token')) 
+        : null;
+
+      if (!token) {
+        throw new Error('Token de autenticação não encontrado.');
+      }
+
+      const headers: HeadersInit = {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`,
+      };
+
+      const resp = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL}/admin/gerar-nova-senha`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ cpf }),
+      });
+
+      const data = await resp.json();
+
+      if (!resp.ok) {
+        throw new Error(data.error || 'Erro ao gerar nova senha.');
+      }
+
+      setModalSenha({
+        cpf: data.usuario?.cpf || cpf,
+        nome: data.usuario?.nome || nome,
+        email: data.usuario?.email || email,
+        senha: data.senhaTemporaria,
+      });
+      setMostrarSenha(false);
+    } catch (e: any) {
+      setError(e?.message || 'Erro ao gerar nova senha.');
+    } finally {
+      setGerandoSenha(false);
+    }
+  };
+
+  const copiarSenha = () => {
+    if (modalSenha?.senha) {
+      navigator.clipboard.writeText(modalSenha.senha);
+      // Feedback visual pode ser adicionado aqui
     }
   };
 
@@ -370,8 +427,7 @@ export default function AdminAssinantesPage() {
                             variant="primary"
                             size="sm"
                             onClick={() => {
-                              // Por enquanto apenas visual, funcionalidade será implementada depois
-                              alert(`Funcionalidade de criar usuário para ${beneficiario.nome} será implementada em breve.`);
+                              router.push(`/admin/criar-usuario/${beneficiario.uuid}`);
                             }}
                           >
                             <UserPlus className="w-4 h-4 mr-1" />
@@ -534,6 +590,16 @@ export default function AdminAssinantesPage() {
                       <Eye className="w-4 h-4 mr-1" />
                       Detalhes
                     </Button>
+                    <Button 
+                      variant="outline" 
+                      size="sm" 
+                      onClick={() => gerarNovaSenha(assinante.cpf, assinante.nome, assinante.email)}
+                      isLoading={gerandoSenha}
+                      disabled={gerandoSenha}
+                    >
+                      <Key className="w-4 h-4 mr-1" />
+                      Nova Senha
+                    </Button>
                     {assinante.status === 'ativo' ? (
                       <Button variant="danger" size="sm">
                         <Ban className="w-4 h-4 mr-1" />
@@ -567,6 +633,74 @@ export default function AdminAssinantesPage() {
                 <div><b>Data de adesão:</b> {modalAssinante.dataAdesao}</div>
                 <div><b>Valor mensal:</b> R$ {modalAssinante.valorMensal.toFixed(2).replace('.', ',')}</div>
                 <div><b>Dependentes:</b> {modalAssinante.dependentes}</div>
+              </div>
+            )}
+          </Dialog.Content>
+        </Dialog>
+
+        {/* Modal de senha gerada */}
+        <Dialog open={!!modalSenha} onOpenChange={v => { if (!v) { setModalSenha(null); setMostrarSenha(false); } }}>
+          <Dialog.Content>
+            <div className="mb-4">
+              <h2 className="text-lg font-semibold flex items-center">
+                <Key className="w-5 h-5 text-primary mr-2" />
+                Nova Senha Gerada
+              </h2>
+            </div>
+            {modalSenha && (
+              <div className="space-y-4">
+                <div className="bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg p-3">
+                  <p className="text-sm text-yellow-800 dark:text-yellow-200">
+                    <AlertCircle className="w-4 h-4 inline mr-1" />
+                    Esta senha deve ser compartilhada com o cliente de forma segura. Recomenda-se que o cliente altere a senha após o primeiro login.
+                  </p>
+                </div>
+                <div className="space-y-2">
+                  <div><b>Nome:</b> {modalSenha.nome}</div>
+                  <div><b>Email:</b> {modalSenha.email}</div>
+                  <div><b>CPF:</b> {modalSenha.cpf}</div>
+                </div>
+                <div>
+                  <label className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2 block">
+                    Nova Senha:
+                  </label>
+                  <div className="flex items-center gap-2">
+                    <div className="flex-1 relative">
+                      <input
+                        type={mostrarSenha ? 'text' : 'password'}
+                        value={modalSenha.senha}
+                        readOnly
+                        className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-gray-50 dark:bg-gray-800 font-mono text-sm"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setMostrarSenha(!mostrarSenha)}
+                        className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
+                      >
+                        {mostrarSenha ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                      </button>
+                    </div>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={copiarSenha}
+                      title="Copiar senha"
+                    >
+                      <Copy className="w-4 h-4" />
+                    </Button>
+                  </div>
+                </div>
+                <div className="flex justify-end gap-2 pt-2">
+                  <Button
+                    variant="primary"
+                    onClick={() => {
+                      setModalSenha(null);
+                      setMostrarSenha(false);
+                    }}
+                  >
+                    Fechar
+                  </Button>
+                </div>
               </div>
             )}
           </Dialog.Content>
