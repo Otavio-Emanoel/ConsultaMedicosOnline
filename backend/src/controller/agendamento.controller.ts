@@ -1,9 +1,48 @@
 import type { Request, Response } from 'express';
-import { buscarBeneficiarioRapidocPorCpf, agendarConsultaRapidoc, lerAgendamentoRapidoc, cancelarAgendamentoRapidoc, listarRapidocEspecialidades, obterDetalhesPlanoRapidoc, atualizarBeneficiarioRapidoc, atualizarPlanoRapidoc, listarAgendamentosRapidoc } from '../services/rapidoc.service.js';
+import { buscarBeneficiarioRapidocPorCpf, agendarConsultaRapidoc, lerAgendamentoRapidoc, cancelarAgendamentoRapidoc, listarRapidocEspecialidades, obterDetalhesPlanoRapidoc, atualizarBeneficiarioRapidoc, atualizarPlanoRapidoc, listarAgendamentosRapidoc, buscarDisponibilidadeEspecialidade, solicitarConsultaImediataRapidoc } from '../services/rapidoc.service.js';
 import { firebaseApp } from '../config/firebase.js';
 import { getFirestore } from 'firebase-admin/firestore';
 
 export class AgendamentoController {
+  /**
+   * Helper: Obtém o CPF do usuário logado e busca o beneficiário no Rapidoc
+   * Retorna { cpf, beneficiario, beneficiarioUuid } ou lança erro
+   */
+  private static async obterBeneficiarioDoUsuarioLogado(req: Request): Promise<{ cpf: string; beneficiario: any; beneficiarioUuid: string }> {
+    // Obter UID do usuário logado
+    const uid = req.user?.uid || req.user?.sub;
+    if (!uid) {
+      throw new Error('Usuário não autenticado.');
+    }
+
+    // Buscar CPF do usuário no Firestore
+    const db = getFirestore(firebaseApp);
+    const usuarioRef = db.collection('usuarios').doc(uid);
+    const usuarioDoc = await usuarioRef.get();
+    let cpf: string | undefined;
+
+    if (usuarioDoc.exists) {
+      const usuarioData = usuarioDoc.data();
+      cpf = usuarioData?.cpf;
+    }
+    // Se não encontrou CPF no Firestore, usa o UID (que pode ser o CPF)
+    if (!cpf) {
+      cpf = (req.user as any)?.cpf || uid;
+    }
+
+    if (!cpf) {
+      throw new Error('CPF do usuário não encontrado.');
+    }
+
+    // Buscar beneficiário no Rapidoc pelo CPF (usando o endpoint /beneficiaries/:cpf)
+    const beneficiarioResp = await buscarBeneficiarioRapidocPorCpf(cpf);
+    const beneficiario = beneficiarioResp?.beneficiary;
+    if (!beneficiario || !beneficiario.uuid) {
+      throw new Error('Beneficiário não encontrado no Rapidoc para o usuário logado.');
+    }
+
+    return { cpf, beneficiario, beneficiarioUuid: beneficiario.uuid };
+  }
   static async criar(req: Request, res: Response) {
     try {
       const { cpf, date, from, to, specialtyUuid, notes, durationMinutes } = req.body || {};
@@ -32,7 +71,7 @@ export class AgendamentoController {
       // Derivar from/to se vier time + durationMinutes
       let finalFrom = from;
       let finalTo = to;
-      if (!finalFrom && req.body.time) finalFrom = req.body.time;
+      if (!finalFrom && time) finalFrom = time;
       if (!finalTo && finalFrom && durationMinutes && Number(durationMinutes) > 0) {
         const [h, m] = finalFrom.split(':');
         const startDate = new Date(0, 0, 0, Number(h), Number(m));
@@ -88,7 +127,7 @@ export class AgendamentoController {
       // IMPORTANTE: Não enviamos 'plan' nem 'serviceType' aqui se o usuário já estiver correto.
       // Enviar esses campos parcialmente pode fazer a API sobrescrever as regras do usuário com um objeto vazio.
       const bodyRapidoc: Record<string, any> = {
-        beneficiary: { uuid: beneficiario.uuid, cpf },
+        beneficiary: { uuid: beneficiarioUuid, cpf },
         specialty: { uuid: specialtyUuid },
         detail: { date: dateFormatted, from: finalFrom, to: finalTo }
       };
@@ -114,6 +153,12 @@ export class AgendamentoController {
         });
       }
     } catch (error: any) {
+      if (error?.message === 'Usuário não autenticado.' || error?.message?.includes('CPF')) {
+        return res.status(400).json({ error: error.message });
+      }
+      if (error?.message?.includes('Beneficiário não encontrado')) {
+        return res.status(404).json({ error: error.message });
+      }
       return res.status(500).json({ error: error?.message || 'Erro ao agendar consulta.' });
     }
   }
@@ -143,7 +188,7 @@ export class AgendamentoController {
     }
   }
 
-  // POST /api/agendamentos/imediato - cria solicitação de consulta imediata (fila/triagem)
+  // POST /api/agendamentos/imediato - solicita consulta imediata usando request-appointment
   static async solicitarImediato(req: Request, res: Response) {
     try {
       const db = getFirestore(firebaseApp);
@@ -234,7 +279,17 @@ export class AgendamentoController {
       const statusCode = payload.status === 'scheduled' ? 201 : 202;
       return res.status(statusCode).json(payload);
     } catch (error: any) {
-      return res.status(500).json({ error: error?.message || 'Erro ao criar solicitação de consulta imediata.' });
+      if (error?.message === 'Usuário não autenticado.' || error?.message?.includes('CPF')) {
+        return res.status(400).json({ error: error.message });
+      }
+      if (error?.message?.includes('Beneficiário não encontrado')) {
+        return res.status(404).json({ error: error.message });
+      }
+      const status = error?.response?.status;
+      if (status === 401 || status === 403) {
+        return res.status(401).json({ error: 'Autorização inválida no Rapidoc.' });
+      }
+      return res.status(500).json({ error: error?.message || 'Erro ao solicitar consulta imediata.' });
     }
   }
 
@@ -277,24 +332,66 @@ export class AgendamentoController {
     }
   }
 
+  // GET /api/agendamentos/disponibilidade - busca disponibilidade de especialidades para o usuário logado
+  static async buscarDisponibilidade(req: Request, res: Response) {
+    try {
+      // Obter CPF e beneficiário do usuário logado automaticamente
+      const { beneficiarioUuid } = await AgendamentoController.obterBeneficiarioDoUsuarioLogado(req);
+
+      // Obter parâmetros da query
+      const { specialtyUuid, dateInitial, dateFinal } = req.query;
+      if (!specialtyUuid || typeof specialtyUuid !== 'string') {
+        return res.status(400).json({ error: 'specialtyUuid é obrigatório.' });
+      }
+      if (!dateInitial || typeof dateInitial !== 'string') {
+        return res.status(400).json({ error: 'dateInitial é obrigatório (formato: dd/MM/yyyy).' });
+      }
+      if (!dateFinal || typeof dateFinal !== 'string') {
+        return res.status(400).json({ error: 'dateFinal é obrigatório (formato: dd/MM/yyyy).' });
+      }
+
+      // Buscar disponibilidade usando o beneficiaryUuid do usuário logado automaticamente
+      const disponibilidade = await buscarDisponibilidadeEspecialidade({
+        specialtyUuid: specialtyUuid.trim(),
+        beneficiaryUuid: beneficiarioUuid, // Usa o beneficiaryUuid do usuário logado automaticamente
+        dateInitial: dateInitial.trim(),
+        dateFinal: dateFinal.trim(),
+      });
+
+      return res.status(200).json({
+        beneficiaryUuid: beneficiarioUuid,
+        specialtyUuid: specialtyUuid.trim(),
+        dateInitial: dateInitial.trim(),
+        dateFinal: dateFinal.trim(),
+        disponibilidade
+      });
+    } catch (error: any) {
+      if (error?.message === 'Usuário não autenticado.' || error?.message?.includes('CPF')) {
+        return res.status(400).json({ error: error.message });
+      }
+      if (error?.message?.includes('Beneficiário não encontrado')) {
+        return res.status(404).json({ error: error.message });
+      }
+      const status = error?.response?.status;
+      if (status === 401 || status === 403) {
+        return res.status(401).json({ error: 'Autorização inválida no Rapidoc.' });
+      }
+      return res.status(500).json({ error: error?.message || 'Erro ao buscar disponibilidade de especialidades.' });
+    }
+  }
+
   // GET /api/agendamentos - lista agendamentos por CPF ou beneficiaryUuid
   static async listar(req: Request, res: Response) {
     try {
-      // origem do CPF: token > query ?cpf=
-      let cpf: string | undefined = (req.user as any)?.cpf;
-      if (!cpf && typeof req.query.cpf === 'string') cpf = (req.query.cpf as string).trim();
-
       const beneficiaryUuid = typeof req.query.beneficiaryUuid === 'string' ? (req.query.beneficiaryUuid as string).trim() : undefined;
       const status = typeof req.query.status === 'string' ? (req.query.status as string).trim() : undefined;
       const date = typeof req.query.date === 'string' ? (req.query.date as string).trim() : undefined;
 
+      // Se não veio beneficiaryUuid na query, obtém automaticamente do usuário logado
       let finalBenefUuid = beneficiaryUuid;
       if (!finalBenefUuid) {
-        if (!cpf) return res.status(400).json({ error: 'Informe cpf (query) ou envie o token com cpf.' });
-        const beneficiarioResp = await buscarBeneficiarioRapidocPorCpf(cpf);
-        const beneficiario = beneficiarioResp?.beneficiary;
-        if (!beneficiario || !beneficiario.uuid) return res.status(404).json({ error: 'Beneficiário não encontrado no Rapidoc.' });
-        finalBenefUuid = beneficiario.uuid;
+        const { beneficiarioUuid } = await AgendamentoController.obterBeneficiarioDoUsuarioLogado(req);
+        finalBenefUuid = beneficiarioUuid;
       }
 
       const params: Record<string, any> = { beneficiary: finalBenefUuid };
@@ -312,6 +409,12 @@ export class AgendamentoController {
       }));
       return res.status(200).json({ count: mapped.length, appointments: mapped });
     } catch (error: any) {
+      if (error?.message === 'Usuário não autenticado.' || error?.message?.includes('CPF')) {
+        return res.status(400).json({ error: error.message });
+      }
+      if (error?.message?.includes('Beneficiário não encontrado')) {
+        return res.status(404).json({ error: error.message });
+      }
       return res.status(500).json({ error: error?.message || 'Erro ao listar agendamentos.' });
     }
   }
