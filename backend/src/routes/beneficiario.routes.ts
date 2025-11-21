@@ -9,6 +9,9 @@ const router = Router();
 router.get('/beneficiarios/:cpf/especialidades', autenticarFirebase, BeneficiarioEspecialidadesController.listarEspecialidades);
 router.put('/beneficiarios/:cpf/especialidades', autenticarFirebase, BeneficiarioEspecialidadesController.associarEspecialidade);
 
+// GET /api/beneficiarios/:cpf/encaminhamentos - lista encaminhamentos médicos do beneficiário
+router.get('/beneficiarios/:cpf/encaminhamentos', autenticarFirebase, BeneficiarioController.listarEncaminhamentos);
+
 // Inativar beneficiário no Rapidoc por CPF
 router.post('/beneficiarios/:cpf/inativar-rapidoc', autenticarFirebase, BeneficiarioController.inativarRapidoc);
 

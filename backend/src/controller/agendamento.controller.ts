@@ -45,17 +45,38 @@ export class AgendamentoController {
   }
   static async criar(req: Request, res: Response) {
     try {
-      // Obter CPF e beneficiário do usuário logado automaticamente
-      const { cpf, beneficiario, beneficiarioUuid } = await AgendamentoController.obterBeneficiarioDoUsuarioLogado(req);
-
       const { 
         availabilityUuid, 
         specialtyUuid, 
         beneficiaryMedicalReferralUuid,
         approveAdditionalPayment,
+        cpfSelecionado, // CPF do paciente selecionado (opcional, para dependentes)
         // Formato antigo (mantido para compatibilidade)
         date, from, to, time, durationMinutes, notes
       } = req.body || {};
+
+      // Obter CPF e beneficiário: se cpfSelecionado vier no body, usar esse; senão, usar o do usuário logado
+      let cpf: string;
+      let beneficiario: any;
+      let beneficiarioUuid: string;
+
+      if (cpfSelecionado) {
+        // Buscar beneficiário pelo CPF selecionado (para dependentes)
+        const beneficiarioResp = await buscarBeneficiarioRapidocPorCpf(cpfSelecionado);
+        const beneficiarioData = beneficiarioResp?.beneficiary;
+        if (!beneficiarioData || !beneficiarioData.uuid) {
+          return res.status(404).json({ error: 'Beneficiário não encontrado no Rapidoc para o CPF selecionado.' });
+        }
+        cpf = cpfSelecionado;
+        beneficiario = beneficiarioData;
+        beneficiarioUuid = beneficiarioData.uuid;
+      } else {
+        // Usar beneficiário do usuário logado (comportamento padrão)
+        const result = await AgendamentoController.obterBeneficiarioDoUsuarioLogado(req);
+        cpf = result.cpf;
+        beneficiario = result.beneficiario;
+        beneficiarioUuid = result.beneficiarioUuid;
+      }
       
       // NOVO FORMATO: Usando availabilityUuid (preferencial)
       if (availabilityUuid && specialtyUuid) {
@@ -76,15 +97,30 @@ export class AgendamentoController {
         }
         
         try {
+          console.log('[AgendamentoController] Enviando para Rapidoc:', JSON.stringify(bodyRapidoc, null, 2));
           const resp = await agendarConsultaRapidoc(bodyRapidoc);
+          console.log('[AgendamentoController] Resposta do Rapidoc:', JSON.stringify(resp, null, 2));
+          
           if (!resp || resp.success === false) {
-            return res.status(400).json({ error: resp?.message || 'Falha ao agendar no Rapidoc.', detail: resp });
+            return res.status(400).json({ 
+              error: resp?.message || 'Falha ao agendar no Rapidoc.', 
+              detail: resp,
+              sent: bodyRapidoc
+            });
           }
           return res.status(201).json(resp);
         } catch (e: any) {
+          console.error('[AgendamentoController] Erro ao agendar:', {
+            status: e?.response?.status,
+            statusText: e?.response?.statusText,
+            data: e?.response?.data,
+            sent: bodyRapidoc
+          });
+          
           return res.status(400).json({
             error: 'Erro ao agendar no Rapidoc.',
             status: e?.response?.status,
+            statusText: e?.response?.statusText,
             detail: e?.response?.data,
             sent: bodyRapidoc
           });

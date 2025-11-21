@@ -324,3 +324,17 @@ export async function solicitarConsultaImediataRapidoc(beneficiaryUuid: string) 
   });
   return resp.data;
 }
+
+// Buscar encaminhamentos médicos do beneficiário
+export async function buscarEncaminhamentosBeneficiarioRapidoc(beneficiaryUuid: string) {
+  if (!RAPIDOC_BASE_URL || !RAPIDOC_TOKEN || !RAPIDOC_CLIENT_ID) throw new Error('Configuração Rapidoc ausente');
+  const url = `${RAPIDOC_BASE_URL}/tema/api/beneficiaries/${beneficiaryUuid}/medical-referrals`;
+  const resp = await axios.get(url, {
+    headers: {
+      Authorization: `Bearer ${RAPIDOC_TOKEN}`,
+      clientId: RAPIDOC_CLIENT_ID,
+      'Content-Type': 'application/vnd.rapidoc.tema-v2+json'
+    }
+  });
+  return resp.data;
+}

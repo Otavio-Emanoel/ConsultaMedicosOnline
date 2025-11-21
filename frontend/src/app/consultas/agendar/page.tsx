@@ -226,27 +226,117 @@ export default function Page() {
     if (!formData.availabilityUuid || !formData.specialtyUuid) {
       return alert('Por favor, selecione um horário disponível.');
     }
+
+    if (!formData.patient) {
+      return alert('Por favor, selecione um paciente.');
+    }
     
     try {
+      // Identificar se a especialidade é psicologia ou nutrição
+      const specialtyName = formData.specialty.toLowerCase();
+      const isPsicologiaOuNutricao = specialtyName.includes('psicologia') || specialtyName.includes('nutrição') || specialtyName.includes('nutricao');
+
+      // Buscar beneficiário pelo CPF do paciente selecionado
+      const pacienteSelecionado = patients.find(p => p.id === formData.patient);
+      if (!pacienteSelecionado) {
+        throw new Error('Paciente selecionado não encontrado.');
+      }
+
+      // Buscar beneficiário no Rapidoc para obter o UUID
+      const beneficiarioRes = await fetch(`${apiBase}/rapidoc/beneficiario/${pacienteSelecionado.cpf}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+
+      if (!beneficiarioRes.ok) {
+        throw new Error('Erro ao buscar dados do beneficiário.');
+      }
+
+      const beneficiario = await beneficiarioRes.json();
+      if (!beneficiario || !beneficiario.uuid) {
+        throw new Error('Beneficiário não encontrado no Rapidoc.');
+      }
+
+      // Montar body conforme a especialidade
+      let body: any = {
+        availabilityUuid: formData.availabilityUuid,
+        specialtyUuid: formData.specialtyUuid,
+        cpfSelecionado: pacienteSelecionado.cpf, // Passar CPF do paciente selecionado para o backend
+      };
+
+      if (isPsicologiaOuNutricao) {
+        // Para psicologia ou nutrição: usar approveAdditionalPayment
+        body.approveAdditionalPayment = true;
+      } else {
+        // Para outras especialidades: buscar encaminhamentos e usar o primeiro disponível
+        const encaminhamentosRes = await fetch(`${apiBase}/beneficiarios/${pacienteSelecionado.cpf}/encaminhamentos`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+
+        if (!encaminhamentosRes.ok) {
+          const errorData = await encaminhamentosRes.json().catch(() => ({}));
+          throw new Error(errorData.error || 'Erro ao buscar encaminhamentos do beneficiário.');
+        }
+
+        const encaminhamentosData = await encaminhamentosRes.json();
+        const encaminhamentos = Array.isArray(encaminhamentosData?.encaminhamentos) 
+          ? encaminhamentosData.encaminhamentos 
+          : Array.isArray(encaminhamentosData)
+            ? encaminhamentosData
+            : [];
+
+        if (encaminhamentos.length === 0) {
+          throw new Error('Nenhum encaminhamento encontrado para este beneficiário. É necessário um encaminhamento médico para esta especialidade.');
+        }
+
+        // Usar o primeiro encaminhamento disponível
+        const primeiroEncaminhamento = encaminhamentos[0];
+        console.log('Primeiro encaminhamento:', primeiroEncaminhamento);
+        
+        // Tentar diferentes campos que podem conter o UUID do encaminhamento
+        body.beneficiaryMedicalReferralUuid = primeiroEncaminhamento.uuid 
+          || primeiroEncaminhamento.medicalReferralUuid 
+          || primeiroEncaminhamento.referralUuid
+          || primeiroEncaminhamento.id
+          || primeiroEncaminhamento.beneficiaryMedicalReferralUuid;
+        
+        if (!body.beneficiaryMedicalReferralUuid) {
+          console.error('Encaminhamento sem UUID válido:', primeiroEncaminhamento);
+          throw new Error('Erro ao obter UUID do encaminhamento. Formato inesperado da resposta da API.');
+        }
+      }
+
+      // Log do body para debug (pode remover em produção)
+      console.log('Body do agendamento:', JSON.stringify(body, null, 2));
+
+      // Enviar requisição de agendamento
       const res = await fetch(`${apiBase}/agendamentos`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${token}`,
         },
-        body: JSON.stringify({
-          availabilityUuid: formData.availabilityUuid,
-          specialtyUuid: formData.specialtyUuid,
-          // Opcional: para especialidades que requerem encaminhamento
-          // beneficiaryMedicalReferralUuid: formData.referralUuid,
-          // Para nutrição e psicologia (sem encaminhamento):
-          approveAdditionalPayment: true,
-        }),
+        body: JSON.stringify(body),
       });
       
       if (!res.ok) {
         const errorData = await res.json().catch(() => ({}));
-        throw new Error(errorData.error || 'Erro ao agendar consulta');
+        console.error('Erro ao agendar:', errorData);
+        
+        // Montar mensagem de erro mais detalhada
+        let errorMessage = errorData.error || 'Erro ao agendar consulta';
+        
+        if (errorData.detail) {
+          // Se houver detalhes da API Rapidoc, incluir na mensagem
+          if (typeof errorData.detail === 'string') {
+            errorMessage += `: ${errorData.detail}`;
+          } else if (errorData.detail.message) {
+            errorMessage += `: ${errorData.detail.message}`;
+          } else if (errorData.detail.error) {
+            errorMessage += `: ${errorData.detail.error}`;
+          }
+        }
+        
+        throw new Error(errorMessage);
       }
       
       const result = await res.json();
@@ -264,6 +354,7 @@ export default function Page() {
       setCurrentStep(1);
     } catch (err: any) {
       alert(err.message || 'Erro ao agendar consulta');
+      console.error('Erro ao agendar:', err);
     }
   };
 
