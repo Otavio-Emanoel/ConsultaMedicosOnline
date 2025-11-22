@@ -71,6 +71,7 @@ export class AgendamentoController {
       // Derivar from/to se vier time + durationMinutes
       let finalFrom = from;
       let finalTo = to;
+      const time = req.body.time;
       if (!finalFrom && time) finalFrom = time;
       if (!finalTo && finalFrom && durationMinutes && Number(durationMinutes) > 0) {
         const [h, m] = finalFrom.split(':');
@@ -127,7 +128,7 @@ export class AgendamentoController {
       // IMPORTANTE: Não enviamos 'plan' nem 'serviceType' aqui se o usuário já estiver correto.
       // Enviar esses campos parcialmente pode fazer a API sobrescrever as regras do usuário com um objeto vazio.
       const bodyRapidoc: Record<string, any> = {
-        beneficiary: { uuid: beneficiarioUuid, cpf },
+        beneficiary: { uuid: beneficiario.uuid, cpf },
         specialty: { uuid: specialtyUuid },
         detail: { date: dateFormatted, from: finalFrom, to: finalTo }
       };

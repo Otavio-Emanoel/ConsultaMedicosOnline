@@ -356,6 +356,9 @@ export class SubscriptionController {
             }
             
             const assinaturaDoc = assinaturasSnap.docs[0];
+            if (!assinaturaDoc) {
+                return res.status(404).json({ error: 'Nenhuma assinatura ativa encontrada para este usuário.' });
+            }
             const assinaturaData = assinaturaDoc.data();
             const assinaturaId = assinaturaData?.idAssinatura || assinaturaDoc.id;
             
@@ -408,12 +411,14 @@ export class SubscriptionController {
             }
 
             // 6. Marcar assinatura como cancelada no Firestore
-            await assinaturaDoc.ref.update({
-                status: 'CANCELADA',
-                dataCancelamento: new Date().toISOString(),
-                motivoCancelamento: req.body.reasons || [],
-                comentariosCancelamento: req.body.comments || ''
-            });
+            if (assinaturaDoc) {
+                await assinaturaDoc.ref.update({
+                    status: 'CANCELADA',
+                    dataCancelamento: new Date().toISOString(),
+                    motivoCancelamento: req.body.reasons || [],
+                    comentariosCancelamento: req.body.comments || ''
+                });
+            }
 
             return res.status(200).json({ 
                 success: true,
@@ -480,9 +485,15 @@ export class SubscriptionController {
             const assinaturas = assinaturasSnap.docs.map(doc => ({
                 id: doc.id,
                 ...doc.data()
-            }));
+            })) as Array<{
+                id: string;
+                status?: string;
+                dataCancelamento?: string;
+                motivoCancelamento?: any[];
+                comentariosCancelamento?: string;
+            }>;
             
-            const assinaturaCancelada = assinaturas.find((a: any) => a.status === 'CANCELADA');
+            const assinaturaCancelada = assinaturas.find((a) => a.status === 'CANCELADA');
             
             if (assinaturaCancelada) {
                 return res.status(200).json({
