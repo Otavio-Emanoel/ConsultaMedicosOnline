@@ -28,7 +28,6 @@ const adminMenuItems = [
   { icon: Users, label: 'Assinantes', href: '/admin/assinantes' },
   { icon: FileText, label: 'Logs de Erro', href: '/admin/logs' },
   { icon: Activity, label: 'Relatórios', href: '/admin/relatorios' },
-  { icon: Settings, label: 'Configurações', href: '/admin/configuracoes' },
 ];
 
 // Menu do Assinante (titular do plano)
@@ -47,7 +46,6 @@ const subscriberMenuItems = [
   { icon: Users, label: 'Dependentes', href: '/dependentes' },
   { icon: CreditCard, label: 'Faturas', href: '/faturas' },
   { icon: User, label: 'Meus Dados', href: '/meus-dados' },
-  { icon: Settings, label: 'Configurações', href: '/configuracoes' },
   { icon: XCircle, label: 'Cancelar Plano', href: '/cancelar-plano', danger: true },
 ];
 
@@ -65,7 +63,6 @@ const dependentMenuItems = [
     ],
   },
   { icon: User, label: 'Meus Dados', href: '/meus-dados' },
-  { icon: Settings, label: 'Configurações', href: '/configuracoes' },
 ];
 
 interface SidebarProps {

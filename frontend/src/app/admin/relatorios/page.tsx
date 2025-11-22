@@ -6,7 +6,6 @@ import { Button } from '@/components/ui/Button';
 import {
   TrendingUp,
   Download,
-  Calendar,
   Users,
   DollarSign,
   Activity,
@@ -14,8 +13,98 @@ import {
   BarChart3,
   PieChart,
 } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import { getAuth } from 'firebase/auth';
+import { app } from '@/lib/firebase';
+import jsPDF from 'jspdf';
+import dynamic from 'next/dynamic';
+
+const Chart = dynamic(() => import('react-apexcharts'), { ssr: false });
+
+type DashboardData = {
+  totalFaturamento: number;
+  totalAssinantes: number;
+  totalConsultas: number;
+  cancelamentos: number;
+  novosAssinantes: { mes: string; total: number }[];
+  receitaMensal: { mes: string; valor: number }[];
+  planos: { nome: string; total: number }[];
+  metricasErros: {
+    pendentes: number;
+    criticos: number;
+    recentes: number;
+  };
+};
 
 export default function AdminRelatoriosPage() {
+  const [data, setData] = useState<DashboardData | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    async function fetchData() {
+      setLoading(true);
+      try {
+        let url = '/api/admin/dashboard';
+        if (process.env.NEXT_PUBLIC_API_BASE_URL) {
+          url = `${process.env.NEXT_PUBLIC_API_BASE_URL}/admin/dashboard`;
+        }
+        const auth = getAuth(app);
+        const user = auth.currentUser;
+        if (!user) throw new Error('Usuário não autenticado');
+        const token = await user.getIdToken();
+        const res = await fetch(url, {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        });
+        if (!res.ok) throw new Error('Erro ao buscar dados do dashboard');
+        const json = await res.json();
+        setData(json);
+      } catch (e: any) {
+        setError(e.message);
+      } finally {
+        setLoading(false);
+      }
+    }
+    fetchData();
+  }, []);
+
+  function exportarPDF() {
+    const doc = new jsPDF();
+    doc.text('Relatório de Métricas', 10, 10);
+    if (data) {
+      doc.text(`Receita Total: R$ ${data.totalFaturamento.toLocaleString('pt-BR')}`, 10, 20);
+      doc.text(`Total de Assinantes: ${data.totalAssinantes}`, 10, 30);
+      doc.text(`Total de Consultas: ${data.totalConsultas}`, 10, 40);
+      doc.text(`Cancelamentos: ${data.cancelamentos}`, 10, 50);
+      doc.text(`Erros Pendentes: ${data.metricasErros.pendentes}`, 10, 60);
+      doc.text(`Erros Críticos: ${data.metricasErros.criticos}`, 10, 70);
+      doc.text(`Erros Recentes: ${data.metricasErros.recentes}`, 10, 80);
+    }
+    doc.save('relatorio-metricas.pdf');
+  }
+
+  if (loading) {
+    return <DashboardLayout title="Relatórios"><div className="p-8 text-center">Carregando...</div></DashboardLayout>;
+  }
+  if (error) {
+    return <DashboardLayout title="Relatórios"><div className="p-8 text-center text-red-500">{error}</div></DashboardLayout>;
+  }
+  if (!data) {
+    return <DashboardLayout title="Relatórios"><div className="p-8 text-center">Sem dados</div></DashboardLayout>;
+  }
+
+  // Gráficos
+  // Garantir arrays válidos para os gráficos
+  const meses = Array.isArray(data.novosAssinantes) ? data.novosAssinantes.map((item) => item?.mes ?? '') : [];
+  const assinantesPorMes = Array.isArray(data.novosAssinantes) ? data.novosAssinantes.map((item) => Number(item?.total ?? 0)) : [];
+  const receitaPorMes = Array.isArray(data.receitaMensal) ? data.receitaMensal.map((item) => Number(item?.valor ?? 0)) : [];
+  const receitaMeses = Array.isArray(data.receitaMensal) ? data.receitaMensal.map((item) => item?.mes ?? '') : [];
+  const planosArr = Array.isArray(data.planos) ? data.planos : (data.planos ? Object.values(data.planos) : []);
+  const planosLabels = Array.isArray(planosArr) ? planosArr.map((p: any) => p?.nome ?? '') : [];
+  const planosData = Array.isArray(planosArr) ? planosArr.map((p: any) => Number(p?.total ?? 0)) : [];
+
   return (
     <DashboardLayout title="Relatórios">
       {/* Header */}
@@ -28,9 +117,9 @@ export default function AdminRelatoriosPage() {
             Visualize estatísticas e exporte relatórios
           </p>
         </div>
-        <Button variant="primary">
+        <Button variant="primary" onClick={exportarPDF}>
           <Download className="w-5 h-5 mr-2" />
-          Exportar Todos
+          Exportar PDF
         </Button>
       </div>
 
@@ -40,76 +129,41 @@ export default function AdminRelatoriosPage() {
           <CardBody>
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm text-gray-600 dark:text-gray-400 mb-1">
-                  Receita Total
-                </p>
-                <p className="text-2xl font-bold text-gray-900 dark:text-white">
-                  R$ 748.800
-                </p>
-                <p className="text-xs text-success mt-1 flex items-center">
-                  <TrendingUp className="w-3 h-3 mr-1" />
-                  +12% vs mês anterior
-                </p>
+                <p className="text-sm text-gray-600 dark:text-gray-400 mb-1">Receita Total</p>
+                <p className="text-2xl font-bold text-gray-900 dark:text-white">R$ {(data.totalFaturamento ?? 0).toLocaleString('pt-BR')}</p>
               </div>
               <DollarSign className="w-10 h-10 text-success opacity-20" />
             </div>
           </CardBody>
         </Card>
-
         <Card>
           <CardBody>
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm text-gray-600 dark:text-gray-400 mb-1">
-                  Novos Assinantes
-                </p>
-                <p className="text-2xl font-bold text-gray-900 dark:text-white">
-                  156
-                </p>
-                <p className="text-xs text-success mt-1 flex items-center">
-                  <TrendingUp className="w-3 h-3 mr-1" />
-                  +8% vs mês anterior
-                </p>
+                <p className="text-sm text-gray-600 dark:text-gray-400 mb-1">Assinantes</p>
+                <p className="text-2xl font-bold text-gray-900 dark:text-white">{data.totalAssinantes}</p>
               </div>
               <Users className="w-10 h-10 text-primary opacity-20" />
             </div>
           </CardBody>
         </Card>
-
         <Card>
           <CardBody>
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm text-gray-600 dark:text-gray-400 mb-1">
-                  Consultas Realizadas
-                </p>
-                <p className="text-2xl font-bold text-gray-900 dark:text-white">
-                  2.847
-                </p>
-                <p className="text-xs text-success mt-1 flex items-center">
-                  <TrendingUp className="w-3 h-3 mr-1" />
-                  +15% vs mês anterior
-                </p>
+                <p className="text-sm text-gray-600 dark:text-gray-400 mb-1">Consultas</p>
+                <p className="text-2xl font-bold text-gray-900 dark:text-white">{data.totalConsultas}</p>
               </div>
               <Activity className="w-10 h-10 text-purple-600 opacity-20" />
             </div>
           </CardBody>
         </Card>
-
         <Card>
           <CardBody>
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm text-gray-600 dark:text-gray-400 mb-1">
-                  Taxa de Cancelamento
-                </p>
-                <p className="text-2xl font-bold text-gray-900 dark:text-white">
-                  2.3%
-                </p>
-                <p className="text-xs text-success mt-1 flex items-center">
-                  <TrendingUp className="w-3 h-3 mr-1 rotate-180" />
-                  -0.5% vs mês anterior
-                </p>
+                <p className="text-sm text-gray-600 dark:text-gray-400 mb-1">Cancelamentos</p>
+                <p className="text-2xl font-bold text-gray-900 dark:text-white">{data.cancelamentos}</p>
               </div>
               <TrendingUp className="w-10 h-10 text-danger opacity-20" />
             </div>
@@ -117,171 +171,70 @@ export default function AdminRelatoriosPage() {
         </Card>
       </div>
 
-      {/* Relatórios Disponíveis */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        {/* Relatório Financeiro */}
-        <Card className="hover:shadow-lg transition-shadow">
-          <CardBody>
-            <div className="flex items-start space-x-4">
-              <div className="w-12 h-12 bg-green-100 dark:bg-slate-700 rounded-xl flex items-center justify-center flex-shrink-0">
-                <DollarSign className="w-6 h-6 text-success" />
-              </div>
-              <div className="flex-1">
-                <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-2">
-                  Relatório Financeiro
-                </h3>
-                <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">
-                  Receitas, despesas, inadimplência e projeções financeiras
-                </p>
-                <div className="flex items-center space-x-2">
-                  <Button variant="primary" size="sm">
-                    <Download className="w-4 h-4 mr-1" />
-                    PDF
-                  </Button>
-                  <Button variant="outline" size="sm">
-                    <FileText className="w-4 h-4 mr-1" />
-                    Excel
-                  </Button>
-                </div>
-              </div>
-            </div>
-          </CardBody>
-        </Card>
-
-        {/* Relatório de Assinantes */}
-        <Card className="hover:shadow-lg transition-shadow">
-          <CardBody>
-            <div className="flex items-start space-x-4">
-              <div className="w-12 h-12 bg-blue-100 dark:bg-blue-900/30 rounded-xl flex items-center justify-center flex-shrink-0">
-                <Users className="w-6 h-6 text-primary" />
-              </div>
-              <div className="flex-1">
-                <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-2">
-                  Relatório de Assinantes
-                </h3>
-                <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">
-                  Dados demográficos, planos, taxa de retenção e churn
-                </p>
-                <div className="flex items-center space-x-2">
-                  <Button variant="primary" size="sm">
-                    <Download className="w-4 h-4 mr-1" />
-                    PDF
-                  </Button>
-                  <Button variant="outline" size="sm">
-                    <FileText className="w-4 h-4 mr-1" />
-                    Excel
-                  </Button>
-                </div>
-              </div>
-            </div>
-          </CardBody>
-        </Card>
-
-        {/* Relatório de Consultas */}
-        <Card className="hover:shadow-lg transition-shadow">
-          <CardBody>
-            <div className="flex items-start space-x-4">
-              <div className="w-12 h-12 bg-purple-100 dark:bg-purple-900/30 rounded-xl flex items-center justify-center flex-shrink-0">
-                <Activity className="w-6 h-6 text-purple-600" />
-              </div>
-              <div className="flex-1">
-                <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-2">
-                  Relatório de Consultas
-                </h3>
-                <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">
-                  Volume de atendimentos, especialidades mais procuradas e horários de pico
-                </p>
-                <div className="flex items-center space-x-2">
-                  <Button variant="primary" size="sm">
-                    <Download className="w-4 h-4 mr-1" />
-                    PDF
-                  </Button>
-                  <Button variant="outline" size="sm">
-                    <FileText className="w-4 h-4 mr-1" />
-                    Excel
-                  </Button>
-                </div>
-              </div>
-            </div>
-          </CardBody>
-        </Card>
-
-        {/* Relatório de Performance */}
-        <Card className="hover:shadow-lg transition-shadow">
-          <CardBody>
-            <div className="flex items-start space-x-4">
-              <div className="w-12 h-12 bg-orange-100 dark:bg-orange-900/30 rounded-xl flex items-center justify-center flex-shrink-0">
-                <BarChart3 className="w-6 h-6 text-warning" />
-              </div>
-              <div className="flex-1">
-                <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-2">
-                  Relatório de Performance
-                </h3>
-                <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">
-                  KPIs, métricas de crescimento e comparativos mensais
-                </p>
-                <div className="flex items-center space-x-2">
-                  <Button variant="primary" size="sm">
-                    <Download className="w-4 h-4 mr-1" />
-                    PDF
-                  </Button>
-                  <Button variant="outline" size="sm">
-                    <FileText className="w-4 h-4 mr-1" />
-                    Excel
-                  </Button>
-                </div>
-              </div>
-            </div>
-          </CardBody>
-        </Card>
-      </div>
-
       {/* Gráficos */}
-      <div className="mt-8">
+      <div className="mt-8 grid grid-cols-1 md:grid-cols-2 gap-6">
         <Card>
-          <CardHeader>Crescimento de Assinantes (Últimos 6 meses)</CardHeader>
+          <CardHeader>Crescimento de Assinantes (Últimos meses)</CardHeader>
           <CardBody>
-            <div className="h-64 flex items-center justify-center bg-gray-50 dark:bg-gray-800/50 rounded-xl">
-              <div className="text-center">
-                <BarChart3 className="w-16 h-16 text-gray-400 mx-auto mb-4" />
-                <p className="text-gray-600 dark:text-gray-400">
-                  Gráfico de crescimento será exibido aqui
-                </p>
-                <p className="text-sm text-gray-500 dark:text-gray-500 mt-2">
-                  Integrar com biblioteca de gráficos (Chart.js, Recharts, etc.)
-                </p>
-              </div>
-            </div>
+            <Chart
+              type="bar"
+              height={300}
+              options={{
+                chart: { id: 'assinantes-bar' },
+                xaxis: { categories: meses.length === assinantesPorMes.length ? meses : assinantesPorMes.map((_, i) => `Mês ${i + 1}`) },
+                colors: ['#2563eb'],
+              }}
+              series={[{ name: 'Novos Assinantes', data: assinantesPorMes.length ? assinantesPorMes : [0] }]}
+            />
           </CardBody>
         </Card>
-      </div>
-
-      <div className="mt-6 grid grid-cols-1 md:grid-cols-2 gap-6">
         <Card>
           <CardHeader>Distribuição por Plano</CardHeader>
           <CardBody>
-            <div className="h-64 flex items-center justify-center bg-gray-50 dark:bg-gray-800/50 rounded-xl">
-              <div className="text-center">
-                <PieChart className="w-16 h-16 text-gray-400 mx-auto mb-4" />
-                <p className="text-gray-600 dark:text-gray-400">
-                  Gráfico de pizza será exibido aqui
-                </p>
-              </div>
-            </div>
+            <Chart
+              type="pie"
+              height={300}
+              options={{
+                labels: planosLabels.length === planosData.length ? planosLabels : planosData.map((_, i) => `Plano ${i + 1}`),
+                legend: { position: 'bottom' },
+                colors: ['#2563eb', '#10b981', '#f59e42', '#a78bfa', '#f43f5e'],
+              }}
+              series={planosData.length ? planosData : [1]}
+            />
           </CardBody>
         </Card>
-
         <Card>
           <CardHeader>Receita Mensal</CardHeader>
           <CardBody>
-            <div className="h-64 flex items-center justify-center bg-gray-50 dark:bg-gray-800/50 rounded-xl">
-              <div className="text-center">
-                <TrendingUp className="w-16 h-16 text-gray-400 mx-auto mb-4" />
-                <p className="text-gray-600 dark:text-gray-400">
-                  Gráfico de linha será exibido aqui
-                </p>
-              </div>
-            </div>
+            <Chart
+              type="line"
+              height={300}
+              options={{
+                chart: { id: 'receita-line' },
+                xaxis: { categories: receitaMeses.length === receitaPorMes.length ? receitaMeses : receitaPorMes.map((_, i) => `Mês ${i + 1}`) },
+                colors: ['#10b981'],
+              }}
+              series={[{ name: 'Receita', data: receitaPorMes.length ? receitaPorMes : [0] }]}
+            />
+          </CardBody>
+        </Card>
+        <Card>
+          <CardHeader>Métricas de Erros</CardHeader>
+          <CardBody>
+            <Chart
+              type="donut"
+              height={300}
+              options={{
+                labels: ['Pendentes', 'Críticos', 'Recentes'],
+                legend: { position: 'bottom' },
+                colors: ['#f59e42', '#f43f5e', '#2563eb'],
+              }}
+              series={[
+                Number(data.metricasErros?.pendentes ?? 0),
+                Number(data.metricasErros?.criticos ?? 0),
+                Number(data.metricasErros?.recentes ?? 0),
+              ]}
+            />
           </CardBody>
         </Card>
       </div>

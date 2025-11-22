@@ -7,17 +7,12 @@ import { Button } from '@/components/ui/Button';
 import {
   AlertCircle,
   XCircle,
-  Heart,
-  DollarSign,
-  Users,
-  Calendar,
   CheckCircle,
   Loader2,
 } from 'lucide-react';
-import api from '@/lib/api';
 import { auth } from '@/lib/firebase';
 
-type CancellationStep = 'initial' | 'reasons' | 'retention' | 'confirmation';
+type CancellationStep = 'initial' | 'reasons' | 'confirmation';
 
 const CANCELLATION_REASONS = [
   'Preço muito alto',
@@ -27,30 +22,6 @@ const CANCELLATION_REASONS = [
   'Dificuldade de agendamento',
   'Mudança de plano de saúde',
   'Outro motivo',
-];
-
-const RETENTION_OFFERS = [
-  {
-    id: 1,
-    icon: DollarSign,
-    title: '3 Meses com 30% de Desconto',
-    description: 'Aproveite nosso plano por apenas R$ 104,93/mês',
-    highlight: 'Economia de R$ 134,91',
-  },
-  {
-    id: 2,
-    icon: Users,
-    title: 'Inclua Mais Dependentes Grátis',
-    description: 'Adicione até 2 dependentes sem custo adicional',
-    highlight: 'Por tempo limitado',
-  },
-  {
-    id: 3,
-    icon: Calendar,
-    title: 'Pausar Assinatura',
-    description: 'Pause por até 3 meses sem perder seus benefícios',
-    highlight: 'Volte quando quiser',
-  },
 ];
 
 interface PlanoInfo {
@@ -63,7 +34,6 @@ export default function CancelarPlanoPage() {
   const [step, setStep] = useState<CancellationStep>('initial');
   const [selectedReasons, setSelectedReasons] = useState<string[]>([]);
   const [additionalComments, setAdditionalComments] = useState('');
-  const [selectedOffer, setSelectedOffer] = useState<number | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [dataCancelamento, setDataCancelamento] = useState<string>('');
@@ -185,7 +155,7 @@ export default function CancelarPlanoPage() {
 
   const handleReasonToggle = (reason: string) => {
     if (selectedReasons.includes(reason)) {
-      setSelectedReasons(selectedReasons.filter((r) => r !== reason));
+      setSelectedReasons(selectedReasons.filter(r => r !== reason));
     } else {
       setSelectedReasons([...selectedReasons, reason]);
     }
@@ -202,20 +172,61 @@ export default function CancelarPlanoPage() {
         localStorage.setItem('auth_token', token);
       }
 
-      const response = await api.post('/subscription/cancelar-plano', {
-        reasons: selectedReasons,
-        comments: additionalComments,
+      const apiBase = process.env.NEXT_PUBLIC_API_BASE_URL || process.env.NEXT_PUBLIC_API_URL;
+      const token = typeof window !== 'undefined' ? localStorage.getItem('auth_token') || localStorage.getItem('token') : null;
+      
+      if (!token) {
+        setError('Sessão expirada. Por favor, faça login novamente.');
+        setLoading(false);
+        return;
+      }
+
+      if (!apiBase) {
+        setError('Configuração da API não encontrada. Por favor, entre em contato com o suporte.');
+        setLoading(false);
+        return;
+      }
+
+      // Garantir que a URL termina sem barra e adicionar /api se necessário
+      let baseUrl = apiBase.trim();
+      if (!baseUrl.endsWith('/api')) {
+        if (baseUrl.endsWith('/')) {
+          baseUrl = baseUrl.slice(0, -1);
+        }
+        if (!baseUrl.endsWith('/api')) {
+          baseUrl = `${baseUrl}/api`;
+        }
+      }
+
+      const response = await fetch(`${baseUrl}/subscription/cancelar-plano`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          reasons: selectedReasons,
+          comments: additionalComments,
+        }),
       });
 
-      if (response.data.success) {
-        setDataCancelamento(response.data.dataCancelamento);
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ error: 'Erro ao processar resposta do servidor.' }));
+        setError(errorData.error || `Erro ${response.status}: ${response.statusText}`);
+        setLoading(false);
+        return;
+      }
+
+      const data = await response.json();
+
+      if (data.success) {
+        setDataCancelamento(data.dataCancelamento);
         setStep('confirmation');
       } else {
-        setError(response.data.error || 'Erro ao cancelar plano.');
+        setError(data.error || 'Erro ao cancelar plano.');
       }
     } catch (err: any) {
-      console.error('Erro ao cancelar plano:', err);
-      const errorMessage = err.response?.data?.error || err.message || 'Erro ao cancelar plano. Tente novamente.';
+      const errorMessage = err.message || 'Erro ao cancelar plano. Tente novamente.';
       setError(errorMessage);
       
       // Se o erro for sobre não ter pago os 3 meses, mostrar mensagem específica
@@ -225,11 +236,6 @@ export default function CancelarPlanoPage() {
     } finally {
       setLoading(false);
     }
-  };
-
-  const handleAcceptOffer = () => {
-    console.log('Aceitando oferta:', selectedOffer);
-    // Aqui faria a chamada à API
   };
 
   return (
@@ -377,102 +383,26 @@ export default function CancelarPlanoPage() {
                 <Button variant="outline" onClick={() => setStep('initial')}>
                   Voltar
                 </Button>
-                <Button variant="primary" onClick={() => setStep('retention')}>
-                  Continuar
+                <Button 
+                  variant="danger" 
+                  onClick={handleConfirmCancellation}
+                  disabled={loading}
+                >
+                  {loading ? (
+                    <>
+                      <Loader2 className="w-5 h-5 mr-2 animate-spin" />
+                      Cancelando...
+                    </>
+                  ) : (
+                    <>
+                      <XCircle className="w-5 h-5 mr-2" />
+                      Confirmar Cancelamento
+                    </>
+                  )}
                 </Button>
               </div>
             </CardBody>
           </Card>
-        )}
-
-        {/* Retention Offers */}
-        {step === 'retention' && (
-          <>
-            <div className="text-center mb-6">
-              <Heart className="w-16 h-16 text-danger mx-auto mb-4" />
-              <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-2">
-                Não queremos que você vá!
-              </h2>
-              <p className="text-gray-600 dark:text-gray-400">
-                Temos ofertas especiais apenas para você
-              </p>
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
-              {RETENTION_OFFERS.map((offer) => {
-                const Icon = offer.icon;
-                return (
-                  <button
-                    key={offer.id}
-                    onClick={() => setSelectedOffer(offer.id)}
-                    className={`p-6 rounded-xl border-2 transition-all text-left ${
-                      selectedOffer === offer.id
-                        ? 'border-primary bg-primary/5'
-                        : 'border-gray-200 dark:border-gray-700 hover:border-primary/50'
-                    }`}
-                  >
-                    <div
-                      className={`w-12 h-12 rounded-xl flex items-center justify-center mb-4 ${
-                        selectedOffer === offer.id
-                          ? 'bg-primary text-white'
-                          : 'bg-gray-100 dark:bg-gray-800 text-gray-400'
-                      }`}
-                    >
-                      <Icon className="w-6 h-6" />
-                    </div>
-                    <h3 className="font-semibold text-gray-900 dark:text-white mb-2">
-                      {offer.title}
-                    </h3>
-                    <p className="text-sm text-gray-600 dark:text-gray-400 mb-3">
-                      {offer.description}
-                    </p>
-                    <div className="inline-block px-3 py-1 bg-success/10 text-success text-xs font-semibold rounded-full">
-                      {offer.highlight}
-                    </div>
-                  </button>
-                );
-              })}
-            </div>
-
-            <Card>
-              <CardBody>
-                <div className="flex items-center justify-between">
-                  <div>
-                    <Button
-                      variant="outline"
-                      onClick={() => setStep('reasons')}
-                    >
-                      Voltar
-                    </Button>
-                  </div>
-                  <div className="flex items-center space-x-3">
-                    <Button
-                      variant="primary"
-                      onClick={handleAcceptOffer}
-                      disabled={!selectedOffer}
-                    >
-                      <CheckCircle className="w-5 h-5 mr-2" />
-                      Aceitar Oferta
-                    </Button>
-                    <Button 
-                      variant="danger" 
-                      onClick={handleConfirmCancellation}
-                      disabled={loading}
-                    >
-                      {loading ? (
-                        <>
-                          <Loader2 className="w-5 h-5 mr-2 animate-spin" />
-                          Cancelando...
-                        </>
-                      ) : (
-                        'Cancelar Mesmo Assim'
-                      )}
-                    </Button>
-                  </div>
-                </div>
-              </CardBody>
-            </Card>
-          </>
         )}
 
         {/* Confirmation */}

@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import jsPDF from 'jspdf';
 import { Input } from '@/components/ui/Input';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { Card, CardHeader, CardBody } from '@/components/ui/Card';
@@ -62,6 +63,29 @@ export default function Page() {
       setError(e.message || 'Erro ao alterar senha');
     } finally {
       setLoading(false);
+    }
+  };
+
+  // Função para exportar dados do dashboard em PDF
+  const handleExportData = async () => {
+    try {
+      const apiBase = process.env.NEXT_PUBLIC_API_BASE_URL;
+      const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
+      if (!token) throw new Error('Usuário não autenticado');
+      const res = await fetch(`${apiBase}/dashboard`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      if (!res.ok) throw new Error('Erro ao buscar dados do dashboard');
+      const data = await res.json();
+      // Formata JSON para string legível
+      const jsonString = JSON.stringify(data, null, 2);
+      // Cria PDF
+      const doc = new jsPDF();
+      const lines = doc.splitTextToSize(jsonString, 180);
+      doc.text(lines, 10, 10);
+      doc.save('meus-dados-dashboard.pdf');
+    } catch (e: any) {
+      alert(e.message || 'Erro ao exportar dados');
     }
   };
 
@@ -138,19 +162,16 @@ export default function Page() {
           </Dialog.Content>
         </Dialog>
 
-        {/* Exportar/Excluir Dados */}
+        {/* Exportar Dados */}
         <Card>
           <CardHeader>Seus Dados</CardHeader>
           <CardBody>
             <p className="text-sm text-gray-600 dark:text-gray-400 mb-6">
-              Você pode exportar ou excluir seus dados a qualquer momento
+              Você pode exportar seus dados a qualquer momento
             </p>
             <div className="flex flex-col md:flex-row gap-4">
-              <Button variant="outline" className="flex-1">
+              <Button variant="outline" className="flex-1" onClick={handleExportData}>
                 Exportar Meus Dados
-              </Button>
-              <Button variant="danger" className="flex-1">
-                Excluir Minha Conta
               </Button>
             </div>
           </CardBody>

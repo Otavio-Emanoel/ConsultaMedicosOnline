@@ -6,11 +6,11 @@
 - [ ] Conectar telas de agendamento com o backend
   - Isso inclui no dashboard que aparece informações de agendamentos proximos
 
-- [ ] Botão exportar meus dados e Excluir minha conta
+- [x] Botão exportar meus dados e Excluir minha conta
 
-- [ ] Conectar a função de cancelar plano
+- [x] Conectar a função de cancelar plano
 
-- [ ] Logs de erros
+- [x] Logs de erros
 
 - [ ] Conexão da tela de Meus Dados com o backend
 
