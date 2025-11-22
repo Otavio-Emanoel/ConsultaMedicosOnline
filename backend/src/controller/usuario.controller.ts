@@ -217,8 +217,47 @@ export class UsuarioController {
 }
 
     static async obterDadosAutenticado(req: Request, res: Response) {
-        const cpf = req.user?.cpf;
-        if (!cpf) return res.status(400).json({ error: 'CPF é obrigatório.' });
+        // Tenta obter CPF do token primeiro
+        let cpf = req.user?.cpf as string | undefined;
+        
+        // Fallback 1: Se não tiver CPF no token, tenta usar o UID (que pode ser o CPF)
+        if (!cpf && req.user?.uid) {
+            // Verifica se o UID é um CPF válido (11 dígitos)
+            const uid = req.user.uid;
+            if (/^\d{11}$/.test(uid)) {
+                cpf = uid;
+            } else {
+                // Se UID não é CPF, busca no Firestore pelo UID
+                try {
+                    const usuarioRef = admin.firestore().collection('usuarios').doc(uid);
+                    const usuarioDoc = await usuarioRef.get();
+                    if (usuarioDoc.exists) {
+                        const usuarioData = usuarioDoc.data();
+                        cpf = usuarioData?.cpf || uid;
+                    }
+                } catch {}
+            }
+        }
+        
+        // Fallback 2: Busca pelo email no Firestore
+        if (!cpf && req.user?.email) {
+            try {
+                const snap = await admin.firestore().collection('usuarios')
+                    .where('email', '==', req.user.email)
+                    .limit(1)
+                    .get();
+                if (!snap.empty) {
+                    const first = snap.docs[0];
+                    if (first) {
+                        cpf = (first.data().cpf as string) || first.id;
+                    }
+                }
+            } catch {}
+        }
+        
+        if (!cpf) {
+            return res.status(400).json({ error: 'CPF não encontrado. Não foi possível identificar o usuário.' });
+        }
 
         try {
             const usuarioRef = admin.firestore().collection('usuarios').doc(cpf);
@@ -230,6 +269,8 @@ export class UsuarioController {
                 await admin.firestore().collection('logsErros').add({
                     endpoint: 'obterDadosAutenticado',
                     cpf,
+                    uid: req.user?.uid || null,
+                    email: req.user?.email || null,
                     errorMessage: error?.message || 'Erro ao obter usuário autenticado.',
                     stack: error?.stack || null,
                     data: new Date().toISOString(),
@@ -242,15 +283,18 @@ export class UsuarioController {
     static async atualizarDados(req: Request, res: Response) {
 
         const { cpf } = req.params;
-        const { nome, email, telefone } = req.body;
+        const { nome, email, telefone, dataNascimento, genero, endereco } = req.body;
         if (!cpf) return res.status(400).json({ error: 'CPF é obrigatório.' });
-        if (!nome && !email && !telefone) return res.status(400).json({ error: 'Informe ao menos um campo para atualizar.' });
+        if (!nome && !email && !telefone && !dataNascimento && !genero && !endereco) return res.status(400).json({ error: 'Informe ao menos um campo para atualizar.' });
 
         // Monta objeto apenas com campos definidos
         const updateData: Record<string, any> = {};
         if (nome !== undefined) updateData.nome = nome;
         if (email !== undefined) updateData.email = email;
         if (telefone !== undefined) updateData.telefone = telefone;
+        if (dataNascimento !== undefined) updateData.dataNascimento = dataNascimento;
+        if (genero !== undefined) updateData.genero = genero;
+        if (endereco !== undefined) updateData.endereco = endereco;
 
         try {
             // Atualiza no Firestore
@@ -278,8 +322,11 @@ export class UsuarioController {
                         name: nome !== undefined ? nome : atual.name,
                         email: email !== undefined ? email : atual.email,
                         phone: telefone !== undefined ? telefone : atual.phone,
-                        birthday: atual.birthday,
-                        zipCode: atual.zipCode,
+                        birthday: dataNascimento !== undefined ? dataNascimento : atual.birthday,
+                        zipCode: endereco?.cep !== undefined ? endereco.cep : atual.zipCode,
+                        address: endereco?.rua !== undefined ? endereco.rua : atual.address,
+                        city: endereco?.cidade !== undefined ? endereco.cidade : atual.city,
+                        state: endereco?.estado !== undefined ? endereco.estado : atual.state,
                         paymentType: atual.paymentType,
                         serviceType: atual.serviceType,
                         holder: atual.holder,

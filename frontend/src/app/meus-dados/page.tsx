@@ -19,6 +19,10 @@ import {
 type TabType = 'personal' | 'address' | 'security';
 
 export default function MeusDadosPage() {
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string>('');
+  const [success, setSuccess] = useState<string>('');
+  const [userCpf, setUserCpf] = useState<string>('');
 
   const [activeTab, setActiveTab] = useState<TabType>('personal');
   const [personalData, setPersonalData] = useState({
@@ -46,35 +50,83 @@ export default function MeusDadosPage() {
     confirmPassword: '',
   });
 
+  // Função para obter CPF do token JWT
+  const getCpfFromToken = (token: string): string | null => {
+    try {
+      const payloadBase64 = token.split('.')[1];
+      const payloadJson = JSON.parse(atob(payloadBase64));
+      return payloadJson.cpf || null;
+    } catch {
+      return null;
+    }
+  };
+
   // Buscar dados do usuário ao carregar a página
   useEffect(() => {
-    const apiBase = process.env.NEXT_PUBLIC_API_BASE_URL;
-    const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
-    if (!token) return;
-    fetch(`${apiBase}/usuario/me`, {
-      headers: { Authorization: `Bearer ${token}` },
-    })
-      .then((res) => res.json())
-      .then((data) => {
+    const fetchUserData = async () => {
+      const apiBase = process.env.NEXT_PUBLIC_API_BASE_URL;
+      const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
+      if (!token) {
+        setError('Usuário não autenticado');
+        return;
+      }
+
+      // Tenta obter CPF do token
+      const cpfFromToken = getCpfFromToken(token);
+      if (cpfFromToken) {
+        setUserCpf(cpfFromToken);
+      }
+
+      try {
+        setLoading(true);
+        setError('');
+        const res = await fetch(`${apiBase}/usuario/me`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+
+        if (!res.ok) {
+          const errorData = await res.json().catch(() => ({ error: 'Erro ao buscar dados' }));
+          throw new Error(errorData.error || 'Erro ao buscar dados do usuário');
+        }
+
+        const data = await res.json();
+        
+        // Define CPF se não foi obtido do token
+        if (!cpfFromToken && data.cpf) {
+          setUserCpf(data.cpf);
+        }
+
         // Ajuste os campos conforme a resposta da API
         setPersonalData({
           name: data.nome || '',
           email: data.email || '',
           phone: data.telefone || '',
           cpf: data.cpf || '',
-          birthDate: data.dataNascimento ? data.dataNascimento.substring(0, 10) : '',
+          birthDate: data.dataNascimento ? (data.dataNascimento.substring(0, 10)) : '',
           gender: data.genero || '',
         });
-        setAddressData({
-          zipCode: data.endereco?.cep || '',
-          street: data.endereco?.rua || '',
-          number: data.endereco?.numero || '',
-          complement: data.endereco?.complemento || '',
-          neighborhood: data.endereco?.bairro || '',
-          city: data.endereco?.cidade || '',
-          state: data.endereco?.estado || '',
-        });
-      });
+        
+        // Verifica se há endereço no formato objeto ou campos diretos
+        const endereco = data.endereco || {};
+        const addressDataToSet = {
+          zipCode: endereco.cep || data.cep || '',
+          street: endereco.rua || endereco.street || data.rua || '',
+          number: endereco.numero || endereco.number || data.numero || '',
+          complement: endereco.complemento || endereco.complement || data.complemento || '',
+          neighborhood: endereco.bairro || endereco.neighborhood || data.bairro || '',
+          city: endereco.cidade || endereco.city || data.cidade || '',
+          state: endereco.estado || endereco.state || data.estado || '',
+        };
+        
+        setAddressData(addressDataToSet);
+      } catch (err: any) {
+        setError(err.message || 'Erro ao carregar dados do usuário');
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchUserData();
   }, []);
 
   const tabs = [
@@ -86,14 +138,37 @@ export default function MeusDadosPage() {
   const handleSave = async () => {
     const apiBase = process.env.NEXT_PUBLIC_API_BASE_URL;
     const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
-    if (!token) return alert('Usuário não autenticado!');
+    if (!token) {
+      setError('Usuário não autenticado!');
+      return;
+    }
+
+    // Validações
+    if (activeTab === 'security') {
+      if (!securityData.currentPassword || !securityData.newPassword || !securityData.confirmPassword) {
+        setError('Preencha todos os campos de senha');
+        return;
+      }
+      if (securityData.newPassword !== securityData.confirmPassword) {
+        setError('As senhas não coincidem');
+        return;
+      }
+      if (securityData.newPassword.length < 8) {
+        setError('A nova senha deve ter pelo menos 8 caracteres');
+        return;
+      }
+    }
 
     let body: any = {};
     let endpoint = '';
-    let method = 'PUT';
+    let method = 'PATCH';
 
     if (activeTab === 'personal') {
-      endpoint = '/usuario/me';
+      if (!userCpf) {
+        setError('CPF não encontrado. Por favor, recarregue a página.');
+        return;
+      }
+      endpoint = `/usuario/${userCpf}`;
       body = {
         nome: personalData.name,
         email: personalData.email,
@@ -102,26 +177,35 @@ export default function MeusDadosPage() {
         genero: personalData.gender,
       };
     } else if (activeTab === 'address') {
-      endpoint = '/usuario/me/endereco';
+      if (!userCpf) {
+        setError('CPF não encontrado. Por favor, recarregue a página.');
+        return;
+      }
+      endpoint = `/usuario/${userCpf}`;
       body = {
-        cep: addressData.zipCode,
-        rua: addressData.street,
-        numero: addressData.number,
-        complemento: addressData.complement,
-        bairro: addressData.neighborhood,
-        cidade: addressData.city,
-        estado: addressData.state,
+        endereco: {
+          cep: addressData.zipCode,
+          rua: addressData.street,
+          numero: addressData.number,
+          complemento: addressData.complement,
+          bairro: addressData.neighborhood,
+          cidade: addressData.city,
+          estado: addressData.state,
+        },
       };
     } else if (activeTab === 'security') {
-      endpoint = '/usuario/me/senha';
+      endpoint = '/usuario/senha';
       body = {
         senhaAtual: securityData.currentPassword,
         novaSenha: securityData.newPassword,
-        confirmarSenha: securityData.confirmPassword,
       };
     }
 
     try {
+      setLoading(true);
+      setError('');
+      setSuccess('');
+
       const res = await fetch(`${apiBase}${endpoint}`, {
         method,
         headers: {
@@ -130,16 +214,75 @@ export default function MeusDadosPage() {
         },
         body: JSON.stringify(body),
       });
-      if (!res.ok) throw new Error('Erro ao salvar dados');
-      alert('Dados salvos com sucesso!');
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        throw new Error(data.error || 'Erro ao salvar dados');
+      }
+
+      setSuccess('Dados salvos com sucesso!');
+      
+      // Limpa campos de senha após sucesso
+      if (activeTab === 'security') {
+        setSecurityData({
+          currentPassword: '',
+          newPassword: '',
+          confirmPassword: '',
+        });
+      }
+
+      // Recarrega dados após salvar
+      if (activeTab !== 'security') {
+        const resUser = await fetch(`${apiBase}/usuario/me`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (resUser.ok) {
+          const userData = await resUser.json();
+          if (activeTab === 'personal') {
+            setPersonalData({
+              name: userData.nome || '',
+              email: userData.email || '',
+              phone: userData.telefone || '',
+              cpf: userData.cpf || '',
+              birthDate: userData.dataNascimento ? userData.dataNascimento.substring(0, 10) : '',
+              gender: userData.genero || '',
+            });
+          } else if (activeTab === 'address') {
+            setAddressData({
+              zipCode: userData.endereco?.cep || '',
+              street: userData.endereco?.rua || '',
+              number: userData.endereco?.numero || '',
+              complement: userData.endereco?.complemento || '',
+              neighborhood: userData.endereco?.bairro || '',
+              city: userData.endereco?.cidade || '',
+              state: userData.endereco?.estado || '',
+            });
+          }
+        }
+      }
     } catch (err: any) {
-      alert(err.message || 'Erro ao salvar dados');
+      setError(err.message || 'Erro ao salvar dados');
+    } finally {
+      setLoading(false);
     }
   };
 
   return (
     <DashboardLayout title="Meus Dados">
       <div className="max-w-4xl mx-auto">
+        {/* Mensagens de erro e sucesso */}
+        {error && (
+          <div className="mb-4 p-4 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-xl">
+            <p className="text-sm text-red-800 dark:text-red-300">{error}</p>
+          </div>
+        )}
+        {success && (
+          <div className="mb-4 p-4 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-xl">
+            <p className="text-sm text-green-800 dark:text-green-300">{success}</p>
+          </div>
+        )}
+
         {/* Tabs */}
         <div className="flex flex-wrap gap-2 mb-6">
           {tabs.map((tab) => {
@@ -300,6 +443,24 @@ export default function MeusDadosPage() {
             {/* Address Tab */}
             {activeTab === 'address' && (
               <div className="space-y-4">
+                {/* Mensagem quando endereço estiver vazio */}
+                {(!addressData.zipCode || !addressData.street || !addressData.number || !addressData.neighborhood || !addressData.city || !addressData.state) && (
+                  <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-xl p-4 mb-4">
+                    <div className="flex items-start">
+                      <MapPin className="w-5 h-5 text-blue-600 dark:text-blue-400 mr-3 mt-0.5 flex-shrink-0" />
+                      <div>
+                        <p className="text-sm font-medium text-blue-800 dark:text-blue-300 mb-1">
+                          Complete seus dados de endereço
+                        </p>
+                        <p className="text-sm text-blue-700 dark:text-blue-400">
+                          {!addressData.zipCode && !addressData.street && !addressData.city 
+                            ? 'Seu endereço não está cadastrado. Por favor, preencha todos os campos abaixo para completar seu cadastro.'
+                            : 'Alguns campos do endereço estão incompletos. Por favor, preencha todos os campos obrigatórios.'}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                )}
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                   <Input
                     label="CEP"
@@ -467,9 +628,14 @@ export default function MeusDadosPage() {
 
             {/* Save Button */}
             <div className="flex items-center justify-end mt-6 pt-6 border-t border-gray-200 dark:border-gray-700">
-              <Button variant="primary" size="lg" onClick={handleSave}>
+              <Button 
+                variant="primary" 
+                size="lg" 
+                onClick={handleSave}
+                disabled={loading}
+              >
                 <Save className="w-5 h-5 mr-2" />
-                Salvar Alterações
+                {loading ? 'Salvando...' : 'Salvar Alterações'}
               </Button>
             </div>
           </CardBody>

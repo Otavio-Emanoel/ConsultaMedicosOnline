@@ -152,14 +152,39 @@ export async function obterDetalhesPagamentoAssinatura(assinaturaId: string): Pr
     return { assinaturaId, encontrado: true, pagamento: detalhes };
 }
 
-// Verifica se o usuário pagou os 3 primeiros meses da assinatura
-export async function verificarTresPrimeirosMesesPagos(assinaturaId: string): Promise<{ pagos: boolean; pagamentosPagos: number; mensagem?: string }> {
+/**
+ * Converte a periodicidade do plano em número de períodos necessários para cancelamento
+ * @param periodicidade Periodicidade do plano (Mensal, Bimestral, Trimestral, Semestral, Anual)
+ * @returns Número de períodos necessários (padrão: 1 se não reconhecido)
+ */
+export function obterPeriodosNecessariosParaCancelamento(periodicidade: string | null | undefined): number {
+    if (!periodicidade) return 1; // Padrão: 1 período se não especificado
+    
+    const periodicidadeLower = periodicidade.toLowerCase().trim();
+    
+    if (periodicidadeLower.includes('mensal')) return 1;
+    if (periodicidadeLower.includes('bimestral')) return 2;
+    if (periodicidadeLower.includes('trimestral')) return 3;
+    if (periodicidadeLower.includes('semestral')) return 6;
+    if (periodicidadeLower.includes('anual')) return 12;
+    
+    // Se não reconhecer, assume mensal (1 período)
+    return 1;
+}
+
+/**
+ * Verifica se o usuário pagou os períodos necessários da assinatura conforme a periodicidade do plano
+ * @param assinaturaId ID da assinatura no Asaas
+ * @param periodosNecessarios Número de períodos necessários (padrão: 3 para manter compatibilidade)
+ * @returns Objeto com status de pagamento e mensagem
+ */
+export async function verificarTresPrimeirosMesesPagos(assinaturaId: string, periodosNecessarios: number = 3): Promise<{ pagos: boolean; pagamentosPagos: number; periodosNecessarios: number; mensagem?: string }> {
     if (!ASAAS_API_KEY) throw new Error('Chave da API Asaas não configurada');
     if (!assinaturaId) throw new Error('assinaturaId obrigatório');
     
     const pagamentos = await listarPagamentosDaAssinatura(assinaturaId);
     if (!pagamentos.length) {
-        return { pagos: false, pagamentosPagos: 0, mensagem: 'Nenhum pagamento encontrado para esta assinatura.' };
+        return { pagos: false, pagamentosPagos: 0, periodosNecessarios, mensagem: 'Nenhum pagamento encontrado para esta assinatura.' };
     }
     
     // Ordena pagamentos por data de vencimento (mais antigo primeiro)
@@ -169,20 +194,29 @@ export async function verificarTresPrimeirosMesesPagos(assinaturaId: string): Pr
         return dataA.getTime() - dataB.getTime();
     });
     
-    // Pega os 3 primeiros pagamentos
-    const tresPrimeiros = pagamentosOrdenados.slice(0, 3);
+    // Pega os N primeiros pagamentos conforme a periodicidade
+    const primeirosPagamentos = pagamentosOrdenados.slice(0, periodosNecessarios);
     
     // Verifica quantos estão pagos (status RECEIVED)
-    const pagos = tresPrimeiros.filter((p: any) => String(p.status || '').toUpperCase() === 'RECEIVED');
+    const pagos = primeirosPagamentos.filter((p: any) => String(p.status || '').toUpperCase() === 'RECEIVED');
     const pagamentosPagos = pagos.length;
     
-    if (pagamentosPagos >= 3) {
-        return { pagos: true, pagamentosPagos: 3 };
+    // Determina o texto da unidade de tempo baseado na periodicidade
+    let unidadeTempo = 'períodos';
+    if (periodosNecessarios === 1) unidadeTempo = 'período';
+    else if (periodosNecessarios === 2) unidadeTempo = 'períodos (bimestres)';
+    else if (periodosNecessarios === 3) unidadeTempo = 'períodos (trimestres)';
+    else if (periodosNecessarios === 6) unidadeTempo = 'períodos (semestres)';
+    else if (periodosNecessarios === 12) unidadeTempo = 'períodos (anual)';
+    
+    if (pagamentosPagos >= periodosNecessarios) {
+        return { pagos: true, pagamentosPagos, periodosNecessarios };
     } else {
         return { 
             pagos: false, 
             pagamentosPagos, 
-            mensagem: `É necessário ter pago os 3 primeiros meses para cancelar. Você pagou ${pagamentosPagos} de 3 meses.` 
+            periodosNecessarios,
+            mensagem: `É necessário ter pago os ${periodosNecessarios} primeiro${periodosNecessarios > 1 ? 's' : ''} ${unidadeTempo} para cancelar. Você pagou ${pagamentosPagos} de ${periodosNecessarios}.` 
         };
     }
 }

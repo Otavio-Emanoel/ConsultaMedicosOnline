@@ -309,7 +309,8 @@ export class SubscriptionController {
     /**
      * Cancela o plano do usuário logado
      * Requisitos:
-     * 1. Usuário deve ter pago os 3 primeiros meses
+     * 1. Usuário deve ter pago os períodos necessários conforme a periodicidade do plano
+     *    (Mensal: 1 período, Bimestral: 2 períodos, Trimestral: 3 períodos, etc.)
      * 2. Inativa beneficiário no Rapidoc
      * 3. Cancela assinatura no Asaas
      * 4. Marca assinatura como cancelada no Firestore
@@ -366,18 +367,37 @@ export class SubscriptionController {
                 return res.status(400).json({ error: 'ID da assinatura não encontrado.' });
             }
 
-            // 3. Verificar se pagou os 3 primeiros meses
-            const { verificarTresPrimeirosMesesPagos } = await import('../services/asaas.service.js');
-            const verificacao = await verificarTresPrimeirosMesesPagos(assinaturaId);
+            // 3. Obter periodicidade do plano para determinar quantos períodos são necessários
+            let periodicidade: string | null | undefined = assinaturaData?.planoPeriodicidade;
+            
+            // Se não estiver na assinatura, buscar do plano vinculado
+            if (!periodicidade && assinaturaData?.planoId) {
+                try {
+                    const planoRef = db.collection('planos').doc(assinaturaData.planoId);
+                    const planoDoc = await planoRef.get();
+                    if (planoDoc.exists) {
+                        const planoData = planoDoc.data();
+                        periodicidade = planoData?.periodicidade;
+                    }
+                } catch (planoError) {
+                    console.warn('[cancelarPlanoUsuario] Não foi possível buscar periodicidade do plano:', planoError);
+                }
+            }
+
+            // 4. Verificar se pagou os períodos necessários conforme a periodicidade
+            const { verificarTresPrimeirosMesesPagos, obterPeriodosNecessariosParaCancelamento } = await import('../services/asaas.service.js');
+            const periodosNecessarios = obterPeriodosNecessariosParaCancelamento(periodicidade);
+            const verificacao = await verificarTresPrimeirosMesesPagos(assinaturaId, periodosNecessarios);
             
             if (!verificacao.pagos) {
                 return res.status(403).json({ 
-                    error: verificacao.mensagem || 'É necessário ter pago os 3 primeiros meses para cancelar o plano.',
-                    pagamentosPagos: verificacao.pagamentosPagos
+                    error: verificacao.mensagem || `É necessário ter pago os ${periodosNecessarios} primeiro${periodosNecessarios > 1 ? 's' : ''} período${periodosNecessarios > 1 ? 's' : ''} para cancelar o plano.`,
+                    pagamentosPagos: verificacao.pagamentosPagos,
+                    periodosNecessarios: verificacao.periodosNecessarios
                 });
             }
 
-            // 4. Buscar beneficiário no Rapidoc e inativar
+            // 5. Buscar beneficiário no Rapidoc e inativar
             const { buscarBeneficiarioRapidocPorCpf, inativarBeneficiarioRapidoc } = await import('../services/rapidoc.service.js');
             try {
                 const beneficiarioResp = await buscarBeneficiarioRapidocPorCpf(cpf);
@@ -397,7 +417,7 @@ export class SubscriptionController {
                 // Continua mesmo se não encontrar no Rapidoc
             }
 
-            // 5. Cancelar assinatura no Asaas
+            // 6. Cancelar assinatura no Asaas
             const { cancelarAssinaturaAsaas } = await import('../services/asaas.service.js');
             try {
                 const respAsaas = await cancelarAssinaturaAsaas(assinaturaId);
@@ -410,7 +430,7 @@ export class SubscriptionController {
                 // Continua mesmo se falhar no Asaas
             }
 
-            // 6. Marcar assinatura como cancelada no Firestore
+            // 7. Marcar assinatura como cancelada no Firestore
             if (assinaturaDoc) {
                 await assinaturaDoc.ref.update({
                     status: 'CANCELADA',
