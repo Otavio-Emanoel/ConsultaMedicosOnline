@@ -9,6 +9,9 @@ const router = Router();
 router.get('/beneficiarios/:cpf/especialidades', autenticarFirebase, BeneficiarioEspecialidadesController.listarEspecialidades);
 router.put('/beneficiarios/:cpf/especialidades', autenticarFirebase, BeneficiarioEspecialidadesController.associarEspecialidade);
 
+// GET /api/encaminhamentos/me - lista encaminhamentos médicos do usuário logado (otimizado - usa CPF do token)
+router.get('/encaminhamentos/me', autenticarFirebase, BeneficiarioController.listarEncaminhamentosMe);
+
 // GET /api/beneficiarios/:cpf/encaminhamentos - lista encaminhamentos médicos do beneficiário
 router.get('/beneficiarios/:cpf/encaminhamentos', autenticarFirebase, BeneficiarioController.listarEncaminhamentos);
 

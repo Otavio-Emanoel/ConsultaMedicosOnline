@@ -301,4 +301,361 @@ export class AdminController {
       return res.status(500).json({ error: error?.message || 'Erro ao montar dashboard administrativo.' });
     }
   }
+
+  // Buscar beneficiários sem conta de usuário
+  static async beneficiariosSemConta(req: Request, res: Response) {
+    try {
+      const db = getFirestore(firebaseApp);
+      const auth = getAuth(firebaseApp);
+      
+      // Buscar todos os beneficiários do Rapidoc
+      const { listarBeneficiariosRapidoc } = await import('../services/rapidoc.service.js');
+      const beneficiariosRapidoc = await listarBeneficiariosRapidoc();
+      
+      // Buscar todos os usuários do Firestore para comparação
+      const usuariosSnap = await db.collection('usuarios').get();
+      const usuariosMap = new Map<string, boolean>();
+      usuariosSnap.forEach((doc) => {
+        const data = doc.data();
+        const cpf = data.cpf || doc.id;
+        if (cpf) {
+          // Normalizar CPF (remover caracteres não numéricos)
+          const cpfNormalizado = String(cpf).replace(/\D/g, '');
+          if (cpfNormalizado.length === 11) {
+            usuariosMap.set(cpfNormalizado, true);
+          }
+        }
+      });
+      
+      // Lista de beneficiários sem conta
+      const beneficiariosSemConta: Array<{
+        uuid: string;
+        nome: string;
+        cpf: string;
+        email: string;
+        temUsuarioFirestore: boolean;
+        temUsuarioAuth: boolean;
+        temAssinaturaAsaas: boolean;
+      }> = [];
+      
+      // Verificar cada beneficiário do Rapidoc
+      for (const beneficiario of beneficiariosRapidoc) {
+        // Extrair dados do beneficiário (pode vir em diferentes estruturas)
+        const cpf = beneficiario.cpf || beneficiario.document || beneficiario.documentNumber;
+        const email = beneficiario.email || beneficiario.emailAddress;
+        const nome = beneficiario.name || beneficiario.nome || beneficiario.fullName || 'Sem nome';
+        const uuid = beneficiario.uuid || beneficiario.id || beneficiario.beneficiaryUuid;
+        
+        if (!cpf) continue;
+        
+        // Normalizar CPF (remover caracteres não numéricos)
+        const cpfNormalizado = cpf.replace(/\D/g, '');
+        if (cpfNormalizado.length !== 11) continue; // CPF deve ter 11 dígitos
+        
+        // Verificar se tem usuário no Firestore
+        const temUsuarioFirestore = usuariosMap.has(cpfNormalizado);
+        
+        // Verificar se tem usuário no Firebase Auth (por email ou CPF como UID)
+        let temUsuarioAuth = false;
+        try {
+          if (email) {
+            try {
+              await auth.getUserByEmail(email);
+              temUsuarioAuth = true;
+            } catch {
+              // Usuário não encontrado por email, tenta por CPF como UID
+              try {
+                await auth.getUser(cpfNormalizado);
+                temUsuarioAuth = true;
+              } catch {
+                // Não encontrado
+              }
+            }
+          } else {
+            // Tenta apenas por CPF como UID
+            try {
+              await auth.getUser(cpfNormalizado);
+              temUsuarioAuth = true;
+            } catch {
+              // Não encontrado
+            }
+          }
+        } catch {
+          // Erro ao verificar, assume que não tem
+        }
+        
+        // Verificar se tem assinatura no Asaas (opcional, pode ser implementado depois)
+        const temAssinaturaAsaas = false; // TODO: implementar verificação Asaas se necessário
+        
+        // Se não tem usuário no Firestore E não tem no Auth, adiciona à lista
+        if (!temUsuarioFirestore && !temUsuarioAuth) {
+          beneficiariosSemConta.push({
+            uuid: uuid || '',
+            nome,
+            cpf: cpfNormalizado,
+            email: email || '',
+            temUsuarioFirestore,
+            temUsuarioAuth,
+            temAssinaturaAsaas,
+          });
+        }
+      }
+      
+      return res.status(200).json({
+        beneficiarios: beneficiariosSemConta,
+        total: beneficiariosSemConta.length
+      });
+    } catch (error: any) {
+      return res.status(500).json({ error: error?.message || 'Erro ao buscar beneficiários sem conta.' });
+    }
+  }
+
+  // Criar usuário completo com assinatura
+  static async criarUsuarioCompleto(req: Request, res: Response) {
+    try {
+      const { beneficiarioUuid, cpf, nome, email, planoId, billingType, ciclo } = req.body;
+
+      if (!beneficiarioUuid || !cpf || !nome || !email || !planoId || !billingType || !ciclo) {
+        return res.status(400).json({ 
+          error: 'Campos obrigatórios: beneficiarioUuid, cpf, nome, email, planoId, billingType, ciclo.' 
+        });
+      }
+
+      const db = getFirestore(firebaseApp);
+      const auth = getAuth(firebaseApp);
+
+      // 1. Buscar plano
+      const planoDoc = await db.collection('planos').doc(planoId).get();
+      if (!planoDoc.exists) {
+        return res.status(404).json({ error: 'Plano não encontrado.' });
+      }
+      const planoData = planoDoc.data();
+      const valorPlano = Number(planoData?.preco || 0);
+      if (valorPlano <= 0) {
+        return res.status(400).json({ error: 'Plano sem valor definido.' });
+      }
+
+      // 2. Buscar dados do beneficiário no Rapidoc (para obter birthday e outros dados)
+      const { buscarBeneficiarioRapidocPorCpf } = await import('../services/rapidoc.service.js');
+      let beneficiarioRapidoc: any = null;
+      try {
+        const rapidocResp = await buscarBeneficiarioRapidocPorCpf(cpf);
+        beneficiarioRapidoc = rapidocResp?.beneficiary;
+      } catch (error: any) {
+        // Se não encontrar, continua mesmo assim (beneficiário pode ter sido criado recentemente)
+        console.warn('Beneficiário não encontrado no Rapidoc:', error?.message);
+      }
+
+      // 3. Verificar se usuário já existe
+      const usuarioRef = db.collection('usuarios').doc(cpf);
+      const usuarioDoc = await usuarioRef.get();
+      if (usuarioDoc.exists) {
+        return res.status(409).json({ error: 'Usuário já existe no Firestore.' });
+      }
+
+      // Verificar se já existe no Firebase Auth
+      try {
+        await auth.getUser(cpf);
+        return res.status(409).json({ error: 'Usuário já existe no Firebase Auth.' });
+      } catch {
+        // Usuário não existe, pode continuar
+      }
+
+      // 4. Criar cliente no Asaas
+      const { criarClienteAsaas, criarAssinaturaAsaas } = await import('../services/asaas.service.js');
+      const clienteAsaas = await criarClienteAsaas({ 
+        nome, 
+        email, 
+        cpf: cpf.replace(/\D/g, '') 
+      });
+
+      // 5. Criar assinatura no Asaas
+      const assinaturaAsaas = await criarAssinaturaAsaas({
+        customer: clienteAsaas.id,
+        value: valorPlano,
+        cycle: ciclo,
+        billingType,
+        description: `Assinatura ${planoData?.tipo || 'Consulta Médicos Online'}`
+      });
+
+      // 6. Gerar senha temporária
+      const gerarSenhaTemporaria = (tamanho = 8) => {
+        const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+        let senha = '';
+        for (let i = 0; i < tamanho; i++) {
+          senha += chars.charAt(Math.floor(Math.random() * chars.length));
+        }
+        return senha;
+      };
+      const senhaTemporaria = gerarSenhaTemporaria();
+
+      // 7. Criar usuário no Firebase Auth
+      const cpfNormalizado = cpf.replace(/\D/g, '');
+      let userRecord;
+      try {
+        userRecord = await auth.createUser({
+          uid: cpfNormalizado,
+          email,
+          password: senhaTemporaria,
+          displayName: nome,
+        });
+      } catch (error: any) {
+        // Se falhar ao criar no Auth, tenta limpar o que foi criado no Asaas
+        try {
+          await import('../services/asaas.service.js').then(m => 
+            m.cancelarAssinaturaAsaas(assinaturaAsaas.id).catch(() => {})
+          );
+        } catch {}
+        if (error.code === 'auth/email-already-exists' || error.code === 'auth/uid-already-exists') {
+          return res.status(409).json({ error: 'Usuário já existe no Firebase Auth.' });
+        }
+        throw error;
+      }
+
+      // 8. Salvar usuário no Firestore
+      const usuarioData: any = {
+        cpf: cpfNormalizado,
+        nome,
+        email,
+        criadoEm: new Date().toISOString(),
+        idAssinaturaAtual: assinaturaAsaas.id,
+        rapidocBeneficiaryUuid: beneficiarioUuid,
+        primeiroAcesso: false, // Será marcado como true quando o usuário fizer login pela primeira vez
+      };
+      
+      // Adicionar dados do Rapidoc se disponíveis
+      if (beneficiarioRapidoc) {
+        if (beneficiarioRapidoc.birthday) usuarioData.dataNascimento = beneficiarioRapidoc.birthday;
+        if (beneficiarioRapidoc.phone) usuarioData.telefone = beneficiarioRapidoc.phone;
+      }
+
+      await usuarioRef.set(usuarioData);
+
+      // 9. Salvar assinatura no Firestore
+      const assinaturaData: any = {
+        idAssinatura: assinaturaAsaas.id,
+        cpfUsuario: cpfNormalizado,
+        planoId,
+        status: 'ATIVA',
+        valor: valorPlano,
+        ciclo,
+        formaPagamento: billingType,
+        dataInicio: new Date().toISOString().split('T')[0],
+        criadoEm: new Date().toISOString(),
+      };
+      await db.collection('assinaturas').doc(assinaturaAsaas.id).set(assinaturaData);
+
+      return res.status(201).json({
+        message: 'Usuário criado com sucesso.',
+        usuario: {
+          cpf: cpfNormalizado,
+          nome,
+          email,
+          senhaTemporaria, // IMPORTANTE: retornar senha temporária para o admin
+        },
+        plano: {
+          id: planoId,
+          tipo: planoData?.tipo,
+          descricao: planoData?.descricao,
+          valor: valorPlano,
+        },
+        assinatura: {
+          id: assinaturaAsaas.id,
+          status: assinaturaAsaas.status,
+          valor: valorPlano,
+        },
+        clienteAsaas: {
+          id: clienteAsaas.id,
+        },
+      });
+    } catch (error: any) {
+      return res.status(500).json({ 
+        error: error?.message || 'Erro ao criar usuário completo.' 
+      });
+    }
+  }
+
+  // Gerar nova senha para um cliente
+  static async gerarNovaSenha(req: Request, res: Response) {
+    try {
+      const { cpf } = req.body;
+
+      if (!cpf) {
+        return res.status(400).json({ error: 'CPF é obrigatório.' });
+      }
+
+      const db = getFirestore(firebaseApp);
+      const auth = getAuth(firebaseApp);
+
+      // Normalizar CPF
+      const cpfNormalizado = String(cpf).replace(/\D/g, '');
+      if (cpfNormalizado.length !== 11) {
+        return res.status(400).json({ error: 'CPF inválido.' });
+      }
+
+      // 1. Buscar usuário no Firestore
+      const usuarioRef = db.collection('usuarios').doc(cpfNormalizado);
+      const usuarioDoc = await usuarioRef.get();
+      
+      if (!usuarioDoc.exists) {
+        return res.status(404).json({ error: 'Usuário não encontrado no Firestore.' });
+      }
+
+      const usuarioData = usuarioDoc.data();
+      const email = usuarioData?.email;
+
+      if (!email) {
+        return res.status(400).json({ error: 'Usuário não possui email cadastrado.' });
+      }
+
+      // 2. Verificar se usuário existe no Firebase Auth
+      let userRecord;
+      try {
+        userRecord = await auth.getUser(cpfNormalizado);
+      } catch (error: any) {
+        // Se não encontrar pelo UID (CPF), tenta buscar pelo email
+        try {
+          userRecord = await auth.getUserByEmail(email);
+        } catch {
+          return res.status(404).json({ error: 'Usuário não encontrado no Firebase Auth.' });
+        }
+      }
+
+      // 3. Gerar senha temporária
+      const gerarSenhaTemporaria = (tamanho = 8) => {
+        const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+        let senha = '';
+        for (let i = 0; i < tamanho; i++) {
+          senha += chars.charAt(Math.floor(Math.random() * chars.length));
+        }
+        return senha;
+      };
+      const senhaTemporaria = gerarSenhaTemporaria();
+
+      // 4. Atualizar senha no Firebase Auth
+      try {
+        await auth.updateUser(userRecord.uid, {
+          password: senhaTemporaria,
+        });
+      } catch (error: any) {
+        return res.status(500).json({ 
+          error: `Erro ao atualizar senha: ${error?.message || 'Erro desconhecido'}` 
+        });
+      }
+
+      return res.status(200).json({
+        message: 'Nova senha gerada com sucesso.',
+        usuario: {
+          cpf: cpfNormalizado,
+          nome: usuarioData?.nome || 'Sem nome',
+          email: email,
+        },
+        senhaTemporaria,
+      });
+    } catch (error: any) {
+      return res.status(500).json({ 
+        error: error?.message || 'Erro ao gerar nova senha.' 
+      });
+    }
+  }
 }

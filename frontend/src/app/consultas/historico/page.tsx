@@ -16,9 +16,11 @@ import {
   Filter,
   User,
   Loader2,
+  ExternalLink,
+  FileCheck,
 } from 'lucide-react';
 
-type AppointmentStatus = 'completed' | 'cancelled' | 'missed';
+type AppointmentStatus = 'completed' | 'cancelled' | 'missed' | 'scheduled';
 
 interface Appointment {
   id: string;
@@ -32,6 +34,19 @@ interface Appointment {
   hasReport: boolean;
   from?: string;
   to?: string;
+  beneficiaryUrl?: string;
+  clinic?: {
+    name?: string;
+    uuid?: string;
+  };
+  type?: string;
+  medicalReferral?: {
+    uuid?: string;
+    urlPath?: string;
+    createdAt?: string;
+    updatedAt?: string;
+    status?: string;
+  };
 }
 
 interface AppointmentApi {
@@ -54,16 +69,31 @@ interface AppointmentApi {
     date?: string;
     from?: string;
     to?: string;
+    uuid?: string;
+  };
+  beneficiaryUrl?: string;
+  clinic?: {
+    name?: string;
+    uuid?: string;
+  };
+  type?: string;
+  beneficiaryMedicalReferral?: {
+    uuid?: string;
+    urlPath?: string;
+    createdAt?: string;
+    updatedAt?: string;
+    status?: string;
   };
 }
 
 const STATUS_MAP: Record<
   AppointmentStatus,
-  { label: string; variant: 'success' | 'danger' | 'warning' }
+  { label: string; variant: 'success' | 'danger' | 'warning' | 'info' }
 > = {
   completed: { label: 'Realizada', variant: 'success' },
   cancelled: { label: 'Cancelada', variant: 'danger' },
   missed: { label: 'Não compareceu', variant: 'warning' },
+  scheduled: { label: 'Agendada', variant: 'info' },
 };
 
 export default function HistoricoConsultasPage() {
@@ -74,67 +104,84 @@ export default function HistoricoConsultasPage() {
   const [filterStatus, setFilterStatus] = useState('all');
   const [filterSpecialty, setFilterSpecialty] = useState('all');
 
-  // Buscar agendamentos do backend
+  // Buscar agendamentos do backend - sem usar dashboard
   useEffect(() => {
+    const controller = new AbortController();
+    let mounted = true;
+
     const loadAppointments = async () => {
       try {
         const apiBase = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:3000/api';
         const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
         
         if (!token) {
-          setLoading(false);
+          if (mounted) setLoading(false);
           return;
         }
 
-        // Buscar dados do dashboard para obter CPF
-        const dashboardRes = await fetch(`${apiBase}/dashboard`, {
+        // 1. Buscar CPF do usuário logado
+        const usuarioRes = await fetch(`${apiBase}/usuario/me`, {
           headers: { Authorization: `Bearer ${token}` },
+          signal: controller.signal,
         });
 
-        if (!dashboardRes.ok) {
-          throw new Error('Erro ao buscar dados do dashboard');
+        if (!mounted) return;
+
+        if (!usuarioRes.ok) {
+          throw new Error('Erro ao buscar dados do usuário');
         }
 
-        const dashboardData = await dashboardRes.json();
-        const cpf = dashboardData?.usuario?.cpf;
+        const usuarioData = await usuarioRes.json();
+        const cpf = usuarioData?.cpf;
 
         if (!cpf) {
           throw new Error('CPF não encontrado');
         }
 
-        // Buscar beneficiário pelo CPF para obter UUID
-        const beneficiaryRes = await fetch(`${apiBase}/rapidoc/beneficiario/${cpf}`, {
+        // 2. Buscar beneficiário no Rapidoc para pegar UUID
+        const rapidocRes = await fetch(`${apiBase}/rapidoc/beneficiario/${cpf}`, {
           headers: { Authorization: `Bearer ${token}` },
+          signal: controller.signal,
         });
 
-        if (!beneficiaryRes.ok) {
-          throw new Error('Erro ao buscar beneficiário');
+        if (!mounted) return;
+
+        if (!rapidocRes.ok) {
+          throw new Error('Erro ao buscar beneficiário no Rapidoc');
         }
 
-        const beneficiaryData = await beneficiaryRes.json();
-        const uuid = beneficiaryData?.uuid;
+        const rapidocData = await rapidocRes.json();
+        const rapidocUuid = rapidocData?.uuid; // O endpoint retorna diretamente o beneficiary
 
-        if (!uuid) {
+        if (!rapidocUuid) {
           throw new Error('UUID do beneficiário não encontrado');
         }
 
-        // Buscar todos os agendamentos do beneficiário
-        const appointmentsRes = await fetch(`${apiBase}/beneficiarios/${uuid}/appointments`, {
-          headers: { Authorization: `Bearer ${token}` },
-        });
+        // 3. Buscar todos os agendamentos do beneficiário (com timeout)
+        const appointmentsController = new AbortController();
+        const appointmentsTimeout = setTimeout(() => appointmentsController.abort(), 15000); // Timeout de 15s
+        
+        let appointmentsRes;
+        try {
+          appointmentsRes = await fetch(`${apiBase}/beneficiarios/${rapidocUuid}/appointments`, {
+            headers: { Authorization: `Bearer ${token}` },
+            signal: appointmentsController.signal,
+          });
+          clearTimeout(appointmentsTimeout);
+        } catch (error: any) {
+          clearTimeout(appointmentsTimeout);
+          if (error.name === 'AbortError' || !mounted) return;
+          throw error;
+        }
+
+        if (!mounted) return;
 
         if (appointmentsRes.ok) {
           const appointmentsData = await appointmentsRes.json();
-          const apiAppointments: AppointmentApi[] = appointmentsData?.appointments || [];
+          const apiAppointments: AppointmentApi[] = appointmentsData?.appointments || appointmentsData || [];
           
-          // Filtrar apenas agendamentos já realizados/completados/cancelados
-          const historicalAppointments = apiAppointments.filter((apt: AppointmentApi) => {
-            const status = apt?.status?.toUpperCase();
-            return status === 'COMPLETED' || status === 'CANCELED' || status === 'CANCELLED' || status === 'MISSED';
-          });
-
-          // Mapear para o formato da interface
-          const mappedAppointments: Appointment[] = historicalAppointments.map((apt: AppointmentApi) => {
+          // Mapear para o formato da interface (mostrar todas as consultas, não apenas as finalizadas)
+          const mappedAppointments: Appointment[] = apiAppointments.map((apt: AppointmentApi) => {
             const date = apt.detail?.date || apt.date || '';
             const from = apt.detail?.from || apt.from || '';
             const to = apt.detail?.to || apt.to || '';
@@ -148,9 +195,34 @@ export default function HistoricoConsultasPage() {
             if (apiStatus === 'CANCELED' || apiStatus === 'CANCELLED') {
               status = 'cancelled';
             } else if (apiStatus === 'MISSED') {
+              // Só marcar como "não compareceu" se a API explicitamente indicar
               status = 'missed';
             } else if (apiStatus === 'COMPLETED') {
               status = 'completed';
+            } else if (apiStatus === 'UNFINISHED') {
+              // Verificar se a data já passou
+              if (date) {
+                try {
+                  // Converter dd/MM/yyyy para Date
+                  const [day, month, year] = date.split('/');
+                  const appointmentDate = new Date(`${year}-${month}-${day}`);
+                  const today = new Date();
+                  today.setHours(0, 0, 0, 0);
+                  appointmentDate.setHours(0, 0, 0, 0);
+                  
+                  // Se a data já passou e não há informação de não comparecimento, marcar como "realizada"
+                  if (appointmentDate < today) {
+                    status = 'completed';
+                  } else {
+                    status = 'scheduled';
+                  }
+                } catch (e) {
+                  // Se houver erro ao parsear a data, manter como agendada
+                  status = 'scheduled';
+                }
+              } else {
+                status = 'scheduled';
+              }
             }
 
             // Formatar hora
@@ -168,6 +240,10 @@ export default function HistoricoConsultasPage() {
               hasReport: false, // Por enquanto, não temos informação de laudo na API
               from: from,
               to: to,
+              beneficiaryUrl: apt.beneficiaryUrl,
+              clinic: apt.clinic,
+              type: apt.type,
+              medicalReferral: apt.beneficiaryMedicalReferral,
             };
           });
 
@@ -182,17 +258,32 @@ export default function HistoricoConsultasPage() {
             return dateB.getTime() - dateA.getTime();
           });
 
-          setAllAppointments(mappedAppointments);
-          setAppointments(mappedAppointments);
+          if (mounted) {
+            setAllAppointments(mappedAppointments);
+            setAppointments(mappedAppointments);
+          }
         }
-      } catch (error) {
+      } catch (error: any) {
+        if (error.name === 'AbortError' || !mounted) return;
+        
         console.error('Erro ao carregar histórico de consultas:', error);
+        if (mounted) {
+          setLoading(false);
+        }
       } finally {
-        setLoading(false);
+        if (mounted) {
+          setLoading(false);
+        }
       }
     };
 
     loadAppointments();
+
+    // Cleanup: cancela requisições se componente desmontar
+    return () => {
+      mounted = false;
+      controller.abort();
+    };
   }, []);
 
   // Filtrar agendamentos
@@ -220,42 +311,55 @@ export default function HistoricoConsultasPage() {
     new Set(allAppointments.map((apt) => apt.specialty))
   ).sort();
 
-  const handleViewDetails = async (uuid: string) => {
-    try {
-      const apiBase = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:3000/api';
-      const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
-
-      if (!token) {
-        alert('Token não encontrado. Por favor, faça login novamente.');
-        return;
-      }
-
-      // Buscar detalhes do agendamento
-      const res = await fetch(`${apiBase}/agendamentos/${uuid}`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-
-      if (res.ok) {
-        const data = await res.json();
-        const appointment = data?.appointment || data;
-        
-        // Mostrar detalhes em um alert (ou você pode criar um modal)
-        const details = `
-Especialidade: ${appointment.specialty?.name || 'N/A'}
-Médico: ${appointment.professional?.name || 'N/A'}
-Data: ${appointment.detail?.date || appointment.date || 'N/A'}
-Horário: ${appointment.detail?.from || appointment.from || 'N/A'} - ${appointment.detail?.to || appointment.to || 'N/A'}
-Status: ${appointment.status || 'N/A'}
-        `.trim();
-        
-        alert(details);
-      } else {
-        alert('Erro ao buscar detalhes da consulta');
-      }
-    } catch (error) {
-      console.error('Erro ao buscar detalhes:', error);
-      alert('Erro ao buscar detalhes da consulta');
+  const handleViewDetails = (uuid: string) => {
+    // Buscar o agendamento nos dados locais
+    const appointment = allAppointments.find(apt => apt.uuid === uuid);
+    
+    if (!appointment) {
+      alert('Consulta não encontrada');
+      return;
     }
+
+    // Construir mensagem com todas as informações disponíveis
+    let details = `
+📋 DETALHES DA CONSULTA
+
+Especialidade: ${appointment.specialty}
+Médico: ${appointment.doctor}
+Paciente: ${appointment.patient}
+Data: ${appointment.date || 'N/A'}
+Horário: ${appointment.from || 'N/A'}${appointment.to ? ` - ${appointment.to}` : ''}
+Status: ${STATUS_MAP[appointment.status]?.label || appointment.status}
+    `.trim();
+
+    if (appointment.type) {
+      const typeLabel = appointment.type === 'scheduled' ? 'Agendada' : 
+                       appointment.type === 'immediate' ? 'Imediata' : 
+                       appointment.type;
+      details += `\nTipo: ${typeLabel}`;
+    }
+
+    if (appointment.medicalReferral) {
+      details += `\n\n📄 ENCAMINHAMENTO MÉDICO`;
+      if (appointment.medicalReferral.status) {
+        details += `\nStatus: ${appointment.medicalReferral.status}`;
+      }
+      if (appointment.medicalReferral.createdAt) {
+        details += `\nCriado em: ${appointment.medicalReferral.createdAt}`;
+      }
+      if (appointment.medicalReferral.updatedAt) {
+        details += `\nAtualizado em: ${appointment.medicalReferral.updatedAt}`;
+      }
+      if (appointment.medicalReferral.urlPath) {
+        details += `\n\n🔗 Link do encaminhamento disponível (clique no botão "Ver Encaminhamento")`;
+      }
+    }
+
+    if (appointment.beneficiaryUrl) {
+      details += `\n\n🔗 Link para entrar na consulta disponível (clique no botão "Entrar na Consulta")`;
+    }
+
+    alert(details);
   };
 
   if (loading) {
@@ -294,6 +398,7 @@ Status: ${appointment.status || 'N/A'}
               >
                 <option value="all">Todos os status</option>
                 <option value="completed">Realizadas</option>
+                <option value="scheduled">Agendadas</option>
                 <option value="cancelled">Canceladas</option>
                 <option value="missed">Não compareceu</option>
               </select>
@@ -366,7 +471,7 @@ Status: ${appointment.status || 'N/A'}
                           </Badge>
                         </div>
 
-                        <div className="grid grid-cols-1 md:grid-cols-3 gap-2 text-sm text-gray-600 dark:text-gray-400">
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-2 text-sm text-gray-600 dark:text-gray-400 mb-2">
                           <div className="flex items-center">
                             <Calendar className="w-4 h-4 mr-2" />
                             {formattedDate ? (
@@ -389,22 +494,67 @@ Status: ${appointment.status || 'N/A'}
                             {appointment.patient}
                           </div>
                         </div>
+
+                        {/* Informações adicionais */}
+                        {(appointment.type || appointment.medicalReferral) && (
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-sm text-gray-600 dark:text-gray-400 mt-2 pt-2 border-t border-gray-200 dark:border-gray-700">
+                            {appointment.type && (
+                              <div className="flex items-center">
+                                <Stethoscope className="w-4 h-4 mr-2" />
+                                {appointment.type === 'scheduled' ? 'Agendada' : 
+                                 appointment.type === 'immediate' ? 'Imediata' : 
+                                 appointment.type}
+                              </div>
+                            )}
+                            {appointment.medicalReferral?.urlPath && (
+                              <div className="flex items-center text-blue-600 dark:text-blue-400">
+                                <FileCheck className="w-4 h-4 mr-2" />
+                                Encaminhamento disponível
+                              </div>
+                            )}
+                          </div>
+                        )}
                       </div>
                     </div>
 
                     {/* Actions */}
-                    <div className="flex items-center space-x-2">
+                    <div className="flex flex-col md:flex-row items-stretch md:items-center gap-2">
+                      {appointment.beneficiaryUrl && (
+                        <Button 
+                          variant="primary" 
+                          size="sm"
+                          onClick={() => window.open(appointment.beneficiaryUrl, '_blank')}
+                          className="w-full md:w-auto"
+                        >
+                          <ExternalLink className="w-4 h-4 mr-2" />
+                          Entrar na Consulta
+                        </Button>
+                      )}
+                      
+                      {appointment.medicalReferral?.urlPath && (
+                        <Button 
+                          variant="outline" 
+                          size="sm"
+                          onClick={() => window.open(appointment.medicalReferral?.urlPath, '_blank')}
+                          className="w-full md:w-auto"
+                        >
+                          <FileCheck className="w-4 h-4 mr-2" />
+                          Ver Encaminhamento
+                        </Button>
+                      )}
+
                       <Button 
                         variant="outline" 
                         size="sm"
                         onClick={() => handleViewDetails(appointment.uuid)}
+                        className="w-full md:w-auto"
                       >
                         <FileText className="w-4 h-4 mr-2" />
                         Ver Detalhes
                       </Button>
 
                       {appointment.hasReport && (
-                        <Button variant="primary" size="sm">
+                        <Button variant="primary" size="sm" className="w-full md:w-auto">
                           <Download className="w-4 h-4 mr-2" />
                           Laudo
                         </Button>
@@ -440,13 +590,21 @@ Status: ${appointment.status || 'N/A'}
       {allAppointments.length > 0 && (
         <Card className="mt-6">
           <CardBody>
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
               <div className="text-center">
                 <p className="text-3xl font-bold text-primary">
                   {allAppointments.filter((a) => a.status === 'completed').length}
                 </p>
                 <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">
                   Realizadas
+                </p>
+              </div>
+              <div className="text-center">
+                <p className="text-3xl font-bold text-blue-600">
+                  {allAppointments.filter((a) => a.status === 'scheduled').length}
+                </p>
+                <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">
+                  Agendadas
                 </p>
               </div>
               <div className="text-center">

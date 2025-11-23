@@ -50,83 +50,115 @@ export default function Page() {
   const [loadingTimes, setLoadingTimes] = useState(false);
 
 
-  // Buscar especialidades do beneficiário principal (usuário logado)
+  // Buscar apenas o necessário: CPF, lista de pacientes e especialidades
   useEffect(() => {
+    const controller = new AbortController();
+    let mounted = true;
+
     const apiBase = process.env.NEXT_PUBLIC_API_BASE_URL;
     const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
-    if (!token) return;
+    if (!token) {
+      setLoadingSpecialties(false);
+      setLoadingPatients(false);
+      return;
+    }
+    
     setLoadingSpecialties(true);
+    setLoadingPatients(true);
 
-    fetch(`${apiBase}/dashboard`, { headers: { Authorization: `Bearer ${token}` } })
-      .then((res) => res.json())
-      .then((data) => {
-        const cpf = data?.usuario?.cpf;
-        if (!cpf) throw new Error('CPF não encontrado no dashboard');
-        return fetch(`${apiBase}/beneficiarios/${cpf}/especialidades`, {
+    const loadData = async () => {
+      try {
+        // 1. Buscar CPF e dados do usuário logado
+        const usuarioRes = await fetch(`${apiBase}/usuario/me`, {
           headers: { Authorization: `Bearer ${token}` },
+          signal: controller.signal,
         });
-      })
-      .then((res) => {
-        if (!res.ok) {
-          console.error('Erro ao buscar especialidades:', res.status, res.statusText);
-          throw new Error(`Erro ${res.status}: ${res.statusText}`);
+
+        if (!mounted) return;
+
+        if (!usuarioRes.ok) {
+          throw new Error('Erro ao buscar dados do usuário');
         }
-        return res.json();
-      })
-      .then((data) => {
-        // API retorna { specialties: [{ uuid, name, source }] }
-        if (data && Array.isArray(data.specialties)) {
-          setSpecialties(data.specialties.map((s: any) => ({
-            uuid: s.uuid,
+
+        const usuarioData = await usuarioRes.json();
+        const cpf = usuarioData?.cpf;
+
+        if (!cpf) {
+          throw new Error('CPF não encontrado');
+        }
+
+        // 2. Buscar pacientes (titular + dependentes) e especialidades em paralelo
+        const pacientesPromise = fetch(`${apiBase}/dependentes/${cpf}`, {
+          headers: { Authorization: `Bearer ${token}` },
+          signal: controller.signal,
+        }).then(res => res.ok ? res.json() : { dependentes: [] }).catch(() => ({ dependentes: [] }));
+
+        const especialidadesPromise = fetch(`${apiBase}/beneficiarios/${cpf}/especialidades`, {
+          headers: { Authorization: `Bearer ${token}` },
+          signal: controller.signal,
+        }).then(res => res.ok ? res.json() : { specialties: [] }).catch(() => ({ specialties: [] }));
+
+        const [dependentesData, especialidadesData] = await Promise.all([pacientesPromise, especialidadesPromise]);
+
+        if (!mounted) return;
+
+        // Preparar lista de pacientes: titular + dependentes
+        const pacientes = [];
+        
+        // Adicionar titular (usuário logado)
+        if (usuarioData?.nome && usuarioData?.cpf) {
+          pacientes.push({
+            id: usuarioData.cpf,
+            name: usuarioData.nome,
+            cpf: usuarioData.cpf,
+            relationship: 'Titular',
+          });
+        }
+
+        // Adicionar dependentes
+        const dependentes = dependentesData?.dependentes || dependentesData || [];
+        dependentes.forEach((dep: any) => {
+          pacientes.push({
+            id: dep.cpf,
+            name: dep.nome,
+            cpf: dep.cpf,
+            relationship: dep.relationship || 'Dependente',
+          });
+        });
+
+        setPatients(pacientes);
+        setLoadingPatients(false);
+
+        // Processar especialidades
+        const specialties = especialidadesData?.specialties || especialidadesData?.especialidades || [];
+        if (Array.isArray(specialties)) {
+          setSpecialties(specialties.map((s: any) => ({
+            uuid: s.uuid || s.id,
             name: s.name || s.description || s.title || 'Especialidade'
           })));
         } else {
           setSpecialties([]);
         }
-        setLoadingSpecialties(false);
-      })
-      .catch((err) => {
-        console.error('Erro ao carregar especialidades:', err);
-        setLoadingSpecialties(false);
-      });
-  }, []);
 
-  // Buscar pacientes (usuário + dependentes) do dashboard
-  useEffect(() => {
-    const apiBase = process.env.NEXT_PUBLIC_API_BASE_URL;
-    const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
-    if (!token) return;
-    setLoadingPatients(true);
-    fetch(`${apiBase}/dashboard`, {
-      headers: { Authorization: `Bearer ${token}` },
-    })
-      .then((res) => res.json())
-      .then((data) => {
-        const pacientes = [];
-        // Usuário logado
-        if (data?.usuario) {
-          pacientes.push({
-            id: data.usuario.cpf,
-            name: data.usuario.nome,
-            cpf: data.usuario.cpf,
-            relationship: 'Titular',
-          });
+        setLoadingSpecialties(false);
+      } catch (err: any) {
+        if (err.name === 'AbortError' || !mounted) return;
+        
+        console.error('Erro ao carregar dados:', err);
+        if (mounted) {
+          setLoadingSpecialties(false);
+          setLoadingPatients(false);
         }
-        // Dependentes (beneficiarios)
-        if (Array.isArray(data?.beneficiarios)) {
-          data.beneficiarios.forEach((dep: any) => {
-            pacientes.push({
-              id: dep.cpf,
-              name: dep.nome,
-              cpf: dep.cpf,
-              relationship: dep.relationship || 'Dependente',
-            });
-          });
-        }
-        setPatients(pacientes);
-        setLoadingPatients(false);
-      })
-      .catch(() => setLoadingPatients(false));
+      }
+    };
+
+    loadData();
+
+    // Cleanup: cancela requisição se componente desmontar
+    return () => {
+      mounted = false;
+      controller.abort();
+    };
   }, []);
 
   // Buscar disponibilidade quando especialidade e data são selecionados

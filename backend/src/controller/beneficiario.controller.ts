@@ -77,9 +77,15 @@ export class BeneficiarioController {
       }
 
       try {
-        console.log('[BeneficiarioController] Buscando encaminhamentos para beneficiário:', beneficiario.uuid);
-        const encaminhamentos = await buscarEncaminhamentosBeneficiarioRapidoc(beneficiario.uuid);
-        console.log('[BeneficiarioController] Resposta do Rapidoc:', JSON.stringify(encaminhamentos, null, 2));
+        // OTIMIZAÇÃO: Adicionar timeout para não travar se a API do Rapidoc estiver lenta
+        // O endpoint de encaminhamentos pode dar timeout (504) se a API estiver lenta
+        const timeoutPromise = new Promise((_, reject) => {
+          setTimeout(() => reject(new Error('Timeout ao buscar encaminhamentos (30s)')), 30000);
+        });
+
+        const encaminhamentosPromise = buscarEncaminhamentosBeneficiarioRapidoc(beneficiario.uuid);
+        
+        const encaminhamentos = await Promise.race([encaminhamentosPromise, timeoutPromise]) as any;
         
         // A resposta pode vir como array ou objeto com array
         const lista = Array.isArray(encaminhamentos) 
@@ -94,12 +100,20 @@ export class BeneficiarioController {
         
         return res.status(200).json({ count: lista.length, encaminhamentos: lista });
       } catch (e: any) {
-        console.error('[BeneficiarioController] Erro ao buscar encaminhamentos:', {
-          status: e?.response?.status,
-          statusText: e?.response?.statusText,
-          data: e?.response?.data,
-          message: e?.message
-        });
+        // Log apenas em caso de erro (não logar respostas grandes em produção)
+        if (process.env.NODE_ENV === 'development') {
+          console.error('[BeneficiarioController] Erro ao buscar encaminhamentos:', {
+            status: e?.response?.status,
+            statusText: e?.response?.statusText,
+            message: e?.message
+          });
+        }
+        
+        // Se for timeout ou 504, retornar array vazio em vez de erro
+        // Encaminhamentos são opcionais e não devem travar a página
+        if (e?.message?.includes('Timeout') || e?.response?.status === 504) {
+          return res.status(200).json({ count: 0, encaminhamentos: [] });
+        }
         
         return res.status(400).json({ 
           error: 'Erro ao buscar encaminhamentos no Rapidoc.', 
@@ -118,18 +132,18 @@ export class BeneficiarioController {
       if (!uuid) return res.status(400).json({ error: 'UUID do beneficiário é obrigatório.' });
 
       try {
-        console.log('[BeneficiarioController] Buscando agendamentos para beneficiário:', uuid);
         const agendamentos = await listarAgendamentosBeneficiarioRapidoc(uuid);
-        console.log('[BeneficiarioController] Resposta do Rapidoc:', JSON.stringify(agendamentos, null, 2));
         
         return res.status(200).json({ count: agendamentos.length, appointments: agendamentos });
       } catch (e: any) {
-        console.error('[BeneficiarioController] Erro ao buscar agendamentos:', {
-          status: e?.response?.status,
-          statusText: e?.response?.statusText,
-          data: e?.response?.data,
-          message: e?.message
-        });
+        // Log apenas em caso de erro (não logar respostas grandes em produção)
+        if (process.env.NODE_ENV === 'development') {
+          console.error('[BeneficiarioController] Erro ao buscar agendamentos:', {
+            status: e?.response?.status,
+            statusText: e?.response?.statusText,
+            message: e?.message
+          });
+        }
         
         return res.status(400).json({ 
           error: 'Erro ao buscar agendamentos no Rapidoc.', 
@@ -138,6 +152,115 @@ export class BeneficiarioController {
       }
     } catch (error: any) {
       return res.status(500).json({ error: error?.message || 'Erro ao buscar agendamentos.' });
+    }
+  }
+
+  // Buscar encaminhamentos do usuário logado (usa CPF do token)
+  static async listarEncaminhamentosMe(req: Request, res: Response) {
+    try {
+      // Obter CPF do token
+      let cpf = req.user?.cpf as string | undefined;
+      
+      // Fallback 1: Se não tiver CPF no token, tenta usar o UID (que pode ser o CPF)
+      if (!cpf && req.user?.uid) {
+        const uid = req.user.uid;
+        if (/^\d{11}$/.test(uid)) {
+          cpf = uid;
+        } else {
+          // Se UID não é CPF, busca no Firestore pelo UID
+          try {
+            const usuarioRef = admin.firestore().collection('usuarios').doc(uid);
+            const usuarioDoc = await usuarioRef.get();
+            if (usuarioDoc.exists) {
+              const usuarioData = usuarioDoc.data();
+              cpf = usuarioData?.cpf || uid;
+            }
+          } catch {}
+        }
+      }
+      
+      // Fallback 2: Busca pelo email no Firestore
+      if (!cpf && req.user?.email) {
+        try {
+          const snap = await admin.firestore().collection('usuarios')
+            .where('email', '==', req.user.email)
+            .limit(1)
+            .get();
+          if (!snap.empty) {
+            const first = snap.docs[0];
+            if (first) {
+              cpf = (first.data().cpf as string) || first.id;
+            }
+          }
+        } catch {}
+      }
+
+      if (!cpf) {
+        return res.status(400).json({ error: 'CPF não encontrado. Não foi possível identificar o usuário.' });
+      }
+
+      // Buscar beneficiário pelo CPF para obter o UUID (usando cache)
+      const r = await buscarBeneficiarioRapidocPorCpf(cpf);
+      const beneficiario = r?.beneficiary;
+      if (!beneficiario || !beneficiario.uuid) {
+        return res.status(404).json({ error: 'Beneficiário não encontrado no Rapidoc.' });
+      }
+
+      try {
+        // OTIMIZAÇÃO: Timeout reduzido para 15s (encaminhamentos são opcionais)
+        const timeoutPromise = new Promise((_, reject) => {
+          setTimeout(() => reject(new Error('Timeout ao buscar encaminhamentos (15s)')), 15000);
+        });
+
+        const encaminhamentosPromise = buscarEncaminhamentosBeneficiarioRapidoc(beneficiario.uuid);
+        
+        const encaminhamentos = await Promise.race([encaminhamentosPromise, timeoutPromise]) as any;
+        
+        // A resposta pode vir como array ou objeto com array
+        const lista = Array.isArray(encaminhamentos) 
+          ? encaminhamentos 
+          : Array.isArray(encaminhamentos?.medicalReferrals) 
+            ? encaminhamentos.medicalReferrals 
+            : Array.isArray(encaminhamentos?.data)
+              ? encaminhamentos.data
+              : Array.isArray(encaminhamentos?.referrals)
+                ? encaminhamentos.referrals
+                : [];
+        
+        return res.status(200).json({ 
+          cpf,
+          beneficiaryUuid: beneficiario.uuid,
+          count: lista.length, 
+          encaminhamentos: lista 
+        });
+      } catch (e: any) {
+        // Log apenas em caso de erro (não logar respostas grandes em produção)
+        if (process.env.NODE_ENV === 'development') {
+          console.error('[BeneficiarioController] Erro ao buscar encaminhamentos:', {
+            status: e?.response?.status,
+            statusText: e?.response?.statusText,
+            message: e?.message
+          });
+        }
+        
+        // Se for timeout ou 504, retornar array vazio em vez de erro
+        // Encaminhamentos são opcionais e não devem travar a página
+        if (e?.message?.includes('Timeout') || e?.response?.status === 504) {
+          return res.status(200).json({ 
+            cpf,
+            beneficiaryUuid: beneficiario.uuid,
+            count: 0, 
+            encaminhamentos: [] 
+          });
+        }
+        
+        return res.status(400).json({ 
+          error: 'Erro ao buscar encaminhamentos no Rapidoc.', 
+          detail: e?.response?.data || e?.message 
+        });
+      }
+    } catch (error: any) {
+      return res.status(500).json({ error: error?.message || 'Erro ao buscar encaminhamentos.' });
     }
   }
 }

@@ -59,19 +59,34 @@ export class BeneficiarioEspecialidadesController {
         }
       }
 
-      // specialties dos planos (fetch detalhes se necessário)
+      // specialties dos planos (OTIMIZAÇÃO: buscar detalhes em paralelo)
       if (Array.isArray(beneficiario.plans)) {
-        for (const p of beneficiario.plans) {
-          const planObj = p?.plan || p; // estrutura observada
+        // Paralelizar busca de detalhes dos planos para evitar chamadas sequenciais
+        const planPromises = beneficiario.plans.map(async (p: any) => {
+          const planObj = p?.plan || p;
           let planSpecialties = Array.isArray(planObj?.specialties) ? planObj.specialties : [];
+          
+          // Só busca detalhes se realmente não tiver specialties e tiver UUID
           if (!planSpecialties.length && planObj?.uuid) {
             try {
               const detalhes = await obterDetalhesPlanoRapidoc(planObj.uuid);
               if (Array.isArray(detalhes?.specialties)) planSpecialties = detalhes.specialties;
-            } catch {}
+            } catch {
+              // Ignora erro - plano pode não ter especialidades
+            }
           }
+          
+          return planSpecialties;
+        });
+        
+        // Aguardar todas as buscas de planos em paralelo
+        const allPlanSpecialties = await Promise.all(planPromises);
+        
+        // Adicionar todas as especialidades dos planos
+        for (const planSpecialties of allPlanSpecialties) {
           for (const s of planSpecialties) {
-            const uuid = s?.uuid || s?.id; if (!uuid) continue;
+            const uuid = s?.uuid || s?.id;
+            if (!uuid) continue;
             sources.push({ uuid, name: s?.name || s?.description || s?.title, source: 'plan' });
           }
         }

@@ -115,11 +115,16 @@ export class AgendamentoController {
 
       // AUTOCORREÇÃO: Se o usuário está com tipo errado no banco (ex: G) mas tem plano (ex: GS), atualiza agora.
       if (targetServiceType && beneficiario.serviceType !== targetServiceType) {
-        console.log(`[Agendamento] Atualizando beneficiário ${cpf} de ${beneficiario.serviceType} para ${targetServiceType}...`);
+        if (process.env.NODE_ENV === 'development') {
+          console.log(`[Agendamento] Atualizando beneficiário ${cpf} de ${beneficiario.serviceType} para ${targetServiceType}...`);
+        }
         try {
             await atualizarBeneficiarioRapidoc(beneficiario.uuid, { serviceType: targetServiceType });
         } catch (err: any) {
-            console.error('[Agendamento] Erro na autocorreção:', err.message);
+            // Log apenas em desenvolvimento para não poluir logs em produção
+            if (process.env.NODE_ENV === 'development') {
+              console.error('[Agendamento] Erro na autocorreção:', err.message);
+            }
         }
       }
 
@@ -136,7 +141,6 @@ export class AgendamentoController {
       if (notes) bodyRapidoc.notes = notes;
 
       try {
-        console.log('[Agendamento] Enviando para Rapidoc (Payload Limpo):', JSON.stringify(bodyRapidoc, null, 2));
         const resp = await agendarConsultaRapidoc(bodyRapidoc);
         
         if (!resp || resp.success === false) {
@@ -189,95 +193,71 @@ export class AgendamentoController {
   }
 
   // POST /api/agendamentos/imediato - solicita consulta imediata usando request-appointment
+  // Chama diretamente a API do Rapidoc e retorna o link imediatamente
   static async solicitarImediato(req: Request, res: Response) {
     try {
-      const db = getFirestore(firebaseApp);
-      const { cpf: cpfBody, specialtyUuid, notes } = req.body || {};
+      const { cpf: cpfBody } = req.body || {};
       const cpf = (req.user && (req.user as any).cpf) || cpfBody;
       if (!cpf) return res.status(400).json({ error: 'Informe o CPF no token ou no corpo da requisição.' });
 
+      // Buscar beneficiário no Rapidoc para obter UUID
       const beneficiarioResp = await buscarBeneficiarioRapidocPorCpf(cpf);
       const beneficiario = beneficiarioResp?.beneficiary;
       if (!beneficiario || !beneficiario.uuid) {
         return res.status(404).json({ error: 'Beneficiário não encontrado no Rapidoc para o CPF informado.' });
       }
 
-      // Validações de especialidade omitidas para brevidade...
-
-      // Cria solicitação em fila
-      const ref = db.collection('immediate_requests').doc();
-      const payload: any = {
-        id: ref.id,
-        cpf,
-        beneficiaryUuid: beneficiario.uuid,
-        specialtyUuid: specialtyUuid || null,
-        notes: notes || null,
-        status: 'pending',
-        attemptCount: 0,
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-      };
-
-      // Tenta agendar automaticamente
-      const auto = (process.env.RAPIDOC_IMMEDIATE_AUTO || '').toLowerCase() === 'true';
-      if (auto && specialtyUuid) {
-        try {
-          const now = new Date();
-          const end = new Date(now.getTime() + 30 * 60000);
-          const dd = String(now.getDate()).padStart(2, '0');
-          const mm = String(now.getMonth() + 1).padStart(2, '0');
-          const yyyy = now.getFullYear();
-          const dateFormatted = `${dd}/${mm}/${yyyy}`;
-          const from = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
-          const to = `${String(end.getHours()).padStart(2, '0')}:${String(end.getMinutes()).padStart(2, '0')}`;
-
-          // --- LÓGICA DE PREPARAÇÃO IMEDIATO (SIMPLIFICADA) ---
-          let targetServiceType = beneficiario.serviceType; 
-          if (Array.isArray(beneficiario.plans) && beneficiario.plans.length > 0) {
-              const p = beneficiario.plans[0];
-              if (p.plan && p.plan.serviceType) targetServiceType = p.plan.serviceType;
-              else if (p.serviceType) targetServiceType = p.serviceType;
+      // Chamar diretamente a API do Rapidoc para solicitar atendimento imediato
+      // GET /beneficiaries/:uuid/request-appointment - retorna link imediatamente
+      const rapidocResponse = await solicitarConsultaImediataRapidoc(beneficiario.uuid);
+      
+      // Extrair link da resposta do Rapidoc
+      // A resposta pode vir em diferentes formatos, então tentamos várias chaves possíveis
+      const candidateKeys = [
+        'url', 'link', 'joinUrl', 'appointmentUrl', 'meetingUrl', 
+        'roomUrl', 'videoUrl', 'telemedUrl', 'video_link', 'videoLink', 'accessUrl'
+      ];
+      
+      let linkConsulta: string | null = null;
+      
+      // Tentar encontrar link na resposta direta
+      for (const key of candidateKeys) {
+        if (rapidocResponse?.[key]) {
+          linkConsulta = rapidocResponse[key];
+          break;
+        }
+      }
+      
+      // Se não encontrou na raiz, tentar em appointment ou data
+      if (!linkConsulta && rapidocResponse?.appointment) {
+        for (const key of candidateKeys) {
+          if (rapidocResponse.appointment[key]) {
+            linkConsulta = rapidocResponse.appointment[key];
+            break;
           }
-
-          // Autocorreção Imediato
-          if (targetServiceType && beneficiario.serviceType !== targetServiceType) {
-             try {
-                await atualizarBeneficiarioRapidoc(beneficiario.uuid, { serviceType: targetServiceType });
-             } catch {}
+        }
+      }
+      
+      if (!linkConsulta && rapidocResponse?.data) {
+        for (const key of candidateKeys) {
+          if (rapidocResponse.data[key]) {
+            linkConsulta = rapidocResponse.data[key];
+            break;
           }
-
-          // Body Limpo
-          const bodyRapidoc: Record<string, any> = {
-            beneficiary: { uuid: beneficiario.uuid, cpf },
-            specialty: { uuid: specialtyUuid },
-            detail: { date: dateFormatted, from, to }
-          };
-          if (beneficiario.paymentType) bodyRapidoc.paymentType = beneficiario.paymentType;
-          if (notes) bodyRapidoc.notes = notes;
-
-          const resp = await agendarConsultaRapidoc(bodyRapidoc);
-          if (resp && resp.success !== false) {
-            payload.status = 'scheduled';
-            payload.attemptCount = 1;
-            payload.updatedAt = new Date().toISOString();
-            payload.appointment = resp;
-          } else {
-            payload.status = 'pending';
-            payload.attemptCount = 1;
-            payload.lastError = resp?.message || 'Falha ao agendar automaticamente';
-            payload.updatedAt = new Date().toISOString();
-          }
-        } catch (e: any) {
-          payload.status = 'pending';
-          payload.attemptCount = 1;
-          payload.lastError = e?.response?.data || e?.message || 'Erro ao tentar agendar automaticamente';
-          payload.updatedAt = new Date().toISOString();
         }
       }
 
-      await ref.set(payload);
-      const statusCode = payload.status === 'scheduled' ? 201 : 202;
-      return res.status(statusCode).json(payload);
+      // Retornar resposta com link (se encontrado)
+      return res.status(200).json({
+        success: true,
+        url: linkConsulta,
+        link: linkConsulta,
+        joinUrl: linkConsulta,
+        appointmentUrl: linkConsulta,
+        rapidocResponse: linkConsulta ? undefined : rapidocResponse, // Incluir resposta raw apenas se não encontrou link
+        beneficiaryUuid: beneficiario.uuid,
+        cpf: cpf
+      });
     } catch (error: any) {
       if (error?.message === 'Usuário não autenticado.' || error?.message?.includes('CPF')) {
         return res.status(400).json({ error: error.message });
@@ -289,7 +269,10 @@ export class AgendamentoController {
       if (status === 401 || status === 403) {
         return res.status(401).json({ error: 'Autorização inválida no Rapidoc.' });
       }
-      return res.status(500).json({ error: error?.message || 'Erro ao solicitar consulta imediata.' });
+      return res.status(500).json({ 
+        error: error?.message || 'Erro ao solicitar consulta imediata.',
+        details: error?.response?.data || undefined
+      });
     }
   }
 

@@ -38,17 +38,79 @@ export default function DashboardPage() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const apiBase = process.env.NEXT_PUBLIC_API_BASE_URL;
-    const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
-    fetch(`${apiBase}/dashboard`, {
-      headers: token ? { Authorization: `Bearer ${token}` } : {},
-    })
-      .then((res) => res.json())
-      .then((json) => {
-        setData(json);
-        setLoading(false);
-      })
-      .catch(() => setLoading(false));
+    // OTIMIZAÇÃO: AbortController para cancelar requisição se componente desmontar
+    // Evita requisições pendentes que ficam travadas
+    const controller = new AbortController();
+    let mounted = true;
+    let timeoutId: NodeJS.Timeout | null = null;
+
+    const loadDashboard = async () => {
+      try {
+        const apiBase = process.env.NEXT_PUBLIC_API_BASE_URL;
+        const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
+        
+        if (!token) {
+          if (mounted) setLoading(false);
+          return;
+        }
+
+        // Timeout de 30 segundos para não travar indefinidamente
+        timeoutId = setTimeout(() => {
+          controller.abort();
+        }, 30000);
+
+        const response = await fetch(`${apiBase}/dashboard`, {
+          headers: { Authorization: `Bearer ${token}` },
+          signal: controller.signal, // Permite cancelar a requisição
+        });
+
+        if (timeoutId) {
+          clearTimeout(timeoutId);
+          timeoutId = null;
+        }
+
+        if (!mounted) return; // Componente foi desmontado
+
+        if (!response.ok) {
+          throw new Error(`Erro ${response.status}: ${response.statusText}`);
+        }
+
+        const json = await response.json();
+        
+        if (mounted) {
+          setData(json);
+          setLoading(false);
+        }
+      } catch (error: any) {
+        // Ignora erro se foi cancelado (componente desmontou ou timeout)
+        if (error.name === 'AbortError') {
+          return;
+        }
+        
+        if (mounted) {
+          console.error('Erro ao carregar dashboard:', error);
+          setLoading(false);
+        }
+      } finally {
+        // Garantir que o timeout é limpo
+        if (timeoutId) {
+          clearTimeout(timeoutId);
+          timeoutId = null;
+        }
+      }
+    };
+
+    loadDashboard();
+
+    // Cleanup: cancela requisição se componente desmontar
+    return () => {
+      mounted = false;
+      controller.abort();
+      // Limpar timeout se houver
+      if (timeoutId) {
+        clearTimeout(timeoutId);
+      }
+    };
   }, []);
 
   // Helpers

@@ -15,6 +15,9 @@ export function PlanoCanceladoBlocker({ children }: PlanoCanceladoBlockerProps) 
   const [dataCancelamento, setDataCancelamento] = useState<string>('');
 
   useEffect(() => {
+    // TEMPORARIAMENTE COMENTADO: Verificação de status do plano desabilitada para testar performance
+    // TODO: Reativar após verificar se está causando lentidão
+    /*
     const verificarStatusPlano = async () => {
       try {
         // Obter token atualizado
@@ -33,8 +36,16 @@ export function PlanoCanceladoBlocker({ children }: PlanoCanceladoBlockerProps) 
         }
 
         // Verificar status do plano via endpoint específico
+        // OTIMIZAÇÃO: Adicionar timeout para não travar se o endpoint estiver lento
         try {
-          const response = await api.get('/subscription/status-plano');
+          const controller = new AbortController();
+          const timeout = setTimeout(() => controller.abort(), 5000); // Timeout de 5s
+          
+          const response = await api.get('/subscription/status-plano', {
+            signal: controller.signal
+          });
+          
+          clearTimeout(timeout);
           
           if (response.data.cancelado) {
             setPlanoCancelado(true);
@@ -46,9 +57,18 @@ export function PlanoCanceladoBlocker({ children }: PlanoCanceladoBlockerProps) 
           // Se der erro 401, usuário não está autenticado, não bloqueia
           if (err.response?.status === 401) {
             setPlanoCancelado(false);
+          } else if (err.name === 'AbortError' || err.code === 'ECONNABORTED') {
+            // Timeout - não bloqueia, permite acesso
+            setPlanoCancelado(false);
+          } else if (err.response?.status === 404) {
+            // Endpoint não encontrado - não bloqueia (pode não estar implementado)
+            console.warn('Endpoint /subscription/status-plano não encontrado (404)');
+            setPlanoCancelado(false);
           } else {
             // Em caso de erro, não bloqueia (permite acesso)
-            console.error('Erro ao verificar status do plano:', err);
+            if (process.env.NODE_ENV === 'development') {
+              console.error('Erro ao verificar status do plano:', err);
+            }
             setPlanoCancelado(false);
           }
         }
@@ -65,6 +85,11 @@ export function PlanoCanceladoBlocker({ children }: PlanoCanceladoBlockerProps) 
     } else {
       setLoading(false);
     }
+    */
+    
+    // TEMPORÁRIO: Não verificar status do plano - permite acesso sempre
+    setPlanoCancelado(false);
+    setLoading(false);
   }, []);
 
   if (loading) {

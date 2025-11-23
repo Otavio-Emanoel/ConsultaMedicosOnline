@@ -29,46 +29,100 @@ export default function AtendimentoImediatoPage() {
   const [loadingRequest, setLoadingRequest] = useState(false);
   const [error, setError] = useState<string>('');
 
-  // Buscar pacientes (usuário + dependentes) do dashboard
+  // Buscar pacientes (titular + dependentes) - sem usar dashboard
   useEffect(() => {
-    const apiBase = process.env.NEXT_PUBLIC_API_BASE_URL;
-    const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
-    if (!token) return;
+    const controller = new AbortController();
+    let mounted = true;
 
-    setLoadingPatients(true);
-    fetch(`${apiBase}/dashboard`, {
-      headers: { Authorization: `Bearer ${token}` },
-    })
-      .then((res) => res.json())
-      .then((data) => {
+    const loadPatients = async () => {
+      try {
+        const apiBase = process.env.NEXT_PUBLIC_API_BASE_URL;
+        const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
+        
+        if (!token) {
+          if (mounted) setLoadingPatients(false);
+          return;
+        }
+
+        setLoadingPatients(true);
+
+        // 1. Buscar CPF e dados do usuário logado (titular)
+        const usuarioRes = await fetch(`${apiBase}/usuario/me`, {
+          headers: { Authorization: `Bearer ${token}` },
+          signal: controller.signal,
+        });
+
+        if (!mounted) return;
+
+        if (!usuarioRes.ok) {
+          throw new Error('Erro ao buscar dados do usuário');
+        }
+
+        const usuarioData = await usuarioRes.json();
+        const cpf = usuarioData?.cpf;
+
+        if (!cpf) {
+          throw new Error('CPF não encontrado');
+        }
+
+        // 2. Buscar dependentes em paralelo
+        const dependentesRes = await fetch(`${apiBase}/dependentes/${cpf}`, {
+          headers: { Authorization: `Bearer ${token}` },
+          signal: controller.signal,
+        });
+
+        if (!mounted) return;
+
+        const dependentesData = dependentesRes.ok ? await dependentesRes.json() : { dependentes: [] };
+        const dependentes = dependentesData?.dependentes || dependentesData || [];
+
+        // 3. Montar lista de pacientes: titular + dependentes
         const pacientes: Patient[] = [];
-        // Usuário logado
-        if (data?.usuario) {
+        
+        // Adicionar titular (usuário logado)
+        if (usuarioData?.nome && usuarioData?.cpf) {
           pacientes.push({
-            id: data.usuario.cpf,
-            name: data.usuario.nome,
-            cpf: data.usuario.cpf,
+            id: usuarioData.cpf,
+            name: usuarioData.nome,
+            cpf: usuarioData.cpf,
             relationship: 'Titular',
           });
         }
-        // Dependentes (beneficiarios)
-        if (Array.isArray(data?.beneficiarios)) {
-          data.beneficiarios.forEach((dep: any) => {
-            pacientes.push({
-              id: dep.cpf,
-              name: dep.nome,
-              cpf: dep.cpf,
-              relationship: dep.relationship || 'Dependente',
-            });
+
+        // Adicionar dependentes
+        dependentes.forEach((dep: any) => {
+          pacientes.push({
+            id: dep.cpf,
+            name: dep.nome,
+            cpf: dep.cpf,
+            relationship: dep.relationship || 'Dependente',
           });
+        });
+
+        if (mounted) {
+          setPatients(pacientes);
+          if (pacientes.length > 0) {
+            setSelectedPatient(pacientes[0].id);
+          }
+          setLoadingPatients(false);
         }
-        setPatients(pacientes);
-        if (pacientes.length > 0) {
-          setSelectedPatient(pacientes[0].id);
+      } catch (error: any) {
+        if (error.name === 'AbortError' || !mounted) return;
+        
+        console.error('Erro ao carregar pacientes:', error);
+        if (mounted) {
+          setLoadingPatients(false);
         }
-        setLoadingPatients(false);
-      })
-      .catch(() => setLoadingPatients(false));
+      }
+    };
+
+    loadPatients();
+
+    // Cleanup: cancela requisições se componente desmontar
+    return () => {
+      mounted = false;
+      controller.abort();
+    };
   }, []);
 
 
@@ -95,6 +149,7 @@ export default function AtendimentoImediatoPage() {
         throw new Error('Paciente selecionado não encontrado.');
       }
 
+      // Solicitar atendimento imediato via API Rapidoc
       const res = await fetch(`${apiBase}/agendamentos/imediato`, {
         method: 'POST',
         headers: {
@@ -102,7 +157,7 @@ export default function AtendimentoImediatoPage() {
           Authorization: `Bearer ${token}`,
         },
         body: JSON.stringify({
-          cpfSelecionado: pacienteSelecionado.cpf,
+          cpf: pacienteSelecionado.cpf, // A API espera 'cpf', não 'cpfSelecionado'
         }),
       });
 
@@ -113,24 +168,38 @@ export default function AtendimentoImediatoPage() {
 
       const data = await res.json();
       
-      // Extrair link da resposta (formato do Rapidoc: { success: true, url: "..." })
-      let linkConsulta: string | null = null;
-      if (data?.url) linkConsulta = data.url; // Formato padrão do Rapidoc
-      else if (data?.link) linkConsulta = data.link;
-      else if (data?.joinUrl) linkConsulta = data.joinUrl;
-      else if (data?.appointmentUrl) linkConsulta = data.appointmentUrl;
+      // A API agora retorna o link diretamente da Rapidoc
+      // Tentar extrair link da resposta (formato do Rapidoc)
+      const linkConsulta = data?.url || data?.link || data?.joinUrl || data?.appointmentUrl ||
+                          data?.meetingUrl || data?.roomUrl || data?.videoUrl || data?.telemedUrl ||
+                          data?.video_link || data?.videoLink || data?.accessUrl;
 
       if (linkConsulta) {
         // Abrir link automaticamente em nova guia
         window.open(linkConsulta, '_blank', 'noopener,noreferrer');
-        
-        // Mostrar mensagem de sucesso
         setError('');
-        // Não usar alert, apenas abrir o link silenciosamente
       } else {
-        // Se não encontrou link, mostrar erro ou resposta raw
-        setError('Link da consulta não encontrado na resposta. Verifique o console para mais detalhes.');
-        console.error('Resposta da API:', data);
+        // Se não encontrou link na resposta padrão, verificar rapidocResponse
+        const rapidocResponse = data?.rapidocResponse;
+        if (rapidocResponse) {
+          // Tentar encontrar link em rapidocResponse
+          const linkFromRapidoc = rapidocResponse?.url || rapidocResponse?.link || 
+                                 rapidocResponse?.joinUrl || rapidocResponse?.appointmentUrl ||
+                                 rapidocResponse?.appointment?.url || rapidocResponse?.appointment?.joinUrl ||
+                                 rapidocResponse?.data?.url || rapidocResponse?.data?.joinUrl;
+          
+          if (linkFromRapidoc) {
+            window.open(linkFromRapidoc, '_blank', 'noopener,noreferrer');
+            setError('');
+          } else {
+            setError('Link da consulta não encontrado na resposta do Rapidoc. Verifique o console para mais detalhes.');
+            console.error('Resposta completa da API:', data);
+            console.error('Resposta do Rapidoc:', rapidocResponse);
+          }
+        } else {
+          setError('Link da consulta não encontrado na resposta. Verifique o console para mais detalhes.');
+          console.error('Resposta da API:', data);
+        }
       }
     } catch (err: any) {
       setError(err.message || 'Erro ao solicitar consulta imediata');
