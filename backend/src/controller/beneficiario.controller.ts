@@ -80,7 +80,7 @@ export class BeneficiarioController {
         // OTIMIZAÇÃO: Adicionar timeout para não travar se a API do Rapidoc estiver lenta
         // O endpoint de encaminhamentos pode dar timeout (504) se a API estiver lenta
         const timeoutPromise = new Promise((_, reject) => {
-          setTimeout(() => reject(new Error('Timeout ao buscar encaminhamentos (30s)')), 30000);
+          setTimeout(() => reject(new Error('Timeout ao buscar encaminhamentos (60s)')), 60000);
         });
 
         const encaminhamentosPromise = buscarEncaminhamentosBeneficiarioRapidoc(beneficiario.uuid);
@@ -207,9 +207,9 @@ export class BeneficiarioController {
       }
 
       try {
-        // OTIMIZAÇÃO: Timeout reduzido para 15s (encaminhamentos são opcionais)
+        // OTIMIZAÇÃO: Timeout de 60s (encaminhamentos são opcionais)
         const timeoutPromise = new Promise((_, reject) => {
-          setTimeout(() => reject(new Error('Timeout ao buscar encaminhamentos (15s)')), 15000);
+          setTimeout(() => reject(new Error('Timeout ao buscar encaminhamentos (60s)')), 60000);
         });
 
         const encaminhamentosPromise = buscarEncaminhamentosBeneficiarioRapidoc(beneficiario.uuid);

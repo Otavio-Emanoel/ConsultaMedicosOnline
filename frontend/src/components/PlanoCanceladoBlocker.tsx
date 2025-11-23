@@ -39,7 +39,7 @@ export function PlanoCanceladoBlocker({ children }: PlanoCanceladoBlockerProps) 
         // OTIMIZAÇÃO: Adicionar timeout para não travar se o endpoint estiver lento
         try {
           const controller = new AbortController();
-          const timeout = setTimeout(() => controller.abort(), 5000); // Timeout de 5s
+          const timeout = setTimeout(() => controller.abort(), 60000); // Timeout de 60s
           
           const response = await api.get('/subscription/status-plano', {
             signal: controller.signal

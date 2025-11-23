@@ -66,7 +66,7 @@ export default function EncaminhamentosPage() {
         }
 
         // UMA ÚNICA CHAMADA: Buscar encaminhamentos do usuário logado (usa CPF do token)
-        const referralsTimeout = setTimeout(() => controller.abort(), 15000); // Timeout de 15s
+        const referralsTimeout = setTimeout(() => controller.abort(), 60000); // Timeout de 60s
         
         let referralsRes;
         try {

@@ -32,7 +32,7 @@ const httpsAgent = new https.Agent({
 // Criar instância do Axios com HTTP Agent reutilizável
 // Isso evita criar novas conexões TCP/TLS para cada requisição
 const rapidocAxios: AxiosInstance = axios.create({
-  timeout: 30000,
+  timeout: 60000,
   httpAgent,
   httpsAgent,
 });

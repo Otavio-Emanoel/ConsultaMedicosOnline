@@ -49,7 +49,7 @@ export class DashboardController {
             const clientesResp = await axios.get(`${ASAAS_API_URL}/customers`, {
               params: { cpfCnpj: uid },
               headers: { access_token: ASAAS_API_KEY },
-              timeout: 5000, // Timeout de 5s para não travar
+              timeout: 60000, // Timeout de 60s para não travar
             });
             const clientes = clientesResp.data?.data || [];
             if (clientes.length) {
@@ -57,7 +57,7 @@ export class DashboardController {
               const paymentsResp = await axios.get(`${ASAAS_API_URL}/payments`, {
                 params: { customer: customerId },
                 headers: { access_token: ASAAS_API_KEY },
-                timeout: 5000,
+                timeout: 60000,
               });
               const payments: any[] = paymentsResp.data?.data || [];
               return payments.map((p: any) => ({
@@ -112,7 +112,7 @@ export class DashboardController {
         try {
           const baseUrl = process.env.BASE_URL;
           const resp = await axios.get(`${baseUrl}/subscription/check-payment/${idAssinaturaAtual}`, {
-            timeout: 5000, // Timeout para não travar
+            timeout: 60000, // Timeout para não travar
           });
           if (resp.data && resp.data.pago === true) {
             statusAssinatura = 'ativa';

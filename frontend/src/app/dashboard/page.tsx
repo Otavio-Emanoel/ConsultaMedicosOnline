@@ -54,10 +54,10 @@ export default function DashboardPage() {
           return;
         }
 
-        // Timeout de 30 segundos para não travar indefinidamente
+        // Timeout de 60 segundos para não travar indefinidamente
         timeoutId = setTimeout(() => {
           controller.abort();
-        }, 30000);
+        }, 60000);
 
         const response = await fetch(`${apiBase}/dashboard`, {
           headers: { Authorization: `Bearer ${token}` },

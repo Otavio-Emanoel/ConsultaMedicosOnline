@@ -1,6 +1,19 @@
+import axios from 'axios';
+import type { AxiosInstance } from 'axios';
+import { configDotenv } from 'dotenv';
+configDotenv();
+
+const ASAAS_API_URL = process.env.ASAAS_BASE_URL || 'https://sandbox.asaas.com/api/v3';
+const ASAAS_API_KEY = process.env.ASAAS_API_KEY;
+
+// Criar instância do Axios com timeout de 60 segundos
+const asaasAxios: AxiosInstance = axios.create({
+  timeout: 60000,
+});
+
 export async function verificarPrimeiroPagamentoAssinatura(assinaturaId: string): Promise<{ pago: boolean, pagamento?: any }> {
     if (!ASAAS_API_KEY) throw new Error('Chave da API Asaas não configurada');
-    const resp = await axios.get(`${ASAAS_API_URL}/payments`, {
+    const resp = await asaasAxios.get(`${ASAAS_API_URL}/payments`, {
         params: { subscription: assinaturaId },
         headers: { access_token: ASAAS_API_KEY },
     });
@@ -15,7 +28,7 @@ export async function verificarPrimeiroPagamentoAssinatura(assinaturaId: string)
 
 export async function listarPagamentosDaAssinatura(assinaturaId: string): Promise<any[]> {
     if (!ASAAS_API_KEY) throw new Error('Chave da API Asaas não configurada');
-    const resp = await axios.get(`${ASAAS_API_URL}/payments`, {
+    const resp = await asaasAxios.get(`${ASAAS_API_URL}/payments`, {
         params: { subscription: assinaturaId },
         headers: { access_token: ASAAS_API_KEY },
     });
@@ -31,7 +44,7 @@ export async function temPendenciasNaAssinatura(assinaturaId: string): Promise<{
 
 export async function cancelarAssinaturaAsaas(assinaturaId: string): Promise<{ status: number, data?: any }> {
     if (!ASAAS_API_KEY) throw new Error('Chave da API Asaas não configurada');
-    const resp = await axios.delete(`${ASAAS_API_URL}/subscriptions/${assinaturaId}`, {
+    const resp = await asaasAxios.delete(`${ASAAS_API_URL}/subscriptions/${assinaturaId}`, {
         headers: { access_token: ASAAS_API_KEY }
     });
     return { status: resp.status, data: resp.data };
@@ -45,17 +58,11 @@ export async function criarAssinaturaAsaas({ customer, value, cycle = 'MONTHLY',
         description,
         billingType,
     };
-    const resp = await axios.post(`${ASAAS_API_URL}/subscriptions`, body, {
+    const resp = await asaasAxios.post(`${ASAAS_API_URL}/subscriptions`, body, {
         headers: { access_token: ASAAS_API_KEY }
     });
     return resp.data;
 }
-import axios from 'axios';
-import { configDotenv } from 'dotenv';
-configDotenv();
-
-const ASAAS_API_URL = process.env.ASAAS_BASE_URL || 'https://sandbox.asaas.com/api/v3';
-const ASAAS_API_KEY = process.env.ASAAS_API_KEY;
 
 export async function criarClienteAsaas({ nome, email, cpf, telefone }: { nome: string, email: string, cpf: string, telefone?: string }) {
     if (!ASAAS_API_KEY) throw new Error('Chave da API Asaas não configurada');
@@ -66,7 +73,7 @@ export async function criarClienteAsaas({ nome, email, cpf, telefone }: { nome: 
         personType: 'FISICA',
     };
     if (telefone) body.phone = telefone;
-    const resp = await axios.post(`${ASAAS_API_URL}/customers`, body, {
+    const resp = await asaasAxios.post(`${ASAAS_API_URL}/customers`, body, {
         headers: { access_token: ASAAS_API_KEY }
     });
     return resp.data;
@@ -76,7 +83,7 @@ export async function verificarAssinaturaPorCpf(cpf: string): Promise<{ assinatu
     if (!ASAAS_API_KEY) throw new Error('Chave da API Asaas não configurada');
 
     // Buscar cliente pelo CPF
-    const clientesResp = await axios.get(`${ASAAS_API_URL}/customers`, {
+    const clientesResp = await asaasAxios.get(`${ASAAS_API_URL}/customers`, {
         params: { cpfCnpj: cpf },
         headers: { access_token: ASAAS_API_KEY },
     });
@@ -85,7 +92,7 @@ export async function verificarAssinaturaPorCpf(cpf: string): Promise<{ assinatu
 
     // Buscar assinaturas do cliente
     const clienteId = clientes[0].id;
-    const assinaturasResp = await axios.get(`${ASAAS_API_URL}/subscriptions`, {
+    const assinaturasResp = await asaasAxios.get(`${ASAAS_API_URL}/subscriptions`, {
         params: { customer: clienteId },
         headers: { access_token: ASAAS_API_KEY },
     });
@@ -95,7 +102,7 @@ export async function verificarAssinaturaPorCpf(cpf: string): Promise<{ assinatu
     if (!assinaturaAtiva) return { assinaturaOk: false };
 
     // Buscar cobranças (payments) da assinatura ativa
-    const pagamentosResp = await axios.get(`${ASAAS_API_URL}/payments`, {
+    const pagamentosResp = await asaasAxios.get(`${ASAAS_API_URL}/payments`, {
         params: { subscription: assinaturaAtiva.id },
         headers: { access_token: ASAAS_API_KEY },
     });
@@ -123,7 +130,7 @@ export async function verificarAssinaturaPorCpf(cpf: string): Promise<{ assinatu
 export async function obterDetalhesPagamentoAssinatura(assinaturaId: string): Promise<any> {
     if (!ASAAS_API_KEY) throw new Error('Chave da API Asaas não configurada');
     if (!assinaturaId) throw new Error('assinaturaId obrigatório');
-    const resp = await axios.get(`${ASAAS_API_URL}/payments`, {
+    const resp = await asaasAxios.get(`${ASAAS_API_URL}/payments`, {
         params: { subscription: assinaturaId },
         headers: { access_token: ASAAS_API_KEY },
     });
@@ -253,7 +260,7 @@ export async function listarCobrancasAssinaturaAsaas(subscriptionId: string): Pr
     if (!ASAAS_API_KEY) throw new Error('Chave da API Asaas não configurada');
     if (!subscriptionId) throw new Error('subscriptionId obrigatório');
     
-    const resp = await axios.get(`${ASAAS_API_URL}/subscriptions/${subscriptionId}/payments`, {
+    const resp = await asaasAxios.get(`${ASAAS_API_URL}/subscriptions/${subscriptionId}/payments`, {
         headers: { access_token: ASAAS_API_KEY }
     });
     
@@ -294,7 +301,7 @@ export async function atualizarAssinaturaAsaas({
         body.nextDueDate = nextDueDate;
     }
     
-    const resp = await axios.put(`${ASAAS_API_URL}/subscriptions/${subscriptionId}`, body, {
+    const resp = await asaasAxios.put(`${ASAAS_API_URL}/subscriptions/${subscriptionId}`, body, {
         headers: { access_token: ASAAS_API_KEY }
     });
     
@@ -366,7 +373,7 @@ export async function atualizarCartaoAssinaturaAsaas({
         body.remoteIp = remoteIp;
     }
     
-    const resp = await axios.put(`${ASAAS_API_URL}/subscriptions/${subscriptionId}/creditCard`, body, {
+    const resp = await asaasAxios.put(`${ASAAS_API_URL}/subscriptions/${subscriptionId}/creditCard`, body, {
         headers: { access_token: ASAAS_API_KEY }
     });
     

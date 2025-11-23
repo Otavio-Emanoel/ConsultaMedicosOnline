@@ -159,7 +159,7 @@ export default function HistoricoConsultasPage() {
 
         // 3. Buscar todos os agendamentos do beneficiário (com timeout)
         const appointmentsController = new AbortController();
-        const appointmentsTimeout = setTimeout(() => appointmentsController.abort(), 15000); // Timeout de 15s
+        const appointmentsTimeout = setTimeout(() => appointmentsController.abort(), 60000); // Timeout de 60s
         
         let appointmentsRes;
         try {
