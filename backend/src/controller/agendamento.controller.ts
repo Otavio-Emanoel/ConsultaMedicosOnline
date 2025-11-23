@@ -389,6 +389,8 @@ export class AgendamentoController {
         from: a?.detail?.from || a?.from || null,
         to: a?.detail?.to || a?.to || null,
         specialty: a?.specialty?.name || a?.specialty?.description || a?.specialty?.title || null,
+        specialtyUuid: a?.specialty?.uuid || null,
+        specialtyObject: a?.specialty || null,
       }));
       return res.status(200).json({ count: mapped.length, appointments: mapped });
     } catch (error: any) {

@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { useSearchParams } from 'next/navigation';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { Card, CardHeader, CardBody } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
@@ -31,6 +32,9 @@ const STEPS = [
 // Será preenchido dinamicamente
 
 export default function Page() {
+  const searchParams = useSearchParams();
+  const specialtyUuidFromQuery = searchParams?.get('specialtyUuid') || '';
+  
   const [currentStep, setCurrentStep] = useState(1);
   const [formData, setFormData] = useState({
     specialty: '',
@@ -132,10 +136,26 @@ export default function Page() {
         // Processar especialidades
         const specialties = especialidadesData?.specialties || especialidadesData?.especialidades || [];
         if (Array.isArray(specialties)) {
-          setSpecialties(specialties.map((s: any) => ({
+          const mappedSpecialties = specialties.map((s: any) => ({
             uuid: s.uuid || s.id,
             name: s.name || s.description || s.title || 'Especialidade'
-          })));
+          }));
+          setSpecialties(mappedSpecialties);
+          
+          // Se há specialtyUuid na query, pré-selecionar a especialidade
+          if (specialtyUuidFromQuery && mounted) {
+            const specialtyFromQuery = mappedSpecialties.find(
+              (s) => s.uuid === specialtyUuidFromQuery
+            );
+            if (specialtyFromQuery) {
+              setSelectedSpecialtyUuid(specialtyFromQuery.uuid);
+              setFormData((prev) => ({
+                ...prev,
+                specialty: specialtyFromQuery.name,
+                specialtyUuid: specialtyFromQuery.uuid,
+              }));
+            }
+          }
         } else {
           setSpecialties([]);
         }
@@ -159,7 +179,7 @@ export default function Page() {
       mounted = false;
       controller.abort();
     };
-  }, []);
+  }, [specialtyUuidFromQuery]);
 
   // Buscar disponibilidade quando especialidade e data são selecionados
   useEffect(() => {

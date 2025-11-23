@@ -79,7 +79,60 @@ export default function DashboardPage() {
         
         if (mounted) {
           setData(json);
-          setLoading(false);
+          setLoading(false); // Libera UI rapidamente
+        }
+
+        // OTIMIZAÇÃO: Carregar consultas em background (não bloqueia UI)
+        // Similar ao padrão usado em encaminhamentos/page.tsx
+        if (mounted) {
+          const appointmentsController = new AbortController();
+          
+          // Timeout aumentado para 120 segundos para agendamentos
+          const appointmentsTimeoutId = setTimeout(() => {
+            appointmentsController.abort();
+          }, 120000);
+
+          fetch(`${apiBase}/agendamentos`, {
+            headers: { Authorization: `Bearer ${token}` },
+            signal: appointmentsController.signal,
+          })
+            .then((appointmentsRes) => {
+              clearTimeout(appointmentsTimeoutId);
+              if (!mounted || !appointmentsRes.ok) return;
+              
+              return appointmentsRes.json();
+            })
+            .then((appointmentsData) => {
+              if (!mounted) return;
+              
+              const appointmentsList = appointmentsData?.appointments || appointmentsData?.data || [];
+              
+              // Mapear agendamentos para formato esperado
+              const mappedAppointments = appointmentsList.map((apt: any) => ({
+                uuid: apt?.uuid || apt?.id || null,
+                status: apt?.status || null,
+                date: apt?.detail?.date || apt?.date || null,
+                from: apt?.detail?.from || apt?.from || null,
+                to: apt?.detail?.to || apt?.to || null,
+                specialty: apt?.specialty || (apt?.specialtyObject?.name || apt?.specialtyObject?.description || apt?.specialtyObject?.title) || null
+              }));
+
+              // Atualizar dados com consultas carregadas em background
+              setData((prevData) => {
+                if (!prevData) return prevData;
+                return {
+                  ...prevData,
+                  consultas: mappedAppointments
+                };
+              });
+            })
+            .catch((err: any) => {
+              clearTimeout(appointmentsTimeoutId);
+              if (err.name !== 'AbortError' && mounted) {
+                console.error('Erro ao carregar consultas em background:', err);
+                // Não atualiza estado se erro (mantém consultas vazias)
+              }
+            });
         }
       } catch (error: any) {
         // Ignora erro se foi cancelado (componente desmontou ou timeout)
@@ -116,17 +169,6 @@ export default function DashboardPage() {
   // Helpers
   const statusAssinatura = data?.statusAssinatura === 'ativa' ? 'Ativo' : 'Inativo';
   const dependentesCount = typeof data?.numeroDependentes === 'number' ? data.numeroDependentes : (data?.beneficiarios?.length || 0);
-  const consultasEsteMes = data?.consultas?.filter((c) => {
-    if (!c.date) return false;
-    const [dia, mes, ano] = c.date.split('/');
-    const dataConsulta = new Date(`${ano}-${mes}-${dia}`);
-    const hoje = new Date();
-    return (
-      dataConsulta.getMonth() === hoje.getMonth() &&
-      dataConsulta.getFullYear() === hoje.getFullYear() &&
-      c.status === 'SCHEDULED'
-    );
-  }).length || 0;
 
   // Próxima cobrança: usar campo proximaCobranca se existir
   let proximaFatura = null;
@@ -160,26 +202,6 @@ export default function DashboardPage() {
     })
     .slice(0, 2);
 
-  // Consultas recentes: status != CANCELED e data passada
-  const consultasRecentes = (data?.consultas || [])
-    .filter((c) => {
-      if (!c.date) return false;
-      const [dia, mes, ano] = c.date.split('/');
-      const dataConsulta = new Date(`${ano}-${mes}-${dia}`);
-      return (
-        c.status !== 'CANCELED' &&
-        dataConsulta < new Date(hoje.getFullYear(), hoje.getMonth(), hoje.getDate())
-      );
-    })
-    .sort((a, b) => {
-      // Mais recentes primeiro
-      const [da, ma, aa] = a.date.split('/');
-      const [db, mb, ab] = b.date.split('/');
-      return (
-        new Date(`${ab}-${mb}-${db}`).getTime() - new Date(`${aa}-${ma}-${da}`).getTime()
-      );
-    })
-    .slice(0, 3);
 
   if (loading) {
     return (
@@ -192,7 +214,7 @@ export default function DashboardPage() {
   return (
     <DashboardLayout title="Dashboard - Assinante">
       {/* Cards de Estatísticas */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-8">
         <Card>
           <CardBody>
             <div className="flex items-center justify-between">
@@ -249,23 +271,6 @@ export default function DashboardPage() {
           </CardBody>
         </Card>
 
-        <Card>
-          <CardBody>
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-gray-600 dark:text-gray-400 mb-1">
-                  Consultas este mês
-                </p>
-                <p className="text-2xl font-bold text-gray-900 dark:text-white">
-                  {consultasEsteMes}
-                </p>
-              </div>
-              <div className="w-12 h-12 bg-orange-100 dark:bg-slate-700 rounded-xl flex items-center justify-center">
-                <Calendar className="w-6 h-6 text-warning" />
-              </div>
-            </div>
-          </CardBody>
-        </Card>
       </div>
 
       {/* Ações Rápidas */}
@@ -332,7 +337,7 @@ export default function DashboardPage() {
         </CardBody>
       </Card>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      <div className="grid grid-cols-1 gap-6">
         {/* Próximas Consultas */}
         <Card>
           <CardHeader
@@ -383,55 +388,6 @@ export default function DashboardPage() {
                       Agendar agora
                     </Button>
                   </Link>
-                </div>
-              )}
-            </div>
-          </CardBody>
-        </Card>
-
-        {/* Histórico Recente */}
-        <Card>
-          <CardHeader
-            action={
-              <Link href="/consultas/historico">
-                <Button variant="ghost" size="sm">
-                  Ver histórico
-                </Button>
-              </Link>
-            }
-          >
-            Consultas Recentes
-          </CardHeader>
-          <CardBody>
-            <div className="space-y-4">
-              {consultasRecentes.length > 0 ? (
-                consultasRecentes.map((consulta) => (
-                  <div
-                    key={consulta.uuid}
-                    className="flex items-start justify-between p-4 bg-gray-50 dark:bg-gray-800/50 rounded-xl"
-                  >
-                    <div className="flex items-start space-x-3">
-                      <div className="w-10 h-10 bg-green-100 dark:bg-slate-700 rounded-lg flex items-center justify-center flex-shrink-0">
-                        <Stethoscope className="w-5 h-5 text-success" />
-                      </div>
-                      <div>
-                        <p className="font-medium text-gray-900 dark:text-white text-sm">
-                          {consulta.specialty}
-                        </p>
-                        <p className="text-xs text-gray-600 dark:text-gray-400">
-                          {consulta.date}
-                        </p>
-                      </div>
-                    </div>
-                    <Badge variant="success">Realizada</Badge>
-                  </div>
-                ))
-              ) : (
-                <div className="text-center py-8">
-                  <Calendar className="w-12 h-12 text-gray-400 mx-auto mb-3" />
-                  <p className="text-gray-600 dark:text-gray-400">
-                    Nenhuma consulta recente
-                  </p>
                 </div>
               )}
             </div>

@@ -2,7 +2,7 @@ import type { Request, Response } from 'express';
 import { getFirestore } from 'firebase-admin/firestore';
 import { firebaseApp } from '../config/firebase.js';
 import axios from 'axios';
-import { buscarBeneficiarioRapidocPorCpf, listarAgendamentosRapidoc } from '../services/rapidoc.service.js';
+import { buscarBeneficiarioRapidocPorCpf } from '../services/rapidoc.service.js';
 
 export class DashboardController {
   static async getDashboard(req: Request, res: Response) {
@@ -81,30 +81,12 @@ export class DashboardController {
       const rapidocResp = await rapidocPromise;
       const rapidoc = rapidocResp?.beneficiary || null;
 
-      // OTIMIZAÇÃO 3: Buscar agendamentos apenas uma vez (evitar chamada duplicada)
-      // Se tem UUID, usa UUID; caso contrário, tenta por CPF
-      let consultasPromise: Promise<any[]> = Promise.resolve([]);
-      if (rapidoc?.uuid) {
-        consultasPromise = listarAgendamentosRapidoc({ beneficiary: rapidoc.uuid }).catch(() => []);
-      } else if (uid) {
-        // Fallback apenas se não tiver UUID
-        consultasPromise = listarAgendamentosRapidoc({ cpf: uid }).catch(() => []);
-      }
+      // OTIMIZAÇÃO 3: Removida busca de agendamentos do dashboard
+      // Agendamentos agora são carregados separadamente no frontend via /agendamentos
+      // Isso evita que o dashboard trave esperando a API do Rapidoc (que pode demorar 50+ segundos)
 
-      // OTIMIZAÇÃO 4: Paralelizar consultas e faturas (que são independentes)
-      const [consultas, faturas] = await Promise.all([
-        consultasPromise,
-        asaasPromise
-      ]);
-
-      const consultasMapeadas = Array.isArray(consultas) ? consultas.map((a: any) => ({
-        uuid: a?.uuid || a?.id || null,
-        status: a?.status || null,
-        date: a?.detail?.date || a?.date || null,
-        from: a?.detail?.from || a?.from || null,
-        to: a?.detail?.to || a?.to || null,
-        specialty: a?.specialty?.name || a?.specialty?.description || a?.specialty?.title || null
-      })) : [];
+      // OTIMIZAÇÃO 4: Buscar apenas faturas (consultas removidas)
+      const faturas = await asaasPromise;
 
       // Status da assinatura (pode ser otimizado no futuro para chamada interna direta)
       let statusAssinatura = 'inativa';
@@ -136,7 +118,7 @@ export class DashboardController {
         assinaturas,
         beneficiarios,
         rapidoc,
-        consultas: consultasMapeadas,
+        consultas: [], // Removido: consultas agora são carregadas separadamente via /agendamentos
         faturas,
         statusAssinatura,
         proximaCobranca,

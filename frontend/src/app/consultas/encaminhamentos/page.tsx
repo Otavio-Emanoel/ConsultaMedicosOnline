@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { Card, CardBody } from '@/components/ui/Card';
 import { Badge } from '@/components/ui/Badge';
@@ -19,6 +20,7 @@ import {
   Clock,
   ChevronLeft,
   ChevronRight,
+  CalendarCheck,
 } from 'lucide-react';
 
 interface MedicalReferral {
@@ -45,105 +47,212 @@ interface MedicalReferral {
   updatedAt?: string;
 }
 
+interface Appointment {
+  uuid: string;
+  specialty?: string;
+  specialtyUuid?: string;
+  specialtyObject?: {
+    uuid?: string;
+    name?: string;
+  };
+  status?: string;
+  date?: string;
+  from?: string;
+  to?: string;
+}
+
 export default function EncaminhamentosPage() {
+  const router = useRouter();
   const [referrals, setReferrals] = useState<MedicalReferral[]>([]);
   const [allReferrals, setAllReferrals] = useState<MedicalReferral[]>([]);
+  const [appointments, setAppointments] = useState<Appointment[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadingAppointments, setLoadingAppointments] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [filterStatus, setFilterStatus] = useState('all');
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 15;
 
-  // Buscar encaminhamentos do backend - UMA ÚNICA CHAMADA usando CPF do token
+  // OTIMIZAÇÃO: Carregar encaminhamentos e agendamentos em paralelo, com timeouts maiores
   useEffect(() => {
     const controller = new AbortController();
     let mounted = true;
 
-    const loadReferrals = async () => {
+    const loadData = async () => {
       try {
         const apiBase = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:3000/api';
         const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
         
         if (!token) {
-          if (mounted) setLoading(false);
+          if (mounted) {
+            setLoading(false);
+            setLoadingAppointments(false);
+          }
           return;
         }
 
-        // UMA ÚNICA CHAMADA: Buscar encaminhamentos do usuário logado (usa CPF do token)
-        const referralsTimeout = setTimeout(() => controller.abort(), 60000); // Timeout de 60s
-        
-        let referralsRes;
+        // Timeout aumentado para 120 segundos
+        const timeoutId = setTimeout(() => {
+          if (mounted) {
+            controller.abort();
+          }
+        }, 120000);
+
         try {
-          referralsRes = await fetch(`${apiBase}/encaminhamentos/me`, {
+          // OTIMIZAÇÃO: Carregar encaminhamentos primeiro (liberar UI rapidamente)
+          // Depois carregar agendamentos em background (para verificar consultas agendadas)
+          
+          // 1. Carregar encaminhamentos primeiro
+          const referralsRes = await fetch(`${apiBase}/encaminhamentos/me`, {
             headers: { Authorization: `Bearer ${token}` },
             signal: controller.signal,
-          });
-          clearTimeout(referralsTimeout);
-        } catch (error: any) {
-          clearTimeout(referralsTimeout);
-          if (error.name === 'AbortError' || !mounted) return;
-          throw error;
-        }
+          }).catch(() => ({ ok: false }));
 
-        if (!mounted) return;
+          clearTimeout(timeoutId);
 
-        if (referralsRes.ok) {
-          const referralsData = await referralsRes.json();
-          const encaminhamentos = referralsData?.encaminhamentos || [];
-          
-          // Ordenar por data de criação (mais recentes primeiro)
-          const sorted = [...encaminhamentos].sort((a: MedicalReferral, b: MedicalReferral) => {
-            // Priorizar createdAt, depois updatedAt, depois date
-            const dateA = a.createdAt || a.updatedAt || a.date || '';
-            const dateB = b.createdAt || b.updatedAt || b.date || '';
-            
-            if (!dateA || !dateB) return 0;
-            
+          if (!mounted) return;
+
+          // Processar encaminhamentos imediatamente (libera UI)
+          if (referralsRes.ok) {
             try {
-              // Formato: dd/MM/yyyy HH:mm:ss ou dd/MM/yyyy
-              const parseDate = (dateStr: string) => {
-                const parts = dateStr.split(' ');
-                const datePart = parts[0]; // dd/MM/yyyy
-                const [day, month, year] = datePart.split('/');
-                return new Date(`${year}-${month}-${day}`);
-              };
+              const referralsData = await referralsRes.json();
+              const encaminhamentos = referralsData?.encaminhamentos || [];
               
-              const parsedA = parseDate(dateA);
-              const parsedB = parseDate(dateB);
-              return parsedB.getTime() - parsedA.getTime();
-            } catch {
-              return 0;
-            }
-          });
+              // Ordenar por data de criação (mais recentes primeiro)
+              const sorted = [...encaminhamentos].sort((a: MedicalReferral, b: MedicalReferral) => {
+                const dateA = a.createdAt || a.updatedAt || a.date || '';
+                const dateB = b.createdAt || b.updatedAt || b.date || '';
+                
+                if (!dateA || !dateB) return 0;
+                
+                try {
+                  const parseDate = (dateStr: string) => {
+                    const parts = dateStr.split(' ');
+                    const datePart = parts[0]; // dd/MM/yyyy
+                    const [day, month, year] = datePart.split('/');
+                    return new Date(`${year}-${month}-${day}`);
+                  };
+                  
+                  const parsedA = parseDate(dateA);
+                  const parsedB = parseDate(dateB);
+                  return parsedB.getTime() - parsedA.getTime();
+                } catch {
+                  return 0;
+                }
+              });
 
-          if (mounted) {
-            setAllReferrals(sorted);
-            setReferrals(sorted);
+              if (mounted) {
+                setAllReferrals(sorted);
+                setReferrals(sorted);
+                setLoading(false); // Liberar UI assim que encaminhamentos carregarem
+              }
+            } catch (err) {
+              console.error('Erro ao processar encaminhamentos:', err);
+              if (mounted) {
+                setAllReferrals([]);
+                setReferrals([]);
+                setLoading(false);
+              }
+            }
+          } else {
+            if (mounted) {
+              setAllReferrals([]);
+              setReferrals([]);
+              setLoading(false);
+            }
           }
-        } else {
-          // Se der erro, retornar array vazio (encaminhamentos são opcionais)
+
+          // 2. Carregar agendamentos em background (não bloqueia UI)
+          // Timeout aumentado para 120 segundos para agendamentos
+          const appointmentsTimeoutId = setTimeout(() => {
+            if (mounted) {
+              setLoadingAppointments(false);
+            }
+          }, 120000);
+
+          setLoadingAppointments(true);
+          
+          try {
+            const appointmentsRes = await fetch(`${apiBase}/agendamentos`, {
+              headers: { Authorization: `Bearer ${token}` },
+              signal: controller.signal,
+            }).catch(() => ({ ok: false }));
+
+            clearTimeout(appointmentsTimeoutId);
+
+            if (!mounted) return;
+
+            if (appointmentsRes.ok) {
+              try {
+                const appointmentsData = await appointmentsRes.json();
+                const appointmentsList = appointmentsData?.appointments || appointmentsData?.data || [];
+                
+                // Mapear agendamentos para formato simplificado
+                // O backend já retorna specialtyUuid e specialtyObject, então usamos diretamente
+                const mappedAppointments = appointmentsList.map((apt: any) => ({
+                  uuid: apt.uuid || apt.id || '',
+                  specialty: apt.specialty || (apt.specialtyObject?.name || apt.specialtyObject?.description || apt.specialtyObject?.title) || '',
+                  specialtyUuid: apt.specialtyUuid || apt.specialtyObject?.uuid || apt.specialty?.uuid || '',
+                  specialtyObject: apt.specialtyObject || apt.specialty || null,
+                  status: apt.status || '',
+                  date: apt.date || apt.detail?.date || '',
+                  from: apt.from || apt.detail?.from || '',
+                  to: apt.to || apt.detail?.to || '',
+                }));
+
+                if (mounted) {
+                  setAppointments(mappedAppointments);
+                }
+              } catch (err) {
+                console.error('Erro ao processar agendamentos:', err);
+                if (mounted) {
+                  setAppointments([]);
+                }
+              }
+            } else {
+              if (mounted) {
+                setAppointments([]);
+              }
+            }
+          } catch (err: any) {
+            clearTimeout(appointmentsTimeoutId);
+            if (err.name !== 'AbortError' && mounted) {
+              console.error('Erro ao carregar agendamentos:', err);
+              setAppointments([]);
+            }
+          } finally {
+            if (mounted) {
+              setLoadingAppointments(false);
+            }
+          }
+        } catch (error: any) {
+          clearTimeout(timeoutId);
+          if (error.name === 'AbortError' || !mounted) return;
+          
+          console.error('Erro ao carregar dados:', error);
           if (mounted) {
+            setLoading(false);
+            setLoadingAppointments(false);
             setAllReferrals([]);
             setReferrals([]);
+            setAppointments([]);
           }
         }
       } catch (error: any) {
         if (error.name === 'AbortError' || !mounted) return;
         
-        console.error('Erro ao carregar encaminhamentos:', error);
-        // Em caso de erro, retornar array vazio (encaminhamentos são opcionais)
-        if (mounted) {
-          setAllReferrals([]);
-          setReferrals([]);
-        }
-      } finally {
+        console.error('Erro ao carregar dados:', error);
         if (mounted) {
           setLoading(false);
+          setLoadingAppointments(false);
+          setAllReferrals([]);
+          setReferrals([]);
+          setAppointments([]);
         }
       }
     };
 
-    loadReferrals();
+    loadData();
 
     // Cleanup: cancela requisições se componente desmontar
     return () => {
@@ -184,6 +293,70 @@ export default function EncaminhamentosPage() {
   const endIndex = startIndex + itemsPerPage;
   const currentReferrals = referrals.slice(startIndex, endIndex);
 
+  // Verificar se há consulta agendada para uma especialidade
+  const findScheduledAppointment = (specialtyUuid?: string, specialtyName?: string): Appointment | null => {
+    if (!specialtyUuid && !specialtyName) return null;
+    
+    // Buscar agendamento que corresponda à especialidade (por UUID ou nome)
+    const appointment = appointments.find((apt) => {
+      // Verificar por UUID da especialidade (prioridade)
+      if (specialtyUuid && apt.specialtyUuid) {
+        return apt.specialtyUuid === specialtyUuid;
+      }
+      
+      // Verificar por UUID no objeto specialty
+      if (specialtyUuid && apt.specialtyObject?.uuid) {
+        return apt.specialtyObject.uuid === specialtyUuid;
+      }
+      
+      // Verificar por nome da especialidade (comparação case-insensitive e removendo espaços extras)
+      if (specialtyName && apt.specialty) {
+        const appointmentSpecialty = apt.specialty.toLowerCase().trim();
+        const referralSpecialty = specialtyName.toLowerCase().trim();
+        return appointmentSpecialty === referralSpecialty;
+      }
+      
+      return false;
+    });
+
+    // Retornar apenas se o agendamento estiver agendado ou não finalizado
+    if (appointment && appointment.status) {
+      const statusUpper = appointment.status.toUpperCase();
+      // Considerar agendado se status for 'SCHEDULED', 'UNFINISHED', 'PENDING', 'CONFIRMED' ou similar
+      if (statusUpper === 'SCHEDULED' || 
+          statusUpper === 'UNFINISHED' || 
+          statusUpper === 'PENDING' ||
+          statusUpper === 'CONFIRMED' ||
+          statusUpper.includes('SCHEDULED') ||
+          statusUpper.includes('PENDING')) {
+        return appointment;
+      }
+    }
+
+    return null;
+  };
+
+  // Função para lidar com ação do encaminhamento
+  const handleReferralAction = (referral: MedicalReferral) => {
+    const specialtyUuid = referral.specialty?.uuid;
+    const specialtyName = referral.specialty?.name;
+    
+    // Verificar se há consulta agendada
+    const scheduledAppointment = findScheduledAppointment(specialtyUuid, specialtyName);
+    
+    if (scheduledAppointment) {
+      // Se tem consulta agendada, redirecionar para histórico (onde pode ver detalhes)
+      router.push('/consultas/historico');
+    } else {
+      // Se não tem, redirecionar para agendamento com especialidade pré-selecionada
+      if (specialtyUuid) {
+        router.push(`/consultas/agendar?specialtyUuid=${specialtyUuid}`);
+      } else {
+        router.push('/consultas/agendar');
+      }
+    }
+  };
+
   const getReferralStatusBadge = (status?: string) => {
     if (!status) return null;
     const statusUpper = status.toUpperCase();
@@ -206,12 +379,18 @@ export default function EncaminhamentosPage() {
     }
   };
 
+  // Mostrar loading apenas para encaminhamentos (agendamentos carregam em background)
   if (loading) {
     return (
       <DashboardLayout title="Encaminhamentos">
         <div className="flex items-center justify-center py-20">
           <Loader2 className="w-8 h-8 animate-spin text-primary" />
-          <span className="ml-3 text-gray-600 dark:text-gray-400">Carregando encaminhamentos...</span>
+          <span className="ml-3 text-gray-600 dark:text-gray-400">
+            Carregando encaminhamentos...
+            {loadingAppointments && (
+              <span className="block text-xs text-gray-500 mt-1">Verificando consultas agendadas...</span>
+            )}
+          </span>
         </div>
       </DashboardLayout>
     );
@@ -322,18 +501,44 @@ export default function EncaminhamentosPage() {
                     </div>
 
                     {/* Ações */}
-                    {urlPath && (
-                      <div className="flex items-center">
+                    <div className="flex items-center gap-2">
+                      {urlPath && (
                         <Button
-                          variant="primary"
+                          variant="outline"
                           size="sm"
                           onClick={() => window.open(urlPath, '_blank')}
                         >
                           <Download className="w-4 h-4 mr-2" />
                           Ver Arquivo
                         </Button>
-                      </div>
-                    )}
+                      )}
+                      {(() => {
+                        const specialtyUuid = referral.specialty?.uuid;
+                        const specialtyName = referral.specialty?.name;
+                        const hasScheduledAppointment = findScheduledAppointment(specialtyUuid, specialtyName) !== null;
+                        
+                        return (
+                          <Button
+                            variant="primary"
+                            size="sm"
+                            onClick={() => handleReferralAction(referral)}
+                            disabled={loadingAppointments}
+                          >
+                            {hasScheduledAppointment ? (
+                              <>
+                                <CalendarCheck className="w-4 h-4 mr-2" />
+                                Ver Consulta Agendada
+                              </>
+                            ) : (
+                              <>
+                                <Calendar className="w-4 h-4 mr-2" />
+                                Agendar Consulta
+                              </>
+                            )}
+                          </Button>
+                        );
+                      })()}
+                    </div>
                   </div>
                 </CardBody>
               </Card>
