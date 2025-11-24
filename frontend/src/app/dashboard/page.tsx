@@ -98,12 +98,17 @@ export default function DashboardPage() {
           })
             .then((appointmentsRes) => {
               clearTimeout(appointmentsTimeoutId);
-              if (!mounted || !appointmentsRes.ok) return;
+              if (!mounted) return;
+              
+              if (!appointmentsRes.ok) {
+                console.error('Erro ao buscar agendamentos:', appointmentsRes.status, appointmentsRes.statusText);
+                return null;
+              }
               
               return appointmentsRes.json();
             })
             .then((appointmentsData) => {
-              if (!mounted) return;
+              if (!mounted || !appointmentsData) return;
               
               const appointmentsList = appointmentsData?.appointments || appointmentsData?.data || [];
               
@@ -116,6 +121,11 @@ export default function DashboardPage() {
                 to: apt?.detail?.to || apt?.to || null,
                 specialty: apt?.specialty || (apt?.specialtyObject?.name || apt?.specialtyObject?.description || apt?.specialtyObject?.title) || null
               }));
+
+              // Log apenas em desenvolvimento para debug
+              if (process.env.NODE_ENV === 'development') {
+                console.log('Consultas carregadas:', mappedAppointments.length, mappedAppointments);
+              }
 
               // Atualizar dados com consultas carregadas em background
               setData((prevData) => {
@@ -182,23 +192,76 @@ export default function DashboardPage() {
 
   // Próximas consultas: status SCHEDULED e data futura
   const hoje = new Date();
+  hoje.setHours(0, 0, 0, 0); // Zerar horas para comparação apenas de data
+  
   const proximasConsultas = (data?.consultas || [])
     .filter((c) => {
       if (!c.date) return false;
-      const [dia, mes, ano] = c.date.split('/');
-      const dataConsulta = new Date(`${ano}-${mes}-${dia}`);
-      return (
-        c.status === 'SCHEDULED' &&
-        dataConsulta >= new Date(hoje.getFullYear(), hoje.getMonth(), hoje.getDate())
-      );
+      
+      // Aceitar status SCHEDULED (case insensitive) ou outros status de consulta agendada
+      // Status válidos: SCHEDULED, scheduled, AGENDADA, etc.
+      const statusUpper = c.status ? String(c.status).toUpperCase() : '';
+      const statusValidos = ['SCHEDULED', 'AGENDADA', 'AGENDADO', 'CONFIRMED', 'CONFIRMADA'];
+      
+      // Se tiver status, verificar se é válido
+      if (c.status && !statusValidos.includes(statusUpper)) {
+        return false; // Status inválido, pular esta consulta
+      }
+      // Se não tiver status, considerar como agendada (para compatibilidade com dados antigos)
+      
+      // Tentar diferentes formatos de data
+      let dataConsulta: Date | null = null;
+      
+      // Formato dd/MM/yyyy
+      if (c.date.includes('/')) {
+        const partes = c.date.split('/');
+        if (partes.length === 3) {
+          const [dia, mes, ano] = partes;
+          dataConsulta = new Date(parseInt(ano), parseInt(mes) - 1, parseInt(dia));
+        }
+      }
+      // Formato yyyy-MM-dd
+      else if (c.date.includes('-')) {
+        const partes = c.date.split('-');
+        if (partes.length === 3) {
+          const [ano, mes, dia] = partes;
+          dataConsulta = new Date(parseInt(ano), parseInt(mes) - 1, parseInt(dia));
+        }
+      }
+      
+      if (!dataConsulta || isNaN(dataConsulta.getTime())) {
+        console.warn('Data inválida na consulta:', c.date, c);
+        return false;
+      }
+      
+      dataConsulta.setHours(0, 0, 0, 0);
+      return dataConsulta >= hoje;
     })
     .sort((a, b) => {
       // Mais próximas primeiro
-      const [da, ma, aa] = a.date.split('/');
-      const [db, mb, ab] = b.date.split('/');
-      return (
-        new Date(`${aa}-${ma}-${da}`).getTime() - new Date(`${ab}-${mb}-${db}`).getTime()
-      );
+      let dataA: Date | null = null;
+      let dataB: Date | null = null;
+      
+      // Parse data A
+      if (a.date.includes('/')) {
+        const [da, ma, aa] = a.date.split('/');
+        dataA = new Date(parseInt(aa), parseInt(ma) - 1, parseInt(da));
+      } else if (a.date.includes('-')) {
+        const [aa, ma, da] = a.date.split('-');
+        dataA = new Date(parseInt(aa), parseInt(ma) - 1, parseInt(da));
+      }
+      
+      // Parse data B
+      if (b.date.includes('/')) {
+        const [db, mb, ab] = b.date.split('/');
+        dataB = new Date(parseInt(ab), parseInt(mb) - 1, parseInt(db));
+      } else if (b.date.includes('-')) {
+        const [ab, mb, db] = b.date.split('-');
+        dataB = new Date(parseInt(ab), parseInt(mb) - 1, parseInt(db));
+      }
+      
+      if (!dataA || !dataB) return 0;
+      return dataA.getTime() - dataB.getTime();
     })
     .slice(0, 2);
 
@@ -364,14 +427,19 @@ export default function DashboardPage() {
                     </div>
                     <div className="flex-1 min-w-0">
                       <p className="font-medium text-gray-900 dark:text-white">
-                        {consulta.specialty}
+                        {consulta.specialty || 'Consulta agendada'}
                       </p>
                       {/* <p className="text-sm text-gray-600 dark:text-gray-400">Dr. Nome</p> */}
                       <div className="flex items-center mt-2 text-sm text-gray-500">
                         <Calendar className="w-4 h-4 mr-1" />
-                        {consulta.date}
-                        <Clock className="w-4 h-4 ml-3 mr-1" />
-                        {consulta.from}
+                        {consulta.date || 'Data não informada'}
+                        {consulta.from && (
+                          <>
+                            <Clock className="w-4 h-4 ml-3 mr-1" />
+                            {consulta.from}
+                            {consulta.to && ` - ${consulta.to}`}
+                          </>
+                        )}
                       </div>
                     </div>
                     <Badge variant="info">Agendado</Badge>
