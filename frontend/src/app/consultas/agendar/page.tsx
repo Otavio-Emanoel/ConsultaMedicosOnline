@@ -20,11 +20,10 @@ import {
 
 const STEPS = [
   { id: 1, title: 'Especialidade', icon: Stethoscope },
-  { id: 2, title: 'Data', icon: Calendar },
-  { id: 3, title: 'Horário', icon: Clock },
-  { id: 4, title: 'Paciente', icon: User },
-  { id: 5, title: 'Observações', icon: FileText },
-  { id: 6, title: 'Confirmação', icon: CheckCircle },
+  { id: 2, title: 'Horário', icon: Clock },
+  { id: 3, title: 'Paciente', icon: User },
+  { id: 4, title: 'Observações', icon: FileText },
+  { id: 5, title: 'Confirmação', icon: CheckCircle },
 ];
 
 // Será preenchido dinamicamente
@@ -52,6 +51,12 @@ function AgendarContent() {
   const [loadingSpecialties, setLoadingSpecialties] = useState(false);
   const [loadingPatients, setLoadingPatients] = useState(false);
   const [loadingTimes, setLoadingTimes] = useState(false);
+  
+  // Estado para o mês/ano selecionado (formato: YYYY-MM)
+  const [selectedMonth, setSelectedMonth] = useState<string>(() => {
+    const now = new Date();
+    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+  });
 
 
   // Buscar apenas o necessário: CPF, lista de pacientes e especialidades
@@ -181,9 +186,9 @@ function AgendarContent() {
     };
   }, [specialtyUuidFromQuery]);
 
-  // Buscar disponibilidade quando especialidade e data são selecionados
+  // Buscar disponibilidade quando especialidade e mês são selecionados
   useEffect(() => {
-    if (!selectedSpecialtyUuid || !formData.date || currentStep !== 3) return;
+    if (!selectedSpecialtyUuid || currentStep !== 2) return;
     
     const apiBase = process.env.NEXT_PUBLIC_API_BASE_URL;
     const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
@@ -191,14 +196,13 @@ function AgendarContent() {
 
     setLoadingTimes(true);
     
-    // Converter data de yyyy-MM-dd para dd/MM/yyyy
-    const [year, month, day] = formData.date.split('-');
-    const dateInitial = `${day}/${month}/${year}`;
+    // Calcular primeiro e último dia do mês selecionado
+    const [year, month] = selectedMonth.split('-');
+    const dateInitial = `01/${month}/${year}`;
     
-    // Calcular data final (7 dias após a data inicial)
-    const dateObj = new Date(formData.date);
-    dateObj.setDate(dateObj.getDate() + 7);
-    const dateFinal = `${String(dateObj.getDate()).padStart(2, '0')}/${String(dateObj.getMonth() + 1).padStart(2, '0')}/${dateObj.getFullYear()}`;
+    // Último dia do mês
+    const lastDay = new Date(parseInt(year), parseInt(month), 0).getDate();
+    const dateFinal = `${String(lastDay).padStart(2, '0')}/${month}/${year}`;
 
     fetch(`${apiBase}/agendamentos/disponibilidade?specialtyUuid=${selectedSpecialtyUuid}&dateInitial=${dateInitial}&dateFinal=${dateFinal}`, {
       headers: { Authorization: `Bearer ${token}` },
@@ -256,7 +260,7 @@ function AgendarContent() {
         setAvailableSlots([]);
         setLoadingTimes(false);
       });
-  }, [selectedSpecialtyUuid, formData.date, currentStep]);
+  }, [selectedSpecialtyUuid, selectedMonth, currentStep]);
 
   const handleNext = () => {
     if (currentStep < STEPS.length) {
@@ -546,84 +550,140 @@ function AgendarContent() {
               </div>
             )}
 
-            {/* Step 2: Data */}
+            {/* Step 2: Horário */}
             {currentStep === 2 && (
-              <div className="space-y-4">
-                <p className="text-gray-600 dark:text-gray-400 mb-4">
-                  Escolha a data da consulta
-                </p>
-                <Input
-                  type="date"
-                  label="Data da Consulta"
-                  value={formData.date}
-                  onChange={(e) =>
-                    setFormData({ ...formData, date: e.target.value })
-                  }
-                  min={new Date().toISOString().split('T')[0]}
-                />
-                <div className="bg-blue-50 dark:bg-blue-900/20 p-4 rounded-xl">
-                  <p className="text-sm text-blue-800 dark:text-blue-300">
-                    <strong>Dica:</strong> Consultas podem ser agendadas com
-                    até 30 dias de antecedência.
+              <div className="space-y-6">
+                <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 mb-4">
+                  <p className="text-gray-600 dark:text-gray-400">
+                    Selecione o horário disponível
                   </p>
-                </div>
-              </div>
-            )}
-
-            {/* Step 3: Horário */}
-            {currentStep === 3 && (
-              <div className="space-y-4">
-                <p className="text-gray-600 dark:text-gray-400 mb-4">
-                  Selecione o horário disponível
-                </p>
-                {loadingTimes ? (
-                  <div className="text-center text-gray-400">Carregando horários disponíveis...</div>
-                ) : availableSlots.length === 0 ? (
-                  <div className="text-center text-gray-500 dark:text-gray-400">
-                    Nenhum horário disponível para esta especialidade e data. Tente selecionar outra data.
+                  <div className="flex items-center gap-3">
+                    <label className="text-sm font-medium text-gray-700 dark:text-gray-300 whitespace-nowrap">
+                      Mês/Ano:
+                    </label>
+                    <Input
+                      type="month"
+                      value={selectedMonth}
+                      onChange={(e) => setSelectedMonth(e.target.value)}
+                      className="w-auto min-w-[160px]"
+                    />
                   </div>
-                ) : (
-                  <div className="grid grid-cols-4 md:grid-cols-6 gap-3">
-                    {availableSlots
-                      .filter((slot) => {
-                        // Filtrar slots pela data selecionada
-                        if (!formData.date || !slot.date) return true;
-                        // Converter slot.date (dd/MM/yyyy) para comparar com formData.date (yyyy-MM-dd)
-                        if (slot.date.includes('/')) {
-                          const [d, m, y] = slot.date.split('/');
-                          const slotDateFormatted = `${y}-${m.padStart(2, '0')}-${d.padStart(2, '0')}`;
-                          return slotDateFormatted === formData.date;
+                </div>
+                
+                {loadingTimes ? (
+                  <div className="text-center text-gray-400 py-8">
+                    Carregando horários disponíveis...
+                  </div>
+                ) : availableSlots.length === 0 ? (
+                  <div className="text-center text-gray-500 dark:text-gray-400 py-8">
+                    Nenhum horário disponível para esta especialidade no mês selecionado. Tente selecionar outro mês.
+                  </div>
+                ) : (() => {
+                  // Data de hoje (sem horas, apenas data)
+                  const today = new Date();
+                  today.setHours(0, 0, 0, 0);
+                  
+                  // Agrupar slots por dia
+                  const slotsByDay: { [key: string]: Array<{ uuid: string; date: string; from: string; to: string }> } = {};
+                  
+                  availableSlots.forEach((slot) => {
+                    if (slot.date) {
+                      // Normalizar formato de data para chave (dd/MM/yyyy)
+                      let dateKey = slot.date;
+                      if (!dateKey.includes('/')) {
+                        // Se vier em outro formato, tentar converter
+                        const dateObj = new Date(dateKey);
+                        if (!isNaN(dateObj.getTime())) {
+                          dateKey = `${String(dateObj.getDate()).padStart(2, '0')}/${String(dateObj.getMonth() + 1).padStart(2, '0')}/${dateObj.getFullYear()}`;
                         }
-                        return slot.date === formData.date;
-                      })
-                      .map((slot) => {
-                        const timeLabel = slot.from || 'Horário';
+                      }
+                      
+                      // Verificar se a data não é anterior a hoje
+                      const [dayNum, monthNum, yearNum] = dateKey.split('/').map(Number);
+                      const slotDate = new Date(yearNum, monthNum - 1, dayNum);
+                      slotDate.setHours(0, 0, 0, 0);
+                      
+                      // Filtrar apenas datas futuras ou hoje
+                      if (slotDate >= today) {
+                        if (!slotsByDay[dateKey]) {
+                          slotsByDay[dateKey] = [];
+                        }
+                        slotsByDay[dateKey].push(slot);
+                      }
+                    }
+                  });
+                  
+                  // Ordenar dias
+                  const sortedDays = Object.keys(slotsByDay).sort((a, b) => {
+                    const [d1, m1, y1] = a.split('/').map(Number);
+                    const [d2, m2, y2] = b.split('/').map(Number);
+                    const date1 = new Date(y1, m1 - 1, d1);
+                    const date2 = new Date(y2, m2 - 1, d2);
+                    return date1.getTime() - date2.getTime();
+                  });
+                  
+                  return (
+                    <div className="space-y-6">
+                      {sortedDays.map((day) => {
+                        const slots = slotsByDay[day];
+                        const [dayNum, monthNum, yearNum] = day.split('/');
+                        const dateObj = new Date(parseInt(yearNum), parseInt(monthNum) - 1, parseInt(dayNum));
+                        const dayName = dateObj.toLocaleDateString('pt-BR', { weekday: 'long' });
+                        
                         return (
-                          <button
-                            key={slot.uuid}
-                            onClick={() => setFormData({ 
-                              ...formData, 
-                              time: timeLabel,
-                              availabilityUuid: slot.uuid
-                            })}
-                            className={`p-3 rounded-lg border-2 transition-all font-medium ${
-                              formData.availabilityUuid === slot.uuid
-                                ? 'border-primary bg-primary text-white'
-                                : 'border-gray-200 dark:border-gray-700 hover:border-primary/50'
-                            }`}
-                            title={slot.to ? `${slot.from} - ${slot.to}` : slot.from}
-                          >
-                            {timeLabel}
-                          </button>
+                          <div key={day} className="border border-gray-200 dark:border-gray-700 rounded-xl p-4">
+                            <div className="mb-3">
+                              <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
+                                {day} - {dayName}
+                              </h3>
+                              <p className="text-sm text-gray-500 dark:text-gray-400">
+                                {slots.length} {slots.length === 1 ? 'horário disponível' : 'horários disponíveis'}
+                              </p>
+                            </div>
+                            <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 gap-3">
+                              {slots
+                                .sort((a, b) => {
+                                  // Ordenar por horário
+                                  const timeA = a.from || '';
+                                  const timeB = b.from || '';
+                                  return timeA.localeCompare(timeB);
+                                })
+                                .map((slot) => {
+                                  const timeLabel = slot.from || 'Horário';
+                                  return (
+                                    <button
+                                      key={slot.uuid}
+                                      onClick={() => {
+                                        setFormData({ 
+                                          ...formData, 
+                                          time: timeLabel,
+                                          availabilityUuid: slot.uuid,
+                                          date: day
+                                        });
+                                      }}
+                                      className={`p-3 rounded-lg border-2 transition-all font-medium text-sm ${
+                                        formData.availabilityUuid === slot.uuid
+                                          ? 'border-primary bg-primary text-white'
+                                          : 'border-gray-200 dark:border-gray-700 hover:border-primary/50'
+                                      }`}
+                                      title={slot.to ? `${slot.from} - ${slot.to}` : slot.from}
+                                    >
+                                      {timeLabel}
+                                    </button>
+                                  );
+                                })}
+                            </div>
+                          </div>
                         );
                       })}
-                  </div>
-                )}
+                    </div>
+                  );
+                })()}
               </div>
             )}
 
-            {/* Step 4: Paciente */}
-            {currentStep === 4 && (
+            {/* Step 3: Paciente */}
+            {currentStep === 3 && (
               <div className="space-y-4">
                 <p className="text-gray-600 dark:text-gray-400 mb-4">
                   Para quem é a consulta?
@@ -666,8 +726,8 @@ function AgendarContent() {
               </div>
             )}
 
-            {/* Step 5: Observações */}
-            {currentStep === 5 && (
+            {/* Step 4: Observações */}
+            {currentStep === 4 && (
               <div className="space-y-4">
                 <p className="text-gray-600 dark:text-gray-400 mb-4">
                   Adicione informações importantes (opcional)
@@ -689,8 +749,8 @@ function AgendarContent() {
               </div>
             )}
 
-            {/* Step 6: Confirmação */}
-            {currentStep === 6 && (
+            {/* Step 5: Confirmação */}
+            {currentStep === 5 && (
               <div className="space-y-6">
                 <div className="bg-green-50 dark:bg-slate-800 p-6 rounded-xl text-center">
                   <CheckCircle className="w-16 h-16 text-success mx-auto mb-4" />
@@ -723,11 +783,7 @@ function AgendarContent() {
                       </span>
                     </div>
                     <span className="font-medium text-gray-900 dark:text-white">
-                      {formData.date
-                        ? new Date(formData.date + 'T00:00:00').toLocaleDateString(
-                            'pt-BR'
-                          )
-                        : '-'}
+                      {formData.date || '-'}
                     </span>
                   </div>
 
@@ -789,9 +845,8 @@ function AgendarContent() {
                   onClick={handleNext}
                   disabled={
                     (currentStep === 1 && !formData.specialtyUuid) ||
-                    (currentStep === 2 && !formData.date) ||
-                    (currentStep === 3 && !formData.availabilityUuid) ||
-                    (currentStep === 4 && !formData.patient)
+                    (currentStep === 2 && !formData.availabilityUuid) ||
+                    (currentStep === 3 && !formData.patient)
                   }
                 >
                   Próximo
