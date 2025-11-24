@@ -39,6 +39,7 @@ const subscriberMenuItems = [
     href: '/consultas',
     subItems: [
       { label: 'Agendar', href: '/consultas/agendar' },
+      { label: 'Agendamentos', href: '/consultas/agendamentos' },
       { label: 'Histórico', href: '/consultas/historico' },
       { label: 'Atendimento Imediato', href: '/consultas/imediato' },
       { label: 'Encaminhamentos', href: '/consultas/encaminhamentos' },
@@ -59,6 +60,7 @@ const dependentMenuItems = [
     href: '/consultas',
     subItems: [
       { label: 'Agendar', href: '/consultas/agendar' },
+      { label: 'Agendamentos', href: '/consultas/agendamentos' },
       { label: 'Histórico', href: '/consultas/historico' },
       { label: 'Atendimento Imediato', href: '/consultas/imediato' },
       { label: 'Encaminhamentos', href: '/consultas/encaminhamentos' },
