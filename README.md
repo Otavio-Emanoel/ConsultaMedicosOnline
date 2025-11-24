@@ -79,8 +79,18 @@ npm install
 Variáveis de ambiente (backend/.env):
 
 ```env
+FIREBASE_TYPE=service_account
+FIREBASE_PROJECT_ID=xxxxx
+FIREBASE_PRIVATE_KEY_ID=
+FIREBASE_PRIVATE_KEY="-----BEGIN PRIVATE KEY-----\n...\n-----END PRIVATE KEY-----\n"
+FIREBASE_CLIENT_EMAIL=xxxxx@xxxxx.iam.gserviceaccount.com
+FIREBASE_CLIENT_ID=
+FIREBASE_AUTH_URI=https://accounts.google.com/o/oauth2/auth
+FIREBASE_TOKEN_URI=https://oauth2.googleapis.com/token
+FIREBASE_AUTH_PROVIDER_X509_CERT_URL=https://www.googleapis.com/oauth2/v1/certs
+FIREBASE_CLIENT_X509_CERT_URL=
+FIREBASE_UNIVERSE_DOMAIN=googleapis.com
 PORT=3000
-FIREBASE_CREDENTIALS_FILE=./consulta-medicos-online-FIREBASE_CREDENTIALS_FILE.json
 FIREBASE_WEB_API_KEY=xxxxx
 
 # Rapidoc

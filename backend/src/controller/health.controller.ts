@@ -2,11 +2,11 @@ import type { Request, Response } from 'express';
 import { db, firebaseApp } from '../config/firebase.js';
 
 export async function getHealth(_req: Request, res: Response) {
-  const requiredEnv = ['FIREBASE_CREDENTIALS_FILE'];
+  const requiredEnv = ['FIREBASE_PROJECT_ID', 'FIREBASE_CLIENT_EMAIL', 'FIREBASE_PRIVATE_KEY'];
   const present = requiredEnv.filter((v) => !!process.env[v as keyof NodeJS.ProcessEnv]);
   const missing = requiredEnv.filter((v) => !process.env[v as keyof NodeJS.ProcessEnv]);
-  const usingFile = !!process.env.FIREBASE_CREDENTIALS_FILE;
-  const usingADC = !usingFile && missing.length > 0 && !!process.env.GOOGLE_APPLICATION_CREDENTIALS;
+  const usingEnvCreds = missing.length === 0;
+  const usingADC = !usingEnvCreds && !!process.env.GOOGLE_APPLICATION_CREDENTIALS;
 
   try {
     const collections = await db.listCollections();
@@ -18,7 +18,7 @@ export async function getHealth(_req: Request, res: Response) {
       env: {
         present,
         missing,
-        usingFile,
+        usingEnvCreds,
         usingADC,
         googleAppCred: process.env.GOOGLE_APPLICATION_CREDENTIALS || null,
       },
@@ -31,7 +31,7 @@ export async function getHealth(_req: Request, res: Response) {
       env: {
         present,
         missing,
-        usingFile,
+        usingEnvCreds,
         usingADC,
         googleAppCred: process.env.GOOGLE_APPLICATION_CREDENTIALS || null,
       },
