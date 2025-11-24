@@ -193,40 +193,17 @@ export default function HistoricoConsultasPage() {
             const specialtyName = apt.specialty?.name || 'Especialidade não informada';
             const patientName = apt.beneficiary?.name || 'Você';
             
-            // Converter status da API para o formato da interface
-            let status: AppointmentStatus = 'completed';
+            // Usar status direto da API, sem inferir baseado em data
+            let status: AppointmentStatus = 'scheduled';
             const apiStatus = apt.status?.toUpperCase();
             if (apiStatus === 'CANCELED' || apiStatus === 'CANCELLED') {
               status = 'cancelled';
             } else if (apiStatus === 'MISSED') {
-              // Só marcar como "não compareceu" se a API explicitamente indicar
               status = 'missed';
             } else if (apiStatus === 'COMPLETED') {
               status = 'completed';
-            } else if (apiStatus === 'UNFINISHED') {
-              // Verificar se a data já passou
-              if (date) {
-                try {
-                  // Converter dd/MM/yyyy para Date
-                  const [day, month, year] = date.split('/');
-                  const appointmentDate = new Date(`${year}-${month}-${day}`);
-                  const today = new Date();
-                  today.setHours(0, 0, 0, 0);
-                  appointmentDate.setHours(0, 0, 0, 0);
-                  
-                  // Se a data já passou e não há informação de não comparecimento, marcar como "realizada"
-                  if (appointmentDate < today) {
-                    status = 'completed';
-                  } else {
-                    status = 'scheduled';
-                  }
-                } catch (e) {
-                  // Se houver erro ao parsear a data, manter como agendada
-                  status = 'scheduled';
-                }
-              } else {
-                status = 'scheduled';
-              }
+            } else if (apiStatus === 'SCHEDULED' || apiStatus === 'UNFINISHED') {
+              status = 'scheduled';
             }
 
             // Formatar hora
@@ -530,7 +507,9 @@ Status: ${STATUS_MAP[appointment.status]?.label || appointment.status}
 
                     {/* Actions */}
                     <div className="flex flex-col md:flex-row items-stretch md:items-center gap-2">
-                      {appointment.beneficiaryUrl && (
+                      {/* Mostrar botão de acesso apenas para consultas agendadas (não finalizadas) */}
+                      {appointment.beneficiaryUrl && 
+                       appointment.status === 'scheduled' && (
                         <Button 
                           variant="primary" 
                           size="sm"

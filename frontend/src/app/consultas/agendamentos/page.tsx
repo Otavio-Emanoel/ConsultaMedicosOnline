@@ -14,6 +14,7 @@ import {
   Stethoscope,
   User,
   XCircle,
+  ExternalLink,
 } from 'lucide-react';
 
 type AppointmentStatus =
@@ -45,6 +46,7 @@ interface AppointmentApi {
   beneficiary?: {
     name?: string;
   };
+  beneficiaryUrl?: string;
 }
 
 interface Appointment {
@@ -56,6 +58,7 @@ interface Appointment {
   doctor?: string | null;
   patient?: string | null;
   status: AppointmentStatus;
+  beneficiaryUrl?: string | null;
 }
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:3000/api';
@@ -135,6 +138,7 @@ const mapAppointments = (items: AppointmentApi[]): Appointment[] =>
         doctor: item.professional?.name || null,
         patient: item.beneficiary?.name || null,
         status: normalizeStatus(item.status),
+        beneficiaryUrl: item.beneficiaryUrl || null,
       };
     })
     .sort((a, b) => {
@@ -457,12 +461,24 @@ export default function AgendamentosPage() {
                     </div>
 
                     <div className="flex flex-col gap-2 w-full md:w-auto">
+                      {appointment.beneficiaryUrl && (
+                        <Button
+                          variant="primary"
+                          size="sm"
+                          onClick={() => window.open(appointment.beneficiaryUrl!, '_blank')}
+                          className="w-full"
+                        >
+                          <ExternalLink className="w-4 h-4 mr-2" />
+                          Acessar Consulta
+                        </Button>
+                      )}
                       <Button
                         variant="danger"
                         size="sm"
                         disabled={!cancelState.canCancel || cancellingUuid === appointment.uuid}
                         isLoading={cancellingUuid === appointment.uuid}
                         onClick={() => handleCancel(appointment)}
+                        className="w-full"
                       >
                         Cancelar consulta
                       </Button>
