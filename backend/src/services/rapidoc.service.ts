@@ -333,9 +333,10 @@ export async function agendarConsultaRapidoc(body: Record<string, any>) {
     }
   });
   // Invalidar cache de agendamentos do beneficiário
-  const beneficiaryUuid = body?.beneficiary?.uuid;
+  const beneficiaryUuid = body?.beneficiaryUuid || body?.beneficiary?.uuid;
   if (beneficiaryUuid) {
     cache.delete(`rapidoc:appointments:${beneficiaryUuid}`);
+    cache.delete(`rapidoc:appointments:beneficiary:${beneficiaryUuid}`);
   }
   return resp.data;
 }

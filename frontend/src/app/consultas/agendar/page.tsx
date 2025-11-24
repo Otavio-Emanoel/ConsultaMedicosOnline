@@ -312,14 +312,14 @@ function AgendarContent() {
       let body: any = {
         availabilityUuid: formData.availabilityUuid,
         specialtyUuid: formData.specialtyUuid,
-        cpfSelecionado: pacienteSelecionado.cpf, // Passar CPF do paciente selecionado para o backend
+        beneficiaryUuid: beneficiario.uuid, // Enviar beneficiaryUuid ao invés de cpfSelecionado
       };
 
       if (isPsicologiaOuNutricao) {
-        // Para psicologia ou nutrição: usar approveAdditionalPayment
+        // Para psicologia ou nutrição: usar approveAdditionalPayment (sem encaminhamento)
         body.approveAdditionalPayment = true;
       } else {
-        // Para outras especialidades: buscar encaminhamentos e usar o primeiro disponível
+        // Para outras especialidades: buscar encaminhamentos agendáveis daquela especialidade
         const encaminhamentosRes = await fetch(`${apiBase}/beneficiarios/${pacienteSelecionado.cpf}/encaminhamentos`, {
           headers: { Authorization: `Bearer ${token}` },
         });
@@ -336,13 +336,47 @@ function AgendarContent() {
             ? encaminhamentosData
             : [];
 
-        if (encaminhamentos.length === 0) {
-          throw new Error('Nenhum encaminhamento encontrado para este beneficiário. É necessário um encaminhamento médico para esta especialidade.');
+        // Filtrar encaminhamentos:
+        // 1. Da especialidade correta
+        // 2. Que ainda não estão agendados (sem appointment associado)
+        const encaminhamentosAgendaveis = encaminhamentos.filter((ref: any) => {
+          // Verificar se é da especialidade correta
+          const refSpecialtyUuid = ref.specialty?.uuid || ref.specialtyUuid;
+          if (refSpecialtyUuid && refSpecialtyUuid !== formData.specialtyUuid) {
+            return false;
+          }
+
+          // Verificar se já está agendado
+          if (ref.appointment?.uuid || ref.appointmentUuid) {
+            return false;
+          }
+
+          // Verificar se tem status que permita agendamento (não deve estar expirado ou cancelado)
+          const status = ref.status?.toUpperCase() || '';
+          if (status === 'CANCELLED' || status === 'EXPIRED' || status === 'USED') {
+            return false;
+          }
+
+          return true;
+        });
+
+        if (encaminhamentosAgendaveis.length === 0) {
+          // Verificar se há encaminhamentos da especialidade, mas já agendados
+          const encaminhamentosDaEspecialidade = encaminhamentos.filter((ref: any) => {
+            const refSpecialtyUuid = ref.specialty?.uuid || ref.specialtyUuid;
+            return refSpecialtyUuid === formData.specialtyUuid;
+          });
+
+          if (encaminhamentosDaEspecialidade.length > 0) {
+            throw new Error('Nenhum encaminhamento disponível para agendamento. Todos os encaminhamentos desta especialidade já possuem agendamento associado.');
+          } else {
+            throw new Error('Nenhum encaminhamento encontrado para esta especialidade. É necessário um encaminhamento médico agendável para esta especialidade.');
+          }
         }
 
-        // Usar o primeiro encaminhamento disponível
-        const primeiroEncaminhamento = encaminhamentos[0];
-        console.log('Primeiro encaminhamento:', primeiroEncaminhamento);
+        // Usar o primeiro encaminhamento agendável
+        const primeiroEncaminhamento = encaminhamentosAgendaveis[0];
+        console.log('Encaminhamento selecionado:', primeiroEncaminhamento);
         
         // Tentar diferentes campos que podem conter o UUID do encaminhamento
         body.beneficiaryMedicalReferralUuid = primeiroEncaminhamento.uuid 
