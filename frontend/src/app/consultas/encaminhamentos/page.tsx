@@ -103,17 +103,22 @@ export default function EncaminhamentosPage() {
           // Depois carregar agendamentos em background (para verificar consultas agendadas)
           
           // 1. Carregar encaminhamentos primeiro
-          const referralsRes = await fetch(`${apiBase}/encaminhamentos/me`, {
-            headers: { Authorization: `Bearer ${token}` },
-            signal: controller.signal,
-          }).catch(() => ({ ok: false }));
+          let referralsRes: Response | null = null;
+          try {
+            referralsRes = await fetch(`${apiBase}/encaminhamentos/me`, {
+              headers: { Authorization: `Bearer ${token}` },
+              signal: controller.signal,
+            });
+          } catch {
+            referralsRes = null;
+          }
 
           clearTimeout(timeoutId);
 
           if (!mounted) return;
 
           // Processar encaminhamentos imediatamente (libera UI)
-          if (referralsRes.ok) {
+          if (referralsRes?.ok) {
             try {
               const referralsData = await referralsRes.json();
               const encaminhamentos = referralsData?.encaminhamentos || [];
@@ -173,16 +178,21 @@ export default function EncaminhamentosPage() {
           setLoadingAppointments(true);
           
           try {
-            const appointmentsRes = await fetch(`${apiBase}/agendamentos`, {
-              headers: { Authorization: `Bearer ${token}` },
-              signal: controller.signal,
-            }).catch(() => ({ ok: false }));
+            let appointmentsRes: Response | null = null;
+            try {
+              appointmentsRes = await fetch(`${apiBase}/agendamentos`, {
+                headers: { Authorization: `Bearer ${token}` },
+                signal: controller.signal,
+              });
+            } catch {
+              appointmentsRes = null;
+            }
 
             clearTimeout(appointmentsTimeoutId);
 
             if (!mounted) return;
 
-            if (appointmentsRes.ok) {
+            if (appointmentsRes?.ok) {
               try {
                 const appointmentsData = await appointmentsRes.json();
                 const appointmentsList = appointmentsData?.appointments || appointmentsData?.data || [];
