@@ -461,7 +461,9 @@ export default function AgendamentosPage() {
                     </div>
 
                     <div className="flex flex-col gap-2 w-full md:w-auto">
-                      {appointment.beneficiaryUrl && (
+                      {appointment.beneficiaryUrl && 
+                       statusKey !== 'CANCELED' && 
+                       statusKey !== 'CANCELLED' && (
                         <Button
                           variant="primary"
                           size="sm"
