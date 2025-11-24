@@ -13,6 +13,8 @@ import {
   CheckCircle,
   Loader2,
   Video,
+  ExternalLink,
+  X,
 } from 'lucide-react';
 
 interface Patient {
@@ -28,6 +30,8 @@ export default function AtendimentoImediatoPage() {
   const [loadingPatients, setLoadingPatients] = useState(false);
   const [loadingRequest, setLoadingRequest] = useState(false);
   const [error, setError] = useState<string>('');
+  const [showModal, setShowModal] = useState(false);
+  const [consultationLink, setConsultationLink] = useState<string | null>(null);
 
   // Buscar pacientes (titular + dependentes) - sem usar dashboard
   useEffect(() => {
@@ -174,10 +178,10 @@ export default function AtendimentoImediatoPage() {
                           data?.meetingUrl || data?.roomUrl || data?.videoUrl || data?.telemedUrl ||
                           data?.video_link || data?.videoLink || data?.accessUrl;
 
+      let finalLink: string | null = null;
+
       if (linkConsulta) {
-        // Abrir link automaticamente em nova guia
-        window.open(linkConsulta, '_blank', 'noopener,noreferrer');
-        setError('');
+        finalLink = linkConsulta;
       } else {
         // Se não encontrou link na resposta padrão, verificar rapidocResponse
         const rapidocResponse = data?.rapidocResponse;
@@ -189,8 +193,7 @@ export default function AtendimentoImediatoPage() {
                                  rapidocResponse?.data?.url || rapidocResponse?.data?.joinUrl;
           
           if (linkFromRapidoc) {
-            window.open(linkFromRapidoc, '_blank', 'noopener,noreferrer');
-            setError('');
+            finalLink = linkFromRapidoc;
           } else {
             setError('Link da consulta não encontrado na resposta do Rapidoc. Verifique o console para mais detalhes.');
             console.error('Resposta completa da API:', data);
@@ -199,6 +202,21 @@ export default function AtendimentoImediatoPage() {
         } else {
           setError('Link da consulta não encontrado na resposta. Verifique o console para mais detalhes.');
           console.error('Resposta da API:', data);
+        }
+      }
+
+      if (finalLink) {
+        // Salvar link e mostrar modal
+        setConsultationLink(finalLink);
+        setShowModal(true);
+        setError('');
+        
+        // Tentar abrir automaticamente (pode ser bloqueado pelo navegador)
+        const popup = window.open(finalLink, '_blank', 'noopener,noreferrer');
+        
+        // Se o popup foi bloqueado, o modal já está aberto para o usuário clicar manualmente
+        if (!popup || popup.closed || typeof popup.closed === 'undefined') {
+          // Popup foi bloqueado, o modal já está visível
         }
       }
     } catch (err: any) {
@@ -211,7 +229,7 @@ export default function AtendimentoImediatoPage() {
 
 
   return (
-    <DashboardLayout title="Atendimento Imediato">
+    <DashboardLayout title="Clínico Geral">
       {/* Status Card */}
       <Card className="mb-6">
         <CardBody>
@@ -222,7 +240,7 @@ export default function AtendimentoImediatoPage() {
               </div>
               <div>
                 <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
-                  Atendimento Imediato Disponível
+                  Clínico Geral Disponível
                 </h3>
                 <p className="text-sm text-gray-600 dark:text-gray-400">
                   Inicie uma consulta imediata agora - o link será aberto automaticamente
@@ -386,12 +404,66 @@ export default function AtendimentoImediatoPage() {
               ) : (
                 <>
                   <Stethoscope className="w-5 h-5 mr-2" />
-                  Iniciar Atendimento Imediato
+                  Iniciar Clínico Geral
                 </>
               )}
             </Button>
           </CardBody>
         </Card>
+
+      {/* Modal para link de consulta (caso popup seja bloqueado) */}
+      {showModal && consultationLink && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50">
+          <div className="bg-white dark:bg-surface-dark rounded-xl shadow-xl max-w-md w-full p-6">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-xl font-semibold text-gray-900 dark:text-white">
+                Não abriu?
+              </h3>
+              <button
+                onClick={() => {
+                  setShowModal(false);
+                  setConsultationLink(null);
+                }}
+                className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            
+            <p className="text-gray-600 dark:text-gray-400 mb-6">
+              Se a janela da consulta não abriu automaticamente, clique no botão abaixo para acessar:
+            </p>
+            
+            <div className="flex flex-col gap-3">
+              <Button
+                variant="primary"
+                size="lg"
+                className="w-full"
+                onClick={() => {
+                  window.open(consultationLink, '_blank', 'noopener,noreferrer');
+                  setShowModal(false);
+                  setConsultationLink(null);
+                }}
+              >
+                <ExternalLink className="w-5 h-5 mr-2" />
+                Clique aqui para acessar a consulta
+              </Button>
+              
+              <Button
+                variant="outline"
+                size="sm"
+                className="w-full"
+                onClick={() => {
+                  setShowModal(false);
+                  setConsultationLink(null);
+                }}
+              >
+                Fechar
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
 
     </DashboardLayout>
   );

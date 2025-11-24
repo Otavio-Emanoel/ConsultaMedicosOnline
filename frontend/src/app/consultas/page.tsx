@@ -49,7 +49,7 @@ export default function ConsultasPage() {
                 </div>
                 <div className="flex-1">
                   <h3 className="text-xl font-semibold text-gray-900 dark:text-white mb-1">
-                    Atendimento Imediato
+                    Clínico Geral
                   </h3>
                   <p className="text-sm text-gray-600 dark:text-gray-400">
                     Conecte-se agora com um médico disponível
@@ -98,7 +98,7 @@ export default function ConsultasPage() {
                 <li>• Entre na consulta com até 10 minutos de antecedência</li>
                 <li>• Tenha seus exames e documentos em mãos</li>
                 <li>• Cancele com pelo menos 3 horas de antecedência</li>
-                <li>• Para emergências, use o Atendimento Imediato</li>
+                <li>• Para emergências, use o Clínico Geral</li>
               </ul>
             </div>
           </div>

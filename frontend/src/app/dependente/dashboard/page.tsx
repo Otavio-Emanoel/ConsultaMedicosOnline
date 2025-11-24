@@ -146,7 +146,7 @@ export default function DependentDashboardPage() {
                 <div className="flex items-start">
                   <Video className="w-6 h-6 mr-3 mt-1" />
                   <div className="text-left">
-                    <p className="font-semibold">Atendimento Imediato</p>
+                    <p className="font-semibold">Clínico Geral</p>
                     <p className="text-xs opacity-90 font-normal mt-1">
                       Conecte-se agora com um médico
                     </p>
