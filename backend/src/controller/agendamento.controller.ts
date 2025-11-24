@@ -89,7 +89,7 @@ export class AgendamentoController {
         const cpfToUse = cpfBody || cpfSelecionado;
         if (cpfToUse) {
           cpf = cpfToUse;
-          const beneficiarioResp = await buscarBeneficiarioRapidocPorCpf(cpf);
+          const beneficiarioResp = await buscarBeneficiarioRapidocPorCpf(cpfToUse);
           const beneficiario = beneficiarioResp?.beneficiary;
           if (!beneficiario || !beneficiario.uuid) {
             return res.status(404).json({ error: 'Beneficiário não encontrado no Rapidoc para o CPF informado.' });
