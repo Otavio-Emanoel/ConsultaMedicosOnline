@@ -1,13 +1,13 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, Suspense } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { Card, CardBody } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { CheckCircle, XCircle, Loader2 } from 'lucide-react';
 
-export default function CartaoVerificadoPage() {
+function CartaoVerificadoContent() {
   const searchParams = useSearchParams();
   const router = useRouter();
   const [status, setStatus] = useState<'loading' | 'success' | 'error'>('loading');
@@ -146,6 +146,24 @@ export default function CartaoVerificadoPage() {
         </CardBody>
       </Card>
     </DashboardLayout>
+  );
+}
+
+export default function CartaoVerificadoPage() {
+  return (
+    <Suspense fallback={
+      <DashboardLayout title="Verificando Cartão">
+        <Card>
+          <CardBody>
+            <div className="text-center py-12">
+              <div className="text-gray-600">Carregando...</div>
+            </div>
+          </CardBody>
+        </Card>
+      </DashboardLayout>
+    }>
+      <CartaoVerificadoContent />
+    </Suspense>
   );
 }
 

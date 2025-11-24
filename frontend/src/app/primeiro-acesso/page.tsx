@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { ArrowLeft, Copy, CheckCircle, AlertCircle, Eye, EyeOff } from "lucide-react";
 
@@ -24,7 +24,7 @@ function extractErrorMessage(err: unknown): string {
   return "Erro ao processar primeiro acesso.";
 }
 
-export default function PrimeiroAcessoPage() {
+function PrimeiroAcessoContent() {
   const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:3000/api";
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -214,5 +214,17 @@ export default function PrimeiroAcessoPage() {
         </div>
       </div>
     </div>
+  );
+}
+
+export default function PrimeiroAcessoPage() {
+  return (
+    <Suspense fallback={
+      <div className="min-h-screen bg-gradient-to-br from-green-50 via-white to-green-50 dark:from-slate-900 dark:via-gray-900 dark:to-slate-800 flex items-center justify-center p-4">
+        <div className="text-gray-600">Carregando...</div>
+      </div>
+    }>
+      <PrimeiroAcessoContent />
+    </Suspense>
   );
 }

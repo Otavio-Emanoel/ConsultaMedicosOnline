@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, Suspense } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { Card, CardHeader, CardBody } from '@/components/ui/Card';
@@ -31,7 +31,7 @@ const STEPS = [
 
 // Será preenchido dinamicamente
 
-export default function Page() {
+function AgendarContent() {
   const searchParams = useSearchParams();
   const specialtyUuidFromQuery = searchParams?.get('specialtyUuid') || '';
   
@@ -774,5 +774,19 @@ export default function Page() {
         </Card>
       </div>
     </DashboardLayout>
+  );
+}
+
+export default function Page() {
+  return (
+    <Suspense fallback={
+      <DashboardLayout title="Agendar Consulta">
+        <div className="flex items-center justify-center py-20">
+          <div className="text-gray-600">Carregando...</div>
+        </div>
+      </DashboardLayout>
+    }>
+      <AgendarContent />
+    </Suspense>
   );
 }
