@@ -507,10 +507,9 @@ Status: ${STATUS_MAP[appointment.status]?.label || appointment.status}
 
                     {/* Actions */}
                     <div className="flex flex-col md:flex-row items-stretch md:items-center gap-2">
-                      {/* Mostrar botão de acesso apenas para consultas agendadas (não finalizadas ou canceladas) */}
+                      {/* Mostrar botão de acesso apenas para consultas agendadas */}
                       {appointment.beneficiaryUrl && 
-                       appointment.status === 'scheduled' && 
-                       appointment.status !== 'cancelled' && (
+                       appointment.status === 'scheduled' && (
                         <Button 
                           variant="primary" 
                           size="sm"
