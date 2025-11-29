@@ -413,11 +413,11 @@ export class AdminController {
   // Criar usuário completo com assinatura
   static async criarUsuarioCompleto(req: Request, res: Response) {
     try {
-      const { beneficiarioUuid, cpf, nome, email, planoId, billingType, ciclo } = req.body;
+      const { beneficiarioUuid, cpf, nome, email, planoId, billingType, ciclo, telefone, dataNascimento, cep, endereco, cidade, estado } = req.body;
 
-      if (!beneficiarioUuid || !cpf || !nome || !email || !planoId || !billingType || !ciclo) {
+      if (!cpf || !nome || !email || !planoId || !billingType || !ciclo) {
         return res.status(400).json({ 
-          error: 'Campos obrigatórios: beneficiarioUuid, cpf, nome, email, planoId, billingType, ciclo.' 
+          error: 'Campos obrigatórios: cpf, nome, email, planoId, billingType, ciclo.' 
         });
       }
 
@@ -435,15 +435,51 @@ export class AdminController {
         return res.status(400).json({ error: 'Plano sem valor definido.' });
       }
 
-      // 2. Buscar dados do beneficiário no Rapidoc (para obter birthday e outros dados)
-      const { buscarBeneficiarioRapidocPorCpf } = await import('../services/rapidoc.service.js');
+      // 2. Buscar ou criar beneficiário no Rapidoc
+      const { buscarBeneficiarioRapidocPorCpf, cadastrarBeneficiarioRapidoc } = await import('../services/rapidoc.service.js');
       let beneficiarioRapidoc: any = null;
+      let rapidocUuid = beneficiarioUuid || '';
+      
       try {
         const rapidocResp = await buscarBeneficiarioRapidocPorCpf(cpf);
         beneficiarioRapidoc = rapidocResp?.beneficiary;
+        if (beneficiarioRapidoc?.uuid) {
+          rapidocUuid = beneficiarioRapidoc.uuid;
+        }
       } catch (error: any) {
-        // Se não encontrar, continua mesmo assim (beneficiário pode ter sido criado recentemente)
-        console.warn('Beneficiário não encontrado no Rapidoc:', error?.message);
+        // Se não encontrar, cria novo beneficiário no Rapidoc
+        console.log('Beneficiário não encontrado no Rapidoc, criando novo...');
+        try {
+          const cpfNormalizado = String(cpf).replace(/\D/g, '');
+          const rapidocPayload: any = {
+            nome,
+            email,
+            cpf: cpfNormalizado,
+            birthday: dataNascimento || '',
+            phone: telefone || '',
+            zipCode: cep || '',
+            address: endereco || '',
+            city: cidade || '',
+            state: estado || '',
+          };
+          
+          // Adicionar planos se houver dados do plano
+          if (planoData?.uuidRapidocPlano) {
+            rapidocPayload.plans = [{
+              paymentType: planoData.paymentType || 'S',
+              plan: { uuid: planoData.uuidRapidocPlano }
+            }];
+          }
+          
+          const rapidocCreateResp = await cadastrarBeneficiarioRapidoc(rapidocPayload);
+          if (rapidocCreateResp?.uuid) {
+            rapidocUuid = rapidocCreateResp.uuid;
+            beneficiarioRapidoc = { uuid: rapidocUuid, ...rapidocPayload };
+          }
+        } catch (createError: any) {
+          console.warn('Erro ao criar beneficiário no Rapidoc:', createError?.message);
+          // Continua mesmo assim, pode criar depois
+        }
       }
 
       // 3. Verificar se usuário já existe
@@ -519,7 +555,7 @@ export class AdminController {
         email,
         criadoEm: new Date().toISOString(),
         idAssinaturaAtual: assinaturaAsaas.id,
-        rapidocBeneficiaryUuid: beneficiarioUuid,
+        rapidocBeneficiaryUuid: rapidocUuid,
         primeiroAcesso: false, // Será marcado como true quando o usuário fizer login pela primeira vez
       };
       
@@ -655,6 +691,193 @@ export class AdminController {
     } catch (error: any) {
       return res.status(500).json({ 
         error: error?.message || 'Erro ao gerar nova senha.' 
+      });
+    }
+  }
+
+  // Ativar beneficiário no Rapidoc
+  static async ativarBeneficiarioRapidoc(req: Request, res: Response) {
+    try {
+      const { cpf } = req.params as { cpf?: string };
+      if (!cpf) return res.status(400).json({ error: 'CPF é obrigatório.' });
+
+      const { buscarBeneficiarioRapidocPorCpf, atualizarBeneficiarioRapidoc } = await import('../services/rapidoc.service.js');
+      const r = await buscarBeneficiarioRapidocPorCpf(cpf);
+      const beneficiario = r?.beneficiary;
+      if (!beneficiario || !beneficiario.uuid) {
+        return res.status(404).json({ error: 'Beneficiário não encontrado no Rapidoc.' });
+      }
+
+      try {
+        const resp = await atualizarBeneficiarioRapidoc(beneficiario.uuid, { isActive: true });
+        if (!resp || resp.success === false) {
+          return res.status(400).json({ error: resp?.message || 'Falha ao ativar beneficiário no Rapidoc.', detail: resp });
+        }
+        return res.status(200).json({ ok: true, beneficiaryUuid: beneficiario.uuid });
+      } catch (e: any) {
+        return res.status(400).json({ error: 'Erro ao ativar beneficiário no Rapidoc.', detail: e?.response?.data || e?.message });
+      }
+    } catch (error: any) {
+      return res.status(500).json({ error: error?.message || 'Erro ao ativar beneficiário.' });
+    }
+  }
+
+  // Cadastrar nova vida (beneficiário) com opção de cortesia
+  static async cadastrarVida(req: Request, res: Response) {
+    try {
+      const { cpfTitular } = req.params as { cpfTitular?: string };
+      const { 
+        nome, cpf, birthDate, email, phone, zipCode, endereco, cidade, estado, 
+        planoId, paymentType, serviceType, cortesia = false 
+      } = req.body;
+
+      if (!cpfTitular) {
+        return res.status(400).json({ error: 'CPF do titular é obrigatório.' });
+      }
+      if (!nome || !cpf || !birthDate || !email) {
+        return res.status(400).json({ error: 'Campos obrigatórios: nome, cpf, birthDate, email.' });
+      }
+
+      const db = getFirestore(firebaseApp);
+      const cpfNormalizado = String(cpf).replace(/\D/g, '');
+      const cpfTitularNormalizado = String(cpfTitular).replace(/\D/g, '');
+
+      // Verificar se beneficiário já existe
+      const beneficiarioSnap = await db.collection('beneficiarios').where('cpf', '==', cpfNormalizado).limit(1).get();
+      if (!beneficiarioSnap.empty) {
+        return res.status(409).json({ error: 'Beneficiário já cadastrado.' });
+      }
+
+      // Buscar plano se fornecido
+      let planoData: any = null;
+      if (planoId) {
+        const planoDoc = await db.collection('planos').doc(planoId).get();
+        if (!planoDoc.exists) {
+          return res.status(404).json({ error: 'Plano não encontrado.' });
+        }
+        planoData = planoDoc.data();
+      }
+
+      // 1. Criar beneficiário no Rapidoc
+      const { cadastrarBeneficiarioRapidoc } = await import('../services/rapidoc.service.js');
+      const rapidocPayload: any = {
+        nome,
+        cpf: cpfNormalizado,
+        birthday: birthDate,
+        email,
+        phone,
+        zipCode,
+        address: endereco,
+        city: cidade,
+        state: estado,
+        holder: cpfTitularNormalizado
+      };
+
+      // Adicionar plans se houver plano e paymentType/serviceType
+      if (planoData && (paymentType || serviceType)) {
+        const planEntry: any = {};
+        if (serviceType) planEntry.plan = { uuid: serviceType };
+        if (paymentType) planEntry.paymentType = paymentType;
+        rapidocPayload.plans = [planEntry];
+      }
+
+      const rapidocResp = await cadastrarBeneficiarioRapidoc(rapidocPayload);
+      if (!rapidocResp || rapidocResp.success === false) {
+        return res.status(400).json({ error: rapidocResp?.message || 'Erro ao criar beneficiário no Rapidoc.' });
+      }
+
+      // 2. Salvar no Firestore
+      const docData: any = {
+        nome,
+        cpf: cpfNormalizado,
+        birthDate,
+        holder: cpfTitularNormalizado,
+        email,
+        phone,
+        zipCode,
+        address: endereco,
+        city: cidade,
+        state: estado,
+        paymentType,
+        serviceType,
+        cortesia: cortesia === true,
+        createdAt: new Date().toISOString(),
+      };
+      if (rapidocResp.uuid) {
+        docData.rapidocUuid = rapidocResp.uuid;
+      }
+      if (planoId) {
+        docData.planoId = planoId;
+      }
+
+      const createdRef = await db.collection('beneficiarios').add(docData);
+
+      // 3. Se não for cortesia, criar assinatura no Asaas
+      let assinaturaAsaas = null;
+      if (!cortesia && planoData && planoData.preco) {
+        try {
+          const { criarClienteAsaas, criarAssinaturaAsaas } = await import('../services/asaas.service.js');
+          
+          // Verificar se cliente já existe no Asaas
+          let clienteAsaas;
+          try {
+            const { verificarAssinaturaPorCpf } = await import('../services/asaas.service.js');
+            const check = await verificarAssinaturaPorCpf(cpfNormalizado);
+            if (check.cliente) {
+              clienteAsaas = { id: check.cliente.id };
+            } else {
+              clienteAsaas = await criarClienteAsaas({ nome, email, cpf: cpfNormalizado, telefone: phone });
+            }
+          } catch {
+            clienteAsaas = await criarClienteAsaas({ nome, email, cpf: cpfNormalizado, telefone: phone });
+          }
+
+          assinaturaAsaas = await criarAssinaturaAsaas({
+            customer: clienteAsaas.id,
+            value: Number(planoData.preco),
+            cycle: planoData.periodicidade === 'MENSAL' ? 'MONTHLY' : 'MONTHLY',
+            billingType: 'BOLETO',
+            description: `Assinatura ${planoData.tipo || 'Consulta Médicos Online'}`
+          });
+
+          // Salvar assinatura no Firestore
+          const assinaturaData: any = {
+            idAssinatura: assinaturaAsaas.id,
+            cpfUsuario: cpfNormalizado,
+            planoId,
+            status: 'ATIVA',
+            valor: Number(planoData.preco),
+            ciclo: planoData.periodicidade === 'MENSAL' ? 'MONTHLY' : 'MONTHLY',
+            formaPagamento: 'BOLETO',
+            dataInicio: new Date().toISOString().split('T')[0],
+            criadoEm: new Date().toISOString(),
+          };
+          await db.collection('assinaturas').doc(assinaturaAsaas.id).set(assinaturaData);
+        } catch (error: any) {
+          console.error('Erro ao criar assinatura no Asaas:', error);
+          // Continua mesmo se falhar a assinatura
+        }
+      }
+
+      return res.status(201).json({
+        message: cortesia ? 'Vida cadastrada como cortesia com sucesso.' : 'Vida cadastrada com sucesso.',
+        beneficiario: {
+          id: createdRef.id,
+          nome,
+          cpf: cpfNormalizado,
+          cortesia: cortesia === true,
+        },
+        rapidoc: {
+          uuid: rapidocResp.uuid,
+        },
+        assinatura: assinaturaAsaas ? {
+          id: assinaturaAsaas.id,
+          status: assinaturaAsaas.status,
+        } : null,
+      });
+    } catch (error: any) {
+      return res.status(500).json({ 
+        error: error?.message || 'Erro ao cadastrar vida.' 
       });
     }
   }

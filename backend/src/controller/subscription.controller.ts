@@ -223,12 +223,64 @@ export class SubscriptionController {
             const assinatura = await criarAssinaturaAsaas({ customer: cliente.id, value: valor, cycle: ciclo, billingType, description });
             const assinaturaId = assinatura.id;
 
-            // 3. Salvar dados completos para cadastro automático no Rapidoc após pagamento
+            // 3. Se for cartão de crédito, gerar URL de checkout do Asaas
+            let checkoutUrl: string | undefined;
+            if (billingType === 'CREDIT_CARD') {
+                try {
+                    const axios = (await import('axios')).default;
+                    const ASAAS_API_URL = process.env.ASAAS_BASE_URL || 'https://sandbox.asaas.com/api/v3';
+                    const ASAAS_API_KEY = process.env.ASAAS_API_KEY;
+
+                    if (ASAAS_API_KEY) {
+                        // Criar pagamento de checkout para cartão de crédito
+                        const paymentBody: any = {
+                            customer: cliente.id,
+                            billingType: 'CREDIT_CARD',
+                            value: valor,
+                            dueDate: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString().split('T')[0], // Amanhã
+                            description: description,
+                            subscription: assinaturaId
+                        };
+
+                        // URL de callback para redirecionar após pagamento
+                        // Tenta usar FRONTEND_BASE_URL, se não tiver, tenta inferir de NEXT_PUBLIC_API_BASE_URL removendo /api
+                        let baseUrl = process.env.FRONTEND_BASE_URL;
+                        if (!baseUrl && process.env.NEXT_PUBLIC_API_BASE_URL) {
+                            // Remove /api do final se existir
+                            baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL.replace(/\/api\/?$/, '');
+                        }
+                        if (!baseUrl) {
+                            baseUrl = 'http://localhost:3000';
+                        }
+                        const callbackUrl = `${baseUrl}/aguardando-pagamento/${assinaturaId}`;
+                        paymentBody.callback = {
+                            successUrl: callbackUrl,
+                            autoRedirect: true
+                        };
+
+                        const paymentResp = await axios.post(`${ASAAS_API_URL}/payments`, paymentBody, {
+                            headers: { access_token: ASAAS_API_KEY }
+                        });
+                        const payment = paymentResp.data;
+                        checkoutUrl = payment.invoiceUrl || payment.bankSlipUrl;
+                        console.log('[startSubscription] URL de checkout gerada para cartão de crédito:', checkoutUrl);
+                    }
+                } catch (checkoutError: any) {
+                    console.error('[startSubscription] Erro ao gerar URL de checkout:', {
+                        message: checkoutError?.message,
+                        responseData: checkoutError?.response?.data
+                    });
+                    // Não falha o cadastro se não conseguir gerar a URL, apenas não retorna ela
+                }
+            }
+
+            // 4. Salvar dados completos para cadastro automático no Rapidoc após pagamento
 
             return res.status(201).json({
                 message: 'Assinatura iniciada. Aguarde confirmação do pagamento.',
                 clienteId: cliente.id,
                 assinaturaId,
+                checkoutUrl, // URL do checkout do Asaas (apenas para cartão de crédito)
                 rapidocData: {
                     nome,
                     email,

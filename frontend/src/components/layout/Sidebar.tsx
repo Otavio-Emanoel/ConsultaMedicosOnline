@@ -25,7 +25,15 @@ import {
 const adminMenuItems = [
   { icon: Home, label: 'Dashboard', href: '/admin/dashboard' },
   { icon: Package, label: 'Planos', href: '/admin/planos' },
-  { icon: Users, label: 'Assinantes', href: '/admin/assinantes' },
+  {
+    icon: Users,
+    label: 'Assinantes',
+    href: '/admin/assinantes',
+    subItems: [
+      { label: 'Listar Assinantes', href: '/admin/assinantes' },
+      { label: 'Cadastrar Novo', href: '/admin/assinantes/novo' },
+    ],
+  },
   { icon: FileText, label: 'Logs de Erro', href: '/admin/logs' },
   { icon: Activity, label: 'Relatórios', href: '/admin/relatorios' },
 ];

@@ -22,4 +22,10 @@ router.post('/admin/criar-usuario-completo', autenticarAdministrador, AdminContr
 // POST /api/admin/gerar-nova-senha - Gerar nova senha para um cliente
 router.post('/admin/gerar-nova-senha', autenticarAdministrador, AdminController.gerarNovaSenha);
 
+// POST /api/admin/beneficiarios/:cpf/ativar-rapidoc - Ativar beneficiário no Rapidoc
+router.post('/admin/beneficiarios/:cpf/ativar-rapidoc', autenticarAdministrador, AdminController.ativarBeneficiarioRapidoc);
+
+// POST /api/admin/assinantes/:cpfTitular/vidas/cadastrar - Cadastrar nova vida com opção de cortesia
+router.post('/admin/assinantes/:cpfTitular/vidas/cadastrar', autenticarAdministrador, AdminController.cadastrarVida);
+
 export default router;

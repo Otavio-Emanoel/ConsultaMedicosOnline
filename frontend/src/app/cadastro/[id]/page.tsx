@@ -52,6 +52,10 @@ export default function CadastroPage() {
     expiryYear: '',
     ccv: '',
   });
+  const [checkoutUrl, setCheckoutUrl] = useState<string | null>(null);
+  const [assinaturaCriada, setAssinaturaCriada] = useState(false);
+  const [assinaturaId, setAssinaturaId] = useState<string | null>(null);
+  const [redirecionamentoTentado, setRedirecionamentoTentado] = useState(false);
 
   useEffect(() => {
     if (!planoId) return;
@@ -180,14 +184,23 @@ export default function CadastroPage() {
       const data = await resp.json();
       
       if (resp.ok) {
-        const assinaturaId = data.assinaturaId;
+        const idAssinatura = data.assinaturaId;
+        const urlCheckout = data.checkoutUrl; // URL do checkout do Asaas (apenas para cartão de crédito)
+        
+        // Salvar no estado
+        setAssinaturaId(idAssinatura);
+        if (urlCheckout) {
+          setCheckoutUrl(urlCheckout);
+        }
+        
         try {
           localStorage.setItem(
             "assinaturaDraft",
             JSON.stringify({
               createdAt: Date.now(),
-              assinaturaId,
+              assinaturaId: idAssinatura,
               clienteId: data.clienteId,
+              checkoutUrl: urlCheckout, // Salvar URL do checkout
               plano: {
                 id: plano?.id,
                 tipo: plano?.tipo,
@@ -198,7 +211,21 @@ export default function CadastroPage() {
             })
           );
         } catch {}
-        router.push(`/aguardando-pagamento/${assinaturaId}`);
+        
+        setAssinaturaCriada(true);
+        
+        // Se for cartão de crédito e tiver URL de checkout, tentar redirecionar automaticamente
+        // Mas também mostrar botão de fallback
+        if (form.billingType === 'CREDIT_CARD' && urlCheckout && !redirecionamentoTentado) {
+          setRedirecionamentoTentado(true);
+          // Tentar redirecionar após um pequeno delay para dar tempo de mostrar mensagem
+          setTimeout(() => {
+            window.location.href = urlCheckout;
+          }, 2000);
+        } else if (form.billingType !== 'CREDIT_CARD') {
+          // Para boleto, redirecionar imediatamente
+          router.push(`/aguardando-pagamento/${idAssinatura}`);
+        }
       } else {
         setMensagem(extractErrorMessage(data));
       }
@@ -573,14 +600,73 @@ export default function CadastroPage() {
                     </span>
                   </div>
                 </div>
-                <button
-                  type="button"
-                  className="w-full mt-6 bg-gradient-to-r from-green-600 to-green-700 hover:from-green-700 hover:to-green-800 text-white rounded-lg py-3 font-semibold shadow-md hover:shadow-lg transition-all disabled:opacity-50"
-                  disabled={enviando}
-                  onClick={submitAssinatura}
-                >
-                  {enviando ? "Enviando..." : "Confirmar e Criar Assinatura"}
-                </button>
+                {!assinaturaCriada ? (
+                  <button
+                    type="button"
+                    className="w-full mt-6 bg-gradient-to-r from-green-600 to-green-700 hover:from-green-700 hover:to-green-800 text-white rounded-lg py-3 font-semibold shadow-md hover:shadow-lg transition-all disabled:opacity-50"
+                    disabled={enviando}
+                    onClick={submitAssinatura}
+                  >
+                    {enviando ? "Enviando..." : "Confirmar e Criar Assinatura"}
+                  </button>
+                ) : form.billingType === 'CREDIT_CARD' && checkoutUrl ? (
+                  <div className="mt-6 space-y-3">
+                    <div className="bg-blue-50 dark:bg-blue-900/20 border-2 border-blue-300 dark:border-blue-700 rounded-lg p-5">
+                      <div className="flex items-start gap-3 mb-4">
+                        <div className="flex-shrink-0 w-8 h-8 rounded-full bg-blue-100 dark:bg-blue-900/50 flex items-center justify-center">
+                          <span className="text-blue-600 dark:text-blue-400 font-bold">✓</span>
+                        </div>
+                        <div className="flex-1">
+                          <h4 className="font-semibold text-blue-900 dark:text-blue-200 mb-2">
+                            Assinatura criada com sucesso!
+                          </h4>
+                          <p className="text-sm text-blue-800 dark:text-blue-300 mb-3">
+                            Você será redirecionado para o pagamento em instantes...
+                          </p>
+                          <p className="text-xs text-blue-700 dark:text-blue-400 mb-4">
+                            Se a página de pagamento não abrir automaticamente, clique no botão abaixo para continuar:
+                          </p>
+                        </div>
+                      </div>
+                      <a
+                        href={checkoutUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-block w-full text-center px-6 py-3 rounded-lg bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 text-white font-semibold shadow-md hover:shadow-lg transition-all"
+                      >
+                        Continuar para Pagamento
+                      </a>
+                    </div>
+                    {assinaturaId && (
+                      <button
+                        type="button"
+                        onClick={() => router.push(`/aguardando-pagamento/${assinaturaId}`)}
+                        className="w-full px-6 py-2 rounded-lg border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 transition"
+                      >
+                        Ir para página de aguardando pagamento
+                      </button>
+                    )}
+                  </div>
+                ) : (
+                  <div className="mt-6">
+                    <p className="text-sm text-green-600 dark:text-green-400 mb-3 text-center">
+                      Assinatura criada com sucesso!
+                    </p>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const draft = localStorage.getItem('assinaturaDraft');
+                        if (draft) {
+                          const data = JSON.parse(draft);
+                          router.push(`/aguardando-pagamento/${data.assinaturaId}`);
+                        }
+                      }}
+                      className="w-full px-6 py-3 rounded-lg bg-primary hover:bg-green-700 text-white font-semibold shadow-md hover:shadow-lg transition-all"
+                    >
+                      Continuar
+                    </button>
+                  </div>
+                )}
               </div>
             </div>
           </div>

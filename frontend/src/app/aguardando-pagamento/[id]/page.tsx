@@ -1,9 +1,9 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import Image from "next/image";
 import { useParams, useRouter } from "next/navigation";
-import { Clock, AlertCircle, Copy, CheckCircle } from "lucide-react";
+import { Clock, AlertCircle, Copy, CheckCircle, RefreshCw } from "lucide-react";
 
 type BillingType = "BOLETO" | "PIX" | "CREDIT_CARD";
 
@@ -17,6 +17,7 @@ type Draft = {
   createdAt: number;
   assinaturaId: string;
   clienteId?: string;
+  checkoutUrl?: string; // URL do checkout do Asaas
   plano?: { id?: string; tipo?: string; preco?: number; periodicidade?: string };
   dados?: Dados;
 };
@@ -64,6 +65,9 @@ export default function AguardandoPagamentoPage() {
   const [copiado, setCopiado] = useState(false);
   const [rapidocBeneficiaryUuid, setRapidocBeneficiaryUuid] = useState<string | undefined>(undefined);
   const [finalizado, setFinalizado] = useState(false);
+  const [checkoutUrl, setCheckoutUrl] = useState<string | null>(null);
+  const [loadingCheckout, setLoadingCheckout] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
 
   useEffect(() => {
     try {
@@ -71,37 +75,100 @@ export default function AguardandoPagamentoPage() {
       if (stored) {
         const data = JSON.parse(stored);
         setDraft(data);
+        // Se já tem checkoutUrl no draft, usar ele
+        if (data.checkoutUrl) {
+          setCheckoutUrl(data.checkoutUrl);
+        }
       }
     } catch {}
   }, []);
 
+  // Buscar URL de checkout se for cartão de crédito e não tiver URL
+  useEffect(() => {
+    const buscarCheckoutUrl = async () => {
+      // Só buscar se:
+      // 1. Tem assinaturaId
+      // 2. Não tem checkoutUrl ainda
+      // 3. Não está carregando
+      if (!assinaturaId || checkoutUrl || loadingCheckout) return;
+      
+      const billingType = draft?.dados?.billingType;
+      
+      // Se já sabemos que é cartão de crédito ou não temos certeza, buscar detalhes do pagamento
+      if (billingType === 'CREDIT_CARD' || !billingType) {
+        try {
+          setLoadingCheckout(true);
+          // Buscar detalhes do pagamento - isso retorna invoiceUrl se for cartão
+          const resp = await fetch(`${API_BASE}/subscription/payment-details/${assinaturaId}`);
+          if (resp.ok) {
+            const data = await resp.json();
+            if (data.pagamento) {
+              // Se for cartão de crédito e tiver invoiceUrl, usar ela
+              if (data.pagamento.billingType === 'CREDIT_CARD' && data.pagamento.invoiceUrl) {
+                setCheckoutUrl(data.pagamento.invoiceUrl);
+                // Atualizar draft no localStorage
+                try {
+                  const stored = localStorage.getItem("assinaturaDraft");
+                  if (stored) {
+                    const draftData = JSON.parse(stored);
+                    draftData.checkoutUrl = data.pagamento.invoiceUrl;
+                    localStorage.setItem("assinaturaDraft", JSON.stringify(draftData));
+                    setDraft(draftData);
+                  }
+                } catch {}
+              }
+            }
+          }
+        } catch (err) {
+          console.error('Erro ao buscar detalhes do pagamento:', err);
+        } finally {
+          setLoadingCheckout(false);
+        }
+      }
+    };
+
+    buscarCheckoutUrl();
+  }, [assinaturaId, draft, checkoutUrl, loadingCheckout, API_BASE]);
+
+  // Função para buscar status do pagamento
+  const fetchStatus = useCallback(async (showRefreshing = false) => {
+    if (!assinaturaId) return;
+    
+    if (showRefreshing) {
+      setRefreshing(true);
+    }
+    
+    try {
+      const resp = await fetch(`${API_BASE}/subscription/check-payment/${assinaturaId}`);
+      const data = await resp.json();
+      if (resp.ok) {
+        setStatus(data);
+        if (data.pago) setPolling(false);
+        setErro(""); // Limpar erro se sucesso
+      } else {
+        let msg = "Erro ao verificar pagamento.";
+        if (typeof data.error === "string") msg = data.error;
+        else if (typeof data.description === "string") msg = data.description;
+        else if (typeof data === "object" && data !== null) msg = JSON.stringify(data);
+        setErro(msg);
+      }
+    } catch (err) {
+      setErro(err instanceof Error ? err.message : JSON.stringify(err));
+    } finally {
+      setLoading(false);
+      if (showRefreshing) {
+        setRefreshing(false);
+      }
+    }
+  }, [assinaturaId, API_BASE]);
+
   // Polling de pagamento automático (mesma lógica do teste)
   useEffect(() => {
     if (!assinaturaId || !polling) return;
-    const fetchStatus = async () => {
-      try {
-        const resp = await fetch(`${API_BASE}/subscription/check-payment/${assinaturaId}`);
-        const data = await resp.json();
-        if (resp.ok) {
-          setStatus(data);
-          if (data.pago) setPolling(false);
-        } else {
-          let msg = "Erro ao verificar pagamento.";
-          if (typeof data.error === "string") msg = data.error;
-          else if (typeof data.description === "string") msg = data.description;
-          else if (typeof data === "object" && data !== null) msg = JSON.stringify(data);
-          setErro(msg);
-        }
-      } catch (err) {
-        setErro(err instanceof Error ? err.message : JSON.stringify(err));
-      } finally {
-        setLoading(false);
-      }
-    };
-    const interval = setInterval(fetchStatus, 7000);
-    fetchStatus();
+    const interval = setInterval(() => fetchStatus(false), 7000);
+    fetchStatus(false); // Primeira chamada imediata
     return () => clearInterval(interval);
-  }, [assinaturaId, polling, API_BASE]);
+  }, [assinaturaId, polling, fetchStatus]);
 
   const copiarCodigo = async (texto: string) => {
     try {
@@ -111,7 +178,10 @@ export default function AguardandoPagamentoPage() {
     } catch {}
   };
 
-  const billingType = draft?.dados?.billingType as BillingType | undefined;
+  // Tentar obter billingType do draft, do status do pagamento, ou buscar dos detalhes
+  const billingTypeFromDraft = draft?.dados?.billingType as BillingType | undefined;
+  const billingTypeFromPayment = (status?.pagamento as PaymentDetails)?.billingType as BillingType | undefined;
+  const billingType = billingTypeFromDraft || billingTypeFromPayment;
   const pagamento = (status?.pagamento as PaymentDetails) || undefined;
   const boletoUrl = pagamento?.bankSlipUrl || pagamento?.invoiceUrl;
   const pixText = pagamento?.pixQrCode || pagamento?.qrCode;
@@ -363,57 +433,160 @@ export default function AguardandoPagamentoPage() {
             <div className={`inline-flex items-center justify-center w-20 h-20 rounded-full mb-4 ${status?.pago ? 'bg-green-100 dark:bg-green-900/30' : 'bg-yellow-100 dark:bg-yellow-900/30'}`}>
               {status?.pago ? (
                 <CheckCircle className="w-10 h-10 text-green-600 dark:text-green-400" />
+              ) : loading && !status ? (
+                <RefreshCw className="w-10 h-10 text-yellow-600 dark:text-yellow-400 animate-spin" />
               ) : (
                 <Clock className="w-10 h-10 text-yellow-600 dark:text-yellow-400" />
               )}
             </div>
-            <h1 className="text-3xl font-bold text-gray-900 dark:text-white mb-2">Aguardando Pagamento</h1>
-            <p className="text-gray-600 dark:text-gray-300">Sua assinatura foi criada com sucesso!</p>
+            <h1 className="text-3xl font-bold text-gray-900 dark:text-white mb-2">
+              {status?.pago ? "Pagamento Confirmado!" : "Aguardando Pagamento"}
+            </h1>
+            <p className="text-gray-600 dark:text-gray-300">
+              {loading && !status ? "Verificando status do pagamento..." : status?.pago ? "Seu pagamento foi confirmado com sucesso!" : "Sua assinatura foi criada com sucesso!"}
+            </p>
+            {!status?.pago && (
+              <button
+                onClick={() => fetchStatus(true)}
+                disabled={refreshing || loading}
+                className="mt-4 inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-primary hover:bg-green-700 text-white text-sm font-medium transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                <RefreshCw className={`w-4 h-4 ${refreshing ? 'animate-spin' : ''}`} />
+                {refreshing ? 'Atualizando...' : 'Atualizar Status'}
+              </button>
+            )}
           </div>
 
-          {draft && (
+          {(draft || assinaturaId) && (
             <div className="space-y-6">
-              <div className="bg-gray-50 dark:bg-gray-700 rounded-lg p-6">
-                <h3 className="font-semibold text-lg text-gray-900 dark:text-white mb-4">Detalhes da Assinatura</h3>
-                <div className="space-y-3 text-sm">
-                  <div className="flex justify-between">
-                    <span className="text-gray-600 dark:text-gray-400">Plano:</span>
-                    <span className="font-semibold text-gray-900 dark:text-white">{draft.plano?.tipo}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-gray-600 dark:text-gray-400">Periodicidade:</span>
-                    <span className="font-semibold text-gray-900 dark:text-white">{draft.plano?.periodicidade}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-gray-600 dark:text-gray-400">Valor:</span>
-                    <span className="font-semibold text-primary text-lg">R$ {draft.plano?.preco?.toFixed(2)}/mês</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-gray-600 dark:text-gray-400">ID da Assinatura:</span>
-                    <div className="flex items-center gap-2">
-                      <span className="font-mono text-xs text-gray-900 dark:text-white">{assinaturaId}</span>
-                      <button onClick={() => copiarCodigo(assinaturaId || "")} className="p-1 hover:bg-gray-200 dark:hover:bg-gray-600 rounded">
-                        <Copy className={`w-4 h-4 ${copiado ? "text-green-600" : "text-gray-600"}`} />
-                      </button>
+              {draft && (
+                <div className="bg-gray-50 dark:bg-gray-700 rounded-lg p-6">
+                  <h3 className="font-semibold text-lg text-gray-900 dark:text-white mb-4">Detalhes da Assinatura</h3>
+                  <div className="space-y-3 text-sm">
+                    <div className="flex justify-between">
+                      <span className="text-gray-600 dark:text-gray-400">Plano:</span>
+                      <span className="font-semibold text-gray-900 dark:text-white">{draft.plano?.tipo || 'N/A'}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-gray-600 dark:text-gray-400">Periodicidade:</span>
+                      <span className="font-semibold text-gray-900 dark:text-white">{draft.plano?.periodicidade || 'N/A'}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-gray-600 dark:text-gray-400">Valor:</span>
+                      <span className="font-semibold text-primary text-lg">R$ {draft.plano?.preco?.toFixed(2) || '0.00'}/mês</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-gray-600 dark:text-gray-400">ID da Assinatura:</span>
+                      <div className="flex items-center gap-2">
+                        <span className="font-mono text-xs text-gray-900 dark:text-white">{assinaturaId}</span>
+                        <button onClick={() => copiarCodigo(assinaturaId || "")} className="p-1 hover:bg-gray-200 dark:hover:bg-gray-600 rounded">
+                          <Copy className={`w-4 h-4 ${copiado ? "text-green-600" : "text-gray-600"}`} />
+                        </button>
+                      </div>
                     </div>
                   </div>
                 </div>
-              </div>
-
-              <div className="border-2 border-yellow-200 dark:border-yellow-800 bg-yellow-50 dark:bg-yellow-900/20 rounded-lg p-6">
-                <div className="flex items-start gap-3">
-                  <AlertCircle className="w-6 h-6 text-yellow-600 dark:text-yellow-400 flex-shrink-0 mt-1" />
-                  <div className="flex-1">
-                    <h4 className="font-semibold text-yellow-900 dark:text-yellow-200 mb-2">Próximos Passos</h4>
-                    <ul className="space-y-2 text-sm text-yellow-800 dark:text-yellow-300">
-                      <li>• Realize o pagamento conforme a forma escolhida ({draft.dados?.billingType})</li>
-                      <li>• Após a confirmação do pagamento, você receberá um email com instruções</li>
-                      <li>• Use a funcionalidade "Primeiro Acesso" para gerar sua senha temporária</li>
-                      <li>• Faça login e comece a usar os serviços imediatamente</li>
-                    </ul>
+              )}
+              
+              {!draft && assinaturaId && (
+                <div className="bg-gray-50 dark:bg-gray-700 rounded-lg p-6">
+                  <h3 className="font-semibold text-lg text-gray-900 dark:text-white mb-4">Detalhes da Assinatura</h3>
+                  <div className="space-y-3 text-sm">
+                    <div className="flex justify-between">
+                      <span className="text-gray-600 dark:text-gray-400">ID da Assinatura:</span>
+                      <div className="flex items-center gap-2">
+                        <span className="font-mono text-xs text-gray-900 dark:text-white">{assinaturaId}</span>
+                        <button onClick={() => copiarCodigo(assinaturaId || "")} className="p-1 hover:bg-gray-200 dark:hover:bg-gray-600 rounded">
+                          <Copy className={`w-4 h-4 ${copiado ? "text-green-600" : "text-gray-600"}`} />
+                        </button>
+                      </div>
+                    </div>
                   </div>
                 </div>
-              </div>
+              )}
+
+              {draft && (
+                <div className="border-2 border-yellow-200 dark:border-yellow-800 bg-yellow-50 dark:bg-yellow-900/20 rounded-lg p-6">
+                  <div className="flex items-start gap-3">
+                    <AlertCircle className="w-6 h-6 text-yellow-600 dark:text-yellow-400 flex-shrink-0 mt-1" />
+                    <div className="flex-1">
+                      <h4 className="font-semibold text-yellow-900 dark:text-yellow-200 mb-2">Próximos Passos</h4>
+                      <ul className="space-y-2 text-sm text-yellow-800 dark:text-yellow-300">
+                        <li>• Realize o pagamento conforme a forma escolhida ({draft.dados?.billingType || 'Cartão de Crédito'})</li>
+                        <li>• Após a confirmação do pagamento, você receberá um email com instruções</li>
+                        <li>• Use a funcionalidade "Primeiro Acesso" para gerar sua senha temporária</li>
+                        <li>• Faça login e comece a usar os serviços imediatamente</li>
+                      </ul>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {billingType === "CREDIT_CARD" && (
+                <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-6">
+                  <h4 className="font-semibold text-blue-900 dark:text-blue-200 mb-3">Pagamento via Cartão de Crédito</h4>
+                  <p className="text-sm text-blue-800 dark:text-blue-300 mb-4">
+                    Para finalizar seu pagamento, clique no botão abaixo para ser redirecionado ao checkout seguro do Asaas.
+                  </p>
+                  {loadingCheckout ? (
+                    <div className="text-center py-4">
+                      <p className="text-sm text-blue-700 dark:text-blue-400">Gerando link de pagamento...</p>
+                    </div>
+                  ) : (checkoutUrl || draft?.checkoutUrl) ? (
+                    <>
+                      <a 
+                        href={checkoutUrl || draft?.checkoutUrl || '#'} 
+                        target="_blank" 
+                        rel="noopener noreferrer" 
+                        className="inline-block w-full text-center px-6 py-3 rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-semibold shadow-md hover:shadow-lg transition-all"
+                      >
+                        Ir para Pagamento
+                      </a>
+                      <p className="text-xs text-blue-700 dark:text-blue-400 mt-3">
+                        Você será redirecionado para uma página segura onde poderá inserir os dados do seu cartão de crédito.
+                      </p>
+                    </>
+                  ) : (
+                    <div className="text-center py-4">
+                      <p className="text-sm text-red-600 dark:text-red-400 mb-3">
+                        Não foi possível gerar o link de pagamento. Por favor, entre em contato com o suporte.
+                      </p>
+                      <button
+                        onClick={async () => {
+                          setLoadingCheckout(true);
+                          try {
+                            // Tentar buscar novamente dos detalhes do pagamento
+                            const resp = await fetch(`${API_BASE}/subscription/payment-details/${assinaturaId}`);
+                            if (resp.ok) {
+                              const data = await resp.json();
+                              if (data.pagamento?.invoiceUrl) {
+                                setCheckoutUrl(data.pagamento.invoiceUrl);
+                                // Atualizar draft
+                                try {
+                                  const stored = localStorage.getItem("assinaturaDraft");
+                                  if (stored) {
+                                    const draftData = JSON.parse(stored);
+                                    draftData.checkoutUrl = data.pagamento.invoiceUrl;
+                                    localStorage.setItem("assinaturaDraft", JSON.stringify(draftData));
+                                    setDraft(draftData);
+                                  }
+                                } catch {}
+                              }
+                            }
+                          } catch (err) {
+                            console.error('Erro ao buscar URL:', err);
+                          } finally {
+                            setLoadingCheckout(false);
+                          }
+                        }}
+                        className="px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-sm"
+                      >
+                        Tentar Novamente
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )}
 
               {(billingType === "BOLETO" || billingType === "PIX") && (
                 <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-6">

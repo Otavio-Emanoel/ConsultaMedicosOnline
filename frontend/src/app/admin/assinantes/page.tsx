@@ -22,6 +22,9 @@ import {
   Key,
   Copy,
   EyeOff,
+  Edit,
+  Trash2,
+  Plus,
 } from 'lucide-react';
 import { useState, useEffect, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
@@ -91,6 +94,11 @@ export default function AdminAssinantesPage() {
   const [modalSenha, setModalSenha] = useState<{ cpf: string; nome: string; email: string; senha: string } | null>(null);
   const [mostrarSenha, setMostrarSenha] = useState<boolean>(false);
   const [gerandoSenha, setGerandoSenha] = useState<boolean>(false);
+  const [modalEditar, setModalEditar] = useState<AssinanteItem | null>(null);
+  const [modalCadastrarVida, setModalCadastrarVida] = useState<{ cpfTitular: string; nomeTitular: string } | null>(null);
+  const [dependentes, setDependentes] = useState<any[]>([]);
+  const [loadingDependentes, setLoadingDependentes] = useState<boolean>(false);
+  const [planos, setPlanos] = useState<any[]>([]);
 
   useEffect(() => {
     const fetchData = async () => {
@@ -260,6 +268,139 @@ export default function AdminAssinantesPage() {
       // Feedback visual pode ser adicionado aqui
     }
   };
+
+  const buscarDependentes = async (cpf: string) => {
+    setLoadingDependentes(true);
+    try {
+      const token = typeof window !== 'undefined' 
+        ? (localStorage.getItem('token') || localStorage.getItem('auth_token')) 
+        : null;
+      if (!token) throw new Error('Token não encontrado');
+      
+      const headers: HeadersInit = {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`,
+      };
+      
+      const resp = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL}/dependentes/${cpf}`, { headers });
+      if (!resp.ok) throw new Error('Erro ao buscar dependentes');
+      const data = await resp.json();
+      setDependentes(data.dependentes || []);
+    } catch (e: any) {
+      setError(e?.message || 'Erro ao buscar dependentes');
+      setDependentes([]);
+    } finally {
+      setLoadingDependentes(false);
+    }
+  };
+
+  const ativarVida = async (cpf: string) => {
+    try {
+      const token = typeof window !== 'undefined' 
+        ? (localStorage.getItem('token') || localStorage.getItem('auth_token')) 
+        : null;
+      if (!token) throw new Error('Token não encontrado');
+      
+      const headers: HeadersInit = {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`,
+      };
+      
+      const resp = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL}/admin/beneficiarios/${cpf}/ativar-rapidoc`, {
+        method: 'POST',
+        headers,
+      });
+      if (!resp.ok) {
+        const errorData = await resp.json().catch(() => ({ error: 'Erro desconhecido' }));
+        throw new Error(errorData.error || 'Erro ao ativar vida');
+      }
+      // Recarregar dados
+      window.location.reload();
+    } catch (e: any) {
+      setError(e?.message || 'Erro ao ativar vida');
+    }
+  };
+
+  const inativarVida = async (cpf: string) => {
+    if (!confirm('Tem certeza que deseja inativar esta vida?')) return;
+    try {
+      const token = typeof window !== 'undefined' 
+        ? (localStorage.getItem('token') || localStorage.getItem('auth_token')) 
+        : null;
+      if (!token) throw new Error('Token não encontrado');
+      
+      const headers: HeadersInit = {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`,
+      };
+      
+      const resp = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL}/beneficiarios/${cpf}/inativar-rapidoc`, {
+        method: 'POST',
+        headers,
+      });
+      if (!resp.ok) {
+        const errorData = await resp.json().catch(() => ({ error: 'Erro desconhecido' }));
+        throw new Error(errorData.error || 'Erro ao inativar vida');
+      }
+      // Recarregar dados
+      if (modalAssinante) {
+        buscarDependentes(modalAssinante.cpf);
+      }
+    } catch (e: any) {
+      setError(e?.message || 'Erro ao inativar vida');
+    }
+  };
+
+  const removerDependente = async (cpf: string) => {
+    if (!confirm('Tem certeza que deseja remover este dependente? Esta ação não pode ser desfeita.')) return;
+    try {
+      const token = typeof window !== 'undefined' 
+        ? (localStorage.getItem('token') || localStorage.getItem('auth_token')) 
+        : null;
+      if (!token) throw new Error('Token não encontrado');
+      
+      const headers: HeadersInit = {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`,
+      };
+      
+      const resp = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL}/beneficiarios/${cpf}`, {
+        method: 'DELETE',
+        headers,
+      });
+      if (!resp.ok) {
+        const errorData = await resp.json().catch(() => ({ error: 'Erro desconhecido' }));
+        throw new Error(errorData.error || 'Erro ao remover dependente');
+      }
+      // Recarregar lista de dependentes
+      if (modalAssinante) {
+        buscarDependentes(modalAssinante.cpf);
+      }
+    } catch (e: any) {
+      setError(e?.message || 'Erro ao remover dependente');
+    }
+  };
+
+  const buscarPlanos = async () => {
+    try {
+      const token = typeof window !== 'undefined' 
+        ? (localStorage.getItem('token') || localStorage.getItem('auth_token')) 
+        : null;
+      const headers: HeadersInit = { 'Content-Type': 'application/json' };
+      if (token) headers['Authorization'] = `Bearer ${token}`;
+      
+      const resp = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL}/planos`, { headers });
+      if (!resp.ok) throw new Error('Erro ao buscar planos');
+      const data = await resp.json();
+      setPlanos(data || []);
+    } catch (e: any) {
+      console.error('Erro ao buscar planos:', e);
+    }
+  };
+
+  useEffect(() => {
+    buscarPlanos();
+  }, []);
 
   const filteredAssinantes = useMemo(() => {
     return assinantes.map(a => ({
@@ -571,16 +712,22 @@ export default function AdminAssinantesPage() {
                       setModalAssinante(assinante);
                       setModalLoading(true);
                       setModalFaturas(null);
+                      setDependentes([]);
                       try {
                         const token = typeof window !== 'undefined' 
                           ? (localStorage.getItem('token') || localStorage.getItem('auth_token')) 
                           : null;
                         const headers: HeadersInit = { 'Content-Type': 'application/json' };
                         if (token) headers['Authorization'] = `Bearer ${token}`;
-                        const resp = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/faturas?cpf=${assinante.cpf}`, { headers });
-                        if (!resp.ok) throw new Error('Erro ao buscar faturas');
-                        const data = await resp.json();
-                        setModalFaturas(data.faturas || []);
+                        const [faturasResp] = await Promise.all([
+                          fetch(`${process.env.NEXT_PUBLIC_API_URL}/faturas?cpf=${assinante.cpf}`, { headers }),
+                        ]);
+                        if (faturasResp.ok) {
+                          const data = await faturasResp.json();
+                          setModalFaturas(data.faturas || []);
+                        }
+                        // Buscar dependentes
+                        buscarDependentes(assinante.cpf);
                       } catch {
                         setModalFaturas([]);
                       } finally {
@@ -589,6 +736,10 @@ export default function AdminAssinantesPage() {
                     }}>
                       <Eye className="w-4 h-4 mr-1" />
                       Detalhes
+                    </Button>
+                    <Button variant="outline" size="sm" onClick={() => setModalEditar(assinante)}>
+                      <Edit className="w-4 h-4 mr-1" />
+                      Editar
                     </Button>
                     <Button 
                       variant="outline" 
@@ -601,12 +752,12 @@ export default function AdminAssinantesPage() {
                       Nova Senha
                     </Button>
                     {assinante.status === 'ativo' ? (
-                      <Button variant="danger" size="sm">
+                      <Button variant="danger" size="sm" onClick={() => inativarVida(assinante.cpf)}>
                         <Ban className="w-4 h-4 mr-1" />
                         Suspender
                       </Button>
                     ) : (
-                      <Button variant="primary" size="sm">
+                      <Button variant="primary" size="sm" onClick={() => ativarVida(assinante.cpf)}>
                         <CheckCircle className="w-4 h-4 mr-1" />
                         Ativar
                       </Button>
@@ -618,21 +769,81 @@ export default function AdminAssinantesPage() {
           </Card>
         ))}
         {/* Modal de detalhes do assinante */}
-        <Dialog open={!!modalAssinante} onOpenChange={v => { if (!v) { setModalAssinante(null); setModalFaturas(null); } }}>
+        <Dialog open={!!modalAssinante} onOpenChange={v => { if (!v) { setModalAssinante(null); setModalFaturas(null); setDependentes([]); } }}>
           <Dialog.Content>
             <div className="mb-4">
               <h2 className="text-lg font-semibold">Detalhes do Assinante</h2>
             </div>
             {modalAssinante && (
-              <div className="space-y-2">
-                <div><b>Nome:</b> {modalAssinante.nome}</div>
-                <div><b>Email:</b> {modalAssinante.email}</div>
-                <div><b>CPF:</b> {modalAssinante.cpf}</div>
-                <div><b>Plano:</b> {modalAssinante.plano}</div>
-                <div><b>Status:</b> {getStatusBadge(modalAssinante.status)}</div>
-                <div><b>Data de adesão:</b> {modalAssinante.dataAdesao}</div>
-                <div><b>Valor mensal:</b> R$ {modalAssinante.valorMensal.toFixed(2).replace('.', ',')}</div>
-                <div><b>Dependentes:</b> {modalAssinante.dependentes}</div>
+              <div className="space-y-4 max-h-[80vh] overflow-y-auto">
+                <div className="space-y-2">
+                  <div><b>Nome:</b> {modalAssinante.nome}</div>
+                  <div><b>Email:</b> {modalAssinante.email}</div>
+                  <div><b>CPF:</b> {modalAssinante.cpf}</div>
+                  <div><b>Plano:</b> {modalAssinante.plano}</div>
+                  <div><b>Status:</b> {getStatusBadge(modalAssinante.status)}</div>
+                  <div><b>Data de adesão:</b> {modalAssinante.dataAdesao}</div>
+                  <div><b>Valor mensal:</b> R$ {modalAssinante.valorMensal.toFixed(2).replace('.', ',')}</div>
+                </div>
+
+                {/* Seção de Dependentes/Vidas */}
+                <div className="border-t pt-4">
+                  <div className="flex items-center justify-between mb-3">
+                    <h3 className="text-md font-semibold">Dependentes/Vidas</h3>
+                    <Button 
+                      variant="primary" 
+                      size="sm"
+                      onClick={() => setModalCadastrarVida({ cpfTitular: modalAssinante.cpf, nomeTitular: modalAssinante.nome })}
+                    >
+                      <Plus className="w-4 h-4 mr-1" />
+                      Cadastrar Nova Vida
+                    </Button>
+                  </div>
+                  {loadingDependentes ? (
+                    <p className="text-sm text-gray-500">Carregando dependentes...</p>
+                  ) : dependentes.length === 0 ? (
+                    <p className="text-sm text-gray-500">Nenhum dependente cadastrado.</p>
+                  ) : (
+                    <div className="space-y-2">
+                      {dependentes.map((dep: any) => (
+                        <div key={dep.id || dep.cpf} className="flex items-center justify-between p-2 bg-gray-50 dark:bg-gray-800 rounded">
+                          <div className="flex-1">
+                            <div className="font-medium">{dep.nome}</div>
+                            <div className="text-sm text-gray-600 dark:text-gray-400">
+                              CPF: {dep.cpf} {dep.cortesia && <Badge variant="warning" className="ml-2">Cortesia</Badge>}
+                            </div>
+                          </div>
+                          <div className="flex gap-2">
+                            <Button 
+                              variant="outline" 
+                              size="sm"
+                              onClick={() => {
+                                // TODO: Implementar edição de dependente
+                                alert('Edição de dependente será implementada');
+                              }}
+                            >
+                              <Edit className="w-4 h-4" />
+                            </Button>
+                            <Button 
+                              variant="outline" 
+                              size="sm"
+                              onClick={() => dep.isActive !== false ? inativarVida(dep.cpf) : ativarVida(dep.cpf)}
+                            >
+                              {dep.isActive !== false ? <Ban className="w-4 h-4" /> : <CheckCircle className="w-4 h-4" />}
+                            </Button>
+                            <Button 
+                              variant="danger" 
+                              size="sm"
+                              onClick={() => removerDependente(dep.cpf)}
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </Button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
               </div>
             )}
           </Dialog.Content>
@@ -702,6 +913,213 @@ export default function AdminAssinantesPage() {
                   </Button>
                 </div>
               </div>
+            )}
+          </Dialog.Content>
+        </Dialog>
+
+        {/* Modal de edição de assinante */}
+        <Dialog open={!!modalEditar} onOpenChange={v => { if (!v) setModalEditar(null); }}>
+          <Dialog.Content className="max-w-2xl max-h-[90vh] overflow-y-auto">
+            <div className="mb-4">
+              <h2 className="text-lg font-semibold">Editar Assinante</h2>
+            </div>
+            {modalEditar && (
+              <form onSubmit={async (e) => {
+                e.preventDefault();
+                const formData = new FormData(e.currentTarget);
+                const dados: any = {};
+                formData.forEach((value, key) => {
+                  if (value) dados[key] = value;
+                });
+                try {
+                  const token = typeof window !== 'undefined' 
+                    ? (localStorage.getItem('token') || localStorage.getItem('auth_token')) 
+                    : null;
+                  if (!token) throw new Error('Token não encontrado');
+                  
+                  const headers: HeadersInit = {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${token}`,
+                  };
+                  
+                  const resp = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL}/usuario/${modalEditar.cpf}`, {
+                    method: 'PATCH',
+                    headers,
+                    body: JSON.stringify(dados),
+                  });
+                  if (!resp.ok) {
+                    const errorData = await resp.json().catch(() => ({ error: 'Erro desconhecido' }));
+                    throw new Error(errorData.error || 'Erro ao atualizar');
+                  }
+                  setModalEditar(null);
+                  window.location.reload();
+                } catch (e: any) {
+                  setError(e?.message || 'Erro ao editar assinante');
+                }
+              }} className="space-y-4">
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium mb-1">Nome</label>
+                    <Input name="nome" defaultValue={modalEditar.nome} required />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium mb-1">Email</label>
+                    <Input name="email" type="email" defaultValue={modalEditar.email} required />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium mb-1">CPF</label>
+                    <Input name="cpf" value={modalEditar.cpf} disabled />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium mb-1">Telefone</label>
+                    <Input name="telefone" type="tel" />
+                  </div>
+                </div>
+                <div className="flex justify-end gap-2">
+                  <Button variant="outline" type="button" onClick={() => setModalEditar(null)}>
+                    Cancelar
+                  </Button>
+                  <Button variant="primary" type="submit">
+                    Salvar
+                  </Button>
+                </div>
+              </form>
+            )}
+          </Dialog.Content>
+        </Dialog>
+
+        {/* Modal de cadastro de vida */}
+        <Dialog open={!!modalCadastrarVida} onOpenChange={v => { if (!v) setModalCadastrarVida(null); }}>
+          <Dialog.Content className="max-w-2xl max-h-[90vh] overflow-y-auto">
+            <div className="mb-4">
+              <h2 className="text-lg font-semibold">Cadastrar Nova Vida</h2>
+              <p className="text-sm text-gray-600 dark:text-gray-400">
+                Titular: {modalCadastrarVida?.nomeTitular} ({modalCadastrarVida?.cpfTitular})
+              </p>
+            </div>
+            {modalCadastrarVida && (
+              <form onSubmit={async (e) => {
+                e.preventDefault();
+                const formData = new FormData(e.currentTarget);
+                const dados: any = {
+                  nome: formData.get('nome'),
+                  cpf: formData.get('cpf'),
+                  birthDate: formData.get('birthDate'),
+                  email: formData.get('email'),
+                  phone: formData.get('phone'),
+                  zipCode: formData.get('zipCode'),
+                  endereco: formData.get('endereco'),
+                  cidade: formData.get('cidade'),
+                  estado: formData.get('estado'),
+                  planoId: formData.get('planoId'),
+                  paymentType: formData.get('paymentType'),
+                  serviceType: formData.get('serviceType'),
+                  cortesia: formData.get('cortesia') === 'on',
+                };
+                try {
+                  const token = typeof window !== 'undefined' 
+                    ? (localStorage.getItem('token') || localStorage.getItem('auth_token')) 
+                    : null;
+                  if (!token) throw new Error('Token não encontrado');
+                  
+                  const headers: HeadersInit = {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${token}`,
+                  };
+                  
+                  const resp = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL}/admin/assinantes/${modalCadastrarVida.cpfTitular}/vidas/cadastrar`, {
+                    method: 'POST',
+                    headers,
+                    body: JSON.stringify(dados),
+                  });
+                  if (!resp.ok) {
+                    const errorData = await resp.json().catch(() => ({ error: 'Erro desconhecido' }));
+                    throw new Error(errorData.error || 'Erro ao cadastrar vida');
+                  }
+                  setModalCadastrarVida(null);
+                  if (modalAssinante) {
+                    buscarDependentes(modalAssinante.cpf);
+                  }
+                  alert('Vida cadastrada com sucesso!');
+                } catch (e: any) {
+                  setError(e?.message || 'Erro ao cadastrar vida');
+                }
+              }} className="space-y-4">
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium mb-1">Nome *</label>
+                    <Input name="nome" required />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium mb-1">CPF *</label>
+                    <Input name="cpf" required />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium mb-1">Data de Nascimento *</label>
+                    <Input name="birthDate" type="date" required />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium mb-1">Email *</label>
+                    <Input name="email" type="email" required />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium mb-1">Telefone</label>
+                    <Input name="phone" type="tel" />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium mb-1">CEP</label>
+                    <Input name="zipCode" />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium mb-1">Endereço</label>
+                    <Input name="endereco" />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium mb-1">Cidade</label>
+                    <Input name="cidade" />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium mb-1">Estado</label>
+                    <Input name="estado" maxLength={2} />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium mb-1">Plano</label>
+                    <select name="planoId" className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800">
+                      <option value="">Selecione um plano</option>
+                      {planos.map((plano: any) => (
+                        <option key={plano.id} value={plano.id}>{plano.tipo || plano.descricao} - R$ {plano.preco?.toFixed(2)}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium mb-1">Payment Type</label>
+                    <select name="paymentType" className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800">
+                      <option value="">Selecione</option>
+                      <option value="S">S</option>
+                      <option value="A">A</option>
+                      <option value="L">L</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium mb-1">Service Type</label>
+                    <Input name="serviceType" placeholder="UUID do plano Rapidoc" />
+                  </div>
+                </div>
+                <div className="flex items-center gap-2">
+                  <input type="checkbox" name="cortesia" id="cortesia" />
+                  <label htmlFor="cortesia" className="text-sm">
+                    Cortesia (não gera faturas)
+                  </label>
+                </div>
+                <div className="flex justify-end gap-2">
+                  <Button variant="outline" type="button" onClick={() => setModalCadastrarVida(null)}>
+                    Cancelar
+                  </Button>
+                  <Button variant="primary" type="submit">
+                    Cadastrar
+                  </Button>
+                </div>
+              </form>
             )}
           </Dialog.Content>
         </Dialog>
