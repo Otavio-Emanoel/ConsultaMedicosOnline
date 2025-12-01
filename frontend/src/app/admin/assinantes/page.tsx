@@ -919,7 +919,7 @@ export default function AdminAssinantesPage() {
 
         {/* Modal de edição de assinante */}
         <Dialog open={!!modalEditar} onOpenChange={v => { if (!v) setModalEditar(null); }}>
-          <Dialog.Content className="max-w-2xl max-h-[90vh] overflow-y-auto">
+          <Dialog.Content>
             <div className="mb-4">
               <h2 className="text-lg font-semibold">Editar Assinante</h2>
             </div>
@@ -990,7 +990,7 @@ export default function AdminAssinantesPage() {
 
         {/* Modal de cadastro de vida */}
         <Dialog open={!!modalCadastrarVida} onOpenChange={v => { if (!v) setModalCadastrarVida(null); }}>
-          <Dialog.Content className="max-w-2xl max-h-[90vh] overflow-y-auto">
+          <Dialog.Content>
             <div className="mb-4">
               <h2 className="text-lg font-semibold">Cadastrar Nova Vida</h2>
               <p className="text-sm text-gray-600 dark:text-gray-400">
