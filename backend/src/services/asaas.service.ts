@@ -3,7 +3,7 @@ import type { AxiosInstance } from 'axios';
 import { configDotenv } from 'dotenv';
 configDotenv();
 
-const ASAAS_API_URL = process.env.ASAAS_BASE_URL || 'https://sandbox.asaas.com/api/v3';
+const ASAAS_API_URL = process.env.ASAAS_BASE_URL;
 const ASAAS_API_KEY = process.env.ASAAS_API_KEY;
 
 // Criar instância do Axios com timeout de 60 segundos
