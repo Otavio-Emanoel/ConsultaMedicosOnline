@@ -1,6 +1,6 @@
 'use client';
 
-import { Menu, Bell, ChevronDown } from 'lucide-react';
+import { Menu, Bell } from 'lucide-react';
 import { ThemeToggle } from './ThemeToggle';
 
 interface TopbarProps {
@@ -9,6 +9,22 @@ interface TopbarProps {
 }
 
 export function Topbar({ onMenuClick, title }: TopbarProps) {
+  
+  const nomeUsuario = typeof window !== 'undefined' ? (localStorage.getItem('nomeUsuario') || 'Usuário') : 'Usuário';
+  // Busca o nome do usuário logado salvo em localStorage.user (JSON)
+  let letra = 'U';
+  if (typeof window !== 'undefined') {
+    try {
+      const userStr = localStorage.getItem('user');
+      if (userStr) {
+        const user = JSON.parse(userStr);
+        if (user?.name) {
+          letra = user.name.trim()[0]?.toUpperCase() || 'U';
+        }
+      }
+    } catch {}
+  }
+
   return (
     <header className="h-16 bg-white dark:bg-surface-dark border-b border-border-light dark:border-border-dark sticky top-0 z-30">
       <div className="h-full px-4 flex items-center justify-between">
@@ -36,13 +52,10 @@ export function Topbar({ onMenuClick, title }: TopbarProps) {
           {/* Theme Toggle */}
           <ThemeToggle />
 
-          {/* User Menu */}
-          <button className="flex items-center space-x-2 p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors">
-            <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center">
-              <span className="text-sm font-medium text-primary">U</span>
-            </div>
-            <ChevronDown className="w-4 h-4 text-gray-700 dark:text-gray-300 hidden sm:block" />
-          </button>
+          {/* User Icon */}
+          <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center">
+            <span className="text-sm font-medium text-primary">{letra}</span>
+          </div>
         </div>
       </div>
     </header>
