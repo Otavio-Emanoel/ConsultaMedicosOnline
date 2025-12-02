@@ -82,8 +82,7 @@ export default function DashboardPage() {
           setLoading(false); // Libera UI rapidamente
         }
 
-        // OTIMIZAÇÃO: Carregar consultas em background (não bloqueia UI)
-        // Similar ao padrão usado em encaminhamentos/page.tsx
+        // Carregar próximas consultas em background, via /dashboard/agendamentos
         if (mounted) {
           const appointmentsController = new AbortController();
           
@@ -92,7 +91,7 @@ export default function DashboardPage() {
             appointmentsController.abort();
           }, 120000);
 
-          fetch(`${apiBase}/agendamentos`, {
+          fetch(`${apiBase}/dashboard/agendamentos?limit=5`, {
             headers: { Authorization: `Bearer ${token}` },
             signal: appointmentsController.signal,
           })
@@ -127,7 +126,7 @@ export default function DashboardPage() {
                 console.log('Consultas carregadas:', mappedAppointments.length, mappedAppointments);
               }
 
-              // Atualizar dados com consultas carregadas em background
+              // Atualizar dados com próximas consultas carregadas em background
               setData((prevData) => {
                 if (!prevData) return prevData;
                 return {

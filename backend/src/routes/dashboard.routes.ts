@@ -6,5 +6,7 @@ const router = Router();
 
 // GET /api/dashboard (protegido)
 router.get('/dashboard', autenticarFirebase, DashboardController.getDashboard);
+// GET /api/dashboard/agendamentos (protegido) - próximas consultas do usuário logado
+router.get('/dashboard/agendamentos', autenticarFirebase, DashboardController.getProximosAgendamentos);
 
 export default router;
