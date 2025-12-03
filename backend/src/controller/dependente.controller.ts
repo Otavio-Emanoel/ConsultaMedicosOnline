@@ -19,7 +19,8 @@ export class DependenteController {
         cpf,
         birthday: birthDate,
         email,
-        phone,
+        // Envia phone apenas se válido (11 dígitos sem país)
+        ...(typeof phone === 'string' && phone.replace(/\D/g, '').length === 11 ? { phone: phone.replace(/\D/g, '') } : {}),
         zipCode,
         holder
       };
@@ -201,7 +202,13 @@ export class DependenteController {
       if (typeof nome === 'string' && nome.trim()) bodyRapidoc.name = nome.trim();
       if (typeof birthDate === 'string' && birthDate.trim()) bodyRapidoc.birthday = birthDate.trim();
       if (typeof email === 'string' && email.trim() && (shouldUpdateRapidoc ? (email.trim() !== (atualRapidoc?.email || '').trim()) : true)) bodyRapidoc.email = email.trim();
-      if (typeof phone === 'string' && phone.trim()) bodyRapidoc.phone = phone.trim();
+      // Sanitiza e valida phone: apenas dígitos e 11 caracteres
+      if (typeof phone === 'string' && phone.trim()) {
+        const justDigits = phone.replace(/\D/g, '');
+        if (justDigits.length === 11) {
+          bodyRapidoc.phone = justDigits;
+        }
+      }
       if (typeof zipCode === 'string' && zipCode.trim()) bodyRapidoc.zipCode = zipCode.trim();
       if (typeof address === 'string' && address.trim()) bodyRapidoc.address = address.trim();
       if (typeof city === 'string' && city.trim()) bodyRapidoc.city = city.trim();
@@ -213,6 +220,13 @@ export class DependenteController {
         const planEntry: any = { plan: { uuid: serviceType.trim() } };
         if (typeof paymentType === 'string' && paymentType.trim()) {
           planEntry.paymentType = paymentType.trim().toUpperCase();
+        }
+        bodyRapidoc.plans = [planEntry];
+      } else if (typeof dependente?.serviceType === 'string' && dependente.serviceType.trim()) {
+        const planEntry: any = { plan: { uuid: dependente.serviceType.trim() } };
+        if (typeof dependente?.paymentType === 'string' && dependente.paymentType.trim()) {
+          const pt = dependente.paymentType.trim().toUpperCase();
+          if (pt === 'S' || pt === 'A') planEntry.paymentType = pt;
         }
         bodyRapidoc.plans = [planEntry];
       }
@@ -239,6 +253,7 @@ export class DependenteController {
 
       // 5. Atualiza no Rapidoc somente se houver campos relevantes
       if (shouldUpdateRapidoc) {
+        console.log('[DependenteController.editar] PUT Rapidoc body', JSON.stringify(bodyRapidoc));
         try {
           const rapidocResp = await atualizarBeneficiarioRapidoc(rapidocUuid as string, bodyRapidoc);
           if (!rapidocResp || rapidocResp.success === false) {
@@ -284,6 +299,7 @@ export class DependenteController {
         parentesco: parentesco ?? dependente.parentesco,
         holder: holderFinal,
         email: email ?? dependente.email,
+        // Atualiza phone no banco como foi enviado, mesmo que não tenha ido ao Rapidoc
         phone: phone ?? dependente.phone,
         zipCode: zipCode ?? dependente.zipCode,
         address: address ?? dependente.address,

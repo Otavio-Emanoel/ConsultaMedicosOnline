@@ -85,20 +85,20 @@ export default function DependentesPage() {
           const tokenResult = await auth.currentUser.getIdTokenResult();
           const claims: any = tokenResult.claims || {};
           if (claims.cpf) {
-            setHolderCpf(claims.cpf as string);
+            setHolderCpf((claims.cpf as string).replace(/\D/g, ''));
             return;
           }
           // Se não houver claim cpf, tenta decodificar o próprio JWT
           const raw = await auth.currentUser.getIdToken();
           const payloadBase64 = raw.split('.')[1];
           const payloadJson = JSON.parse(atob(payloadBase64));
-          if (payloadJson.cpf) setHolderCpf(payloadJson.cpf);
+          if (payloadJson.cpf) setHolderCpf(String(payloadJson.cpf).replace(/\D/g, ''));
         } else {
           const token = typeof window !== 'undefined' ? localStorage.getItem('auth_token') : null;
           if (token) {
             const payloadBase64 = token.split('.')[1];
             const payloadJson = JSON.parse(atob(payloadBase64));
-            if (payloadJson.cpf) setHolderCpf(payloadJson.cpf);
+            if (payloadJson.cpf) setHolderCpf(String(payloadJson.cpf).replace(/\D/g, ''));
           }
         }
         // Fallback extra: ler user do localStorage (pode conter cpf ou uid numérico)
@@ -122,7 +122,8 @@ export default function DependentesPage() {
   // Carrega dependentes do backend
   useEffect(() => {
     const fetchDependents = async () => {
-      if (!holderCpf) { setLoading(false); return; }
+      const holderOnlyDigits = normalizeCpf(holderCpf);
+      if (!holderOnlyDigits) { setLoading(false); return; }
       setLoading(true);
       setError('');
       try {
@@ -131,7 +132,7 @@ export default function DependentesPage() {
         else token = typeof window !== 'undefined' ? localStorage.getItem('auth_token') : null;
         const headers: HeadersInit = { 'Content-Type': 'application/json' };
         if (token) headers['Authorization'] = `Bearer ${token}`;
-        const resp = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL}/dependentes/${holderCpf}`, { headers });
+        const resp = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL}/dependentes/${holderOnlyDigits}`, { headers });
         if (!resp.ok) throw new Error('Erro ao buscar dependentes');
         const data = await resp.json();
         setDependents((data.dependentes || []).map((d: any) => d));
@@ -204,25 +205,25 @@ export default function DependentesPage() {
       return;
     }
     // Garantir holderCpf resolvido antes de sincronizar
-    let effectiveHolder = holderCpf;
+    let effectiveHolder = normalizeCpf(holderCpf);
     if (!effectiveHolder) {
       try {
         if (auth.currentUser) {
           const tokenResult = await auth.currentUser.getIdTokenResult();
           const claims: any = tokenResult.claims || {};
-          if (claims.cpf) effectiveHolder = claims.cpf;
+          if (claims.cpf) effectiveHolder = String(claims.cpf).replace(/\D/g, '');
           if (!effectiveHolder) {
             const raw = await auth.currentUser.getIdToken();
             const payloadBase64 = raw.split('.')[1];
             const payloadJson = JSON.parse(atob(payloadBase64));
-            if (payloadJson.cpf) effectiveHolder = payloadJson.cpf;
+            if (payloadJson.cpf) effectiveHolder = String(payloadJson.cpf).replace(/\D/g, '');
           }
         } else {
           const token = typeof window !== 'undefined' ? localStorage.getItem('auth_token') : null;
           if (token) {
             const payloadBase64 = token.split('.')[1];
             const payloadJson = JSON.parse(atob(payloadBase64));
-            if (payloadJson.cpf) effectiveHolder = payloadJson.cpf;
+            if (payloadJson.cpf) effectiveHolder = String(payloadJson.cpf).replace(/\D/g, '');
           }
         }
         // Fallback: localStorage.user
@@ -258,7 +259,7 @@ export default function DependentesPage() {
       });
       if (!resp.ok) throw new Error('Erro ao sincronizar dependente');
       // Atualiza lista local de dependentes
-      const depsResp = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL}/dependentes/${effectiveHolder}`, { headers });
+      const depsResp = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL}/dependentes/${normalizeCpf(effectiveHolder)}`, { headers });
       if (depsResp.ok) {
         const depsData = await depsResp.json();
         setDependents((depsData.dependentes || []).map((d: any) => d));
@@ -344,7 +345,7 @@ export default function DependentesPage() {
         if (formData.phone) body.phone = formData.phone;
         if (formData.zipCode) body.zipCode = formData.zipCode;
         if (formData.cpf && formData.cpf !== editingCpf) body.cpf = formData.cpf; // alteração de cpf
-        body.holder = holderCpf;
+        body.holder = normalizeCpf(holderCpf);
         const resp = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL}/dependentes/${editingCpf}`, {
           method: 'PUT',
           headers,
@@ -360,7 +361,7 @@ export default function DependentesPage() {
             cpf: formData.cpf,
             birthDate: formData.birthDate,
             parentesco: formData.parentesco,
-            holder: holderCpf,
+            holder: normalizeCpf(holderCpf),
             email: formData.email || undefined,
             phone: formData.phone || undefined,
             zipCode: formData.zipCode || undefined
