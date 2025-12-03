@@ -176,6 +176,28 @@ export default function DependentesPage() {
     return '';
   };
 
+  // Formata data para exibição em pt-BR, aceitando dd/MM/yyyy, yyyy-MM-dd e ISO
+  const formatBirthLabel = (v?: string) => {
+    const s = (v || '').trim();
+    if (!s) return '—';
+    // dd/MM/yyyy -> Date
+    if (/^\d{2}\/\d{2}\/\d{4}$/.test(s)) {
+      const [dd, mm, yyyy] = s.split('/');
+      const iso = `${yyyy}-${mm}-${dd}T00:00:00`;
+      const d = new Date(iso);
+      if (!isNaN(d.getTime())) return d.toLocaleDateString('pt-BR');
+    }
+    // yyyy-MM-dd -> Date
+    if (/^\d{4}-\d{2}-\d{2}$/.test(s)) {
+      const d = new Date(`${s}T00:00:00`);
+      if (!isNaN(d.getTime())) return d.toLocaleDateString('pt-BR');
+    }
+    // ISO completo -> Date
+    const d = new Date(s);
+    if (!isNaN(d.getTime())) return d.toLocaleDateString('pt-BR');
+    return '—';
+  };
+
   const fetchRapidocBeneficiaries = async () => {
     setLoadingRapidoc(true);
     setErrorRapidoc('');
@@ -489,7 +511,7 @@ export default function DependentesPage() {
                           Nascimento
                         </span>
                         <span className="font-medium text-gray-900 dark:text-white">
-                          {new Date(dependent.birthDate + 'T00:00:00').toLocaleDateString('pt-BR')}
+                          {formatBirthLabel(dependent.birthDate)}
                         </span>
                       </div>
                     </div>
