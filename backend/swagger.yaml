@@ -704,6 +704,45 @@ paths:
           description: Beneficiário não encontrado no Rapidoc
         '500':
           description: Erro interno ao cadastrar dependente
+  /beneficiarios/rapidoc/me:
+    get:
+      summary: Listar beneficiários do Rapidoc do usuário logado
+      description: |
+        Retorna os beneficiários (Rapidoc) cujo `holder` é igual ao CPF do usuário autenticado.
+        O CPF é resolvido a partir do token JWT (custom claim `cpf`) com fallbacks para `uid` (se for 11 dígitos)
+        ou busca por `email` no Firestore.
+      tags: [Beneficiários]
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: Lista de beneficiários do Rapidoc vinculados ao titular logado
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  holder:
+                    type: string
+                    description: CPF do titular resolvido
+                    example: "85309052020"
+                  count:
+                    type: integer
+                    example: 2
+                  beneficiarios:
+                    type: array
+                    items:
+                      type: object
+                      description: Objeto retornado pelo Rapidoc (beneficiary)
+        '400':
+          description: CPF do usuário não identificado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Não autenticado
+        '500':
+          description: Erro interno ao listar beneficiários
   /dependentes:
     post:
       summary: Adicionar Dependente
