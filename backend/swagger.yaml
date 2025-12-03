@@ -652,6 +652,58 @@ paths:
           description: Retorna um objeto contendo o campo joinUrl (string).
 
   # ================= BENEFICIÁRIOS & DEPENDENTES =================
+  /beneficiarios/dependente:
+    post:
+      summary: Cadastrar/Sincronizar Dependente a partir do Rapidoc
+      description: |
+        Cadastra ou atualiza um beneficiário (dependente) no Firestore usando os dados do Rapidoc.
+        - `cpf`: CPF do beneficiário (11 dígitos).
+        - `holder`: CPF do responsável/assinante (11 dígitos).
+      tags: [Beneficiários]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - cpf
+                - holder
+              properties:
+                cpf:
+                  type: string
+                  example: "15186432997"
+                  description: CPF do beneficiário (11 dígitos)
+                holder:
+                  type: string
+                  example: "85309052020"
+                  description: CPF do responsável/assinante (11 dígitos)
+      responses:
+        '200':
+          description: Beneficiário cadastrado/atualizado com sucesso
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
+                    example: true
+                  id:
+                    type: string
+                    description: ID do documento do beneficiário no Firestore
+                  beneficiario:
+                    type: object
+                    description: Dados do beneficiário salvos
+        '400':
+          description: Requisição inválida (CPF/holder ausentes ou inválidos)
+        '401':
+          description: Não autenticado
+        '404':
+          description: Beneficiário não encontrado no Rapidoc
+        '500':
+          description: Erro interno ao cadastrar dependente
   /dependentes:
     post:
       summary: Adicionar Dependente
