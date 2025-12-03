@@ -321,6 +321,35 @@ export async function buscarBeneficiarioRapidocPorCpf(cpf: string) {
   return data;
 }
 
+// Listar beneficiários Rapidoc com filtros opcionais (ex.: { holder })
+export async function listarBeneficiariosRapidocPorHolder(holderCpf: string): Promise<any[]> {
+  if (!RAPIDOC_BASE_URL || !RAPIDOC_TOKEN || !RAPIDOC_CLIENT_ID) {
+    throw new Error('Configuração Rapidoc ausente');
+  }
+  const cacheKey = `rapidoc:beneficiaries:holder:${holderCpf}`;
+  const cached = getCached<any[]>(cacheKey);
+  if (cached) return cached;
+  const url = `${RAPIDOC_BASE_URL}/tema/api/beneficiaries`;
+  try {
+    const resp = await rapidocAxios.get(url, {
+      params: { holder: holderCpf },
+      headers: {
+        Authorization: `Bearer ${RAPIDOC_TOKEN}`,
+        clientId: RAPIDOC_CLIENT_ID,
+        'Content-Type': 'application/vnd.rapidoc.tema-v2+json'
+      }
+    });
+    let data: any[] = [];
+    if (Array.isArray(resp.data)) data = resp.data;
+    else if (Array.isArray(resp.data?.beneficiaries)) data = resp.data.beneficiaries;
+    else if (Array.isArray(resp.data?.data)) data = resp.data.data;
+    setCached(cacheKey, data, 60000);
+    return data;
+  } catch (error: any) {
+    throw new Error(`Erro ao listar beneficiários por holder: ${error?.message || 'Erro desconhecido'}`);
+  }
+}
+
 // Agendar consulta no Rapidoc (corpo flexível para acompanhar a API)
 export async function agendarConsultaRapidoc(body: Record<string, any>) {
   if (!RAPIDOC_BASE_URL || !RAPIDOC_TOKEN || !RAPIDOC_CLIENT_ID) throw new Error('Configuração Rapidoc ausente');

@@ -3,6 +3,7 @@ import { getFirestore } from 'firebase-admin/firestore';
 import { firebaseApp } from '../config/firebase.js';
 import admin from 'firebase-admin';
 import { buscarBeneficiarioRapidocPorCpf, inativarBeneficiarioRapidoc, buscarEncaminhamentosBeneficiarioRapidoc, listarAgendamentosBeneficiarioRapidoc } from '../services/rapidoc.service.js';
+import { listarBeneficiariosRapidocPorHolder } from '../services/rapidoc.service.js';
 
 export class BeneficiarioController {
   // Cadastrar/Sincronizar beneficiário (dependente) no Firestore a partir do Rapidoc
@@ -345,6 +346,53 @@ export class BeneficiarioController {
       }
     } catch (error: any) {
       return res.status(500).json({ error: error?.message || 'Erro ao buscar encaminhamentos.' });
+    }
+  }
+}
+
+// Listar beneficiários do Rapidoc cujo holder é o CPF do usuário logado
+export class BeneficiariosRapidocQueryController {
+  static async listarMe(req: Request, res: Response) {
+    try {
+      let holderCpf = (req.user as any)?.cpf as string | undefined;
+      const uid = (req.user as any)?.uid as string | undefined;
+      const email = (req.user as any)?.email as string | undefined;
+
+      // Fallbacks para descobrir CPF
+      if (!holderCpf && uid) {
+        if (/^\d{11}$/.test(uid)) {
+          holderCpf = uid;
+        } else {
+          try {
+            const usuarioSnap = await admin.firestore().collection('usuarios').doc(uid).get();
+            if (usuarioSnap.exists) holderCpf = (usuarioSnap.data() as any)?.cpf || holderCpf;
+          } catch {}
+        }
+      }
+      if (!holderCpf && email) {
+        try {
+          const snap = await admin.firestore().collection('usuarios')
+            .where('email', '==', email)
+            .limit(1)
+            .get();
+          if (!snap.empty) {
+            const first = snap.docs[0]!;
+            holderCpf = (first.data() as any)?.cpf || first.id;
+          }
+        } catch {}
+      }
+
+      if (!holderCpf) return res.status(400).json({ error: 'CPF do usuário não identificado.' });
+
+      try {
+        const beneficiarios = await listarBeneficiariosRapidocPorHolder(holderCpf);
+        const lista = Array.isArray(beneficiarios) ? beneficiarios : [];
+        return res.status(200).json({ holder: holderCpf, count: lista.length, beneficiarios: lista });
+      } catch (e: any) {
+        return res.status(400).json({ error: 'Erro ao listar beneficiários do Rapidoc.', detail: e?.response?.data || e?.message });
+      }
+    } catch (error: any) {
+      return res.status(500).json({ error: error?.message || 'Erro no servidor.' });
     }
   }
 }

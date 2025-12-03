@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { BeneficiarioEspecialidadesController } from '../controller/beneficiarioEspecialidades.controller.js';
-import { BeneficiarioController } from '../controller/beneficiario.controller.js';
+import { BeneficiarioController, BeneficiariosRapidocQueryController } from '../controller/beneficiario.controller.js';
 import { autenticarFirebase } from '../middlewares/auth.middleware.js';
 
 const router = Router();
@@ -17,6 +17,9 @@ router.get('/beneficiarios/:cpf/encaminhamentos', autenticarFirebase, Beneficiar
 
 // GET /api/beneficiarios/:uuid/appointments - lista agendamentos do beneficiário por UUID
 router.get('/beneficiarios/:uuid/appointments', autenticarFirebase, BeneficiarioController.listarAgendamentos);
+
+// GET /api/beneficiarios/rapidoc/me - lista beneficiários do Rapidoc com holder igual ao CPF do usuário logado
+router.get('/beneficiarios/rapidoc/me', autenticarFirebase, BeneficiariosRapidocQueryController.listarMe);
 
 // Inativar beneficiário no Rapidoc por CPF
 router.post('/beneficiarios/:cpf/inativar-rapidoc', autenticarFirebase, BeneficiarioController.inativarRapidoc);
