@@ -100,6 +100,20 @@ export default function DependentesPage() {
             if (payloadJson.cpf) setHolderCpf(payloadJson.cpf);
           }
         }
+        // Fallback extra: ler user do localStorage (pode conter cpf ou uid numérico)
+        if (typeof window !== 'undefined' && !holderCpf) {
+          try {
+            const userStr = localStorage.getItem('user');
+            if (userStr) {
+              const user = JSON.parse(userStr);
+              const maybeCpf = (user?.cpf || user?.uid || '').toString();
+              const onlyDigits = maybeCpf.replace(/\D/g, '');
+              if (/^\d{11}$/.test(onlyDigits)) {
+                setHolderCpf(onlyDigits);
+              }
+            }
+          } catch {}
+        }
       } catch {}
     })();
   }, []);
@@ -159,7 +173,51 @@ export default function DependentesPage() {
 
   const handleSyncRapidocBeneficiary = async (cpf?: string) => {
     const c = normalizeCpf(cpf);
-    if (!c || !holderCpf) return;
+    if (!c) {
+      alert('CPF do beneficiário ausente na resposta do Rapidoc.');
+      return;
+    }
+    // Garantir holderCpf resolvido antes de sincronizar
+    let effectiveHolder = holderCpf;
+    if (!effectiveHolder) {
+      try {
+        if (auth.currentUser) {
+          const tokenResult = await auth.currentUser.getIdTokenResult();
+          const claims: any = tokenResult.claims || {};
+          if (claims.cpf) effectiveHolder = claims.cpf;
+          if (!effectiveHolder) {
+            const raw = await auth.currentUser.getIdToken();
+            const payloadBase64 = raw.split('.')[1];
+            const payloadJson = JSON.parse(atob(payloadBase64));
+            if (payloadJson.cpf) effectiveHolder = payloadJson.cpf;
+          }
+        } else {
+          const token = typeof window !== 'undefined' ? localStorage.getItem('auth_token') : null;
+          if (token) {
+            const payloadBase64 = token.split('.')[1];
+            const payloadJson = JSON.parse(atob(payloadBase64));
+            if (payloadJson.cpf) effectiveHolder = payloadJson.cpf;
+          }
+        }
+        // Fallback: localStorage.user
+        if (!effectiveHolder && typeof window !== 'undefined') {
+          const userStr = localStorage.getItem('user');
+          if (userStr) {
+            try {
+              const user = JSON.parse(userStr);
+              const maybeCpf = (user?.cpf || user?.uid || '').toString();
+              const onlyDigits = maybeCpf.replace(/\D/g, '');
+              if (/^\d{11}$/.test(onlyDigits)) effectiveHolder = onlyDigits;
+            } catch {}
+          }
+        }
+      } catch {}
+      if (!effectiveHolder) {
+        alert('CPF do titular não identificado. Aguarde carregar o perfil e tente novamente.');
+        return;
+      }
+      setHolderCpf(effectiveHolder);
+    }
     setSyncingCpf(c);
     try {
       let token: string | null = null;
@@ -170,11 +228,11 @@ export default function DependentesPage() {
       const resp = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL}/beneficiarios/dependente`, {
         method: 'POST',
         headers,
-        body: JSON.stringify({ cpf: c, holder: holderCpf })
+        body: JSON.stringify({ cpf: c, holder: effectiveHolder })
       });
       if (!resp.ok) throw new Error('Erro ao sincronizar dependente');
       // Atualiza lista local de dependentes
-      const depsResp = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL}/dependentes/${holderCpf}`, { headers });
+      const depsResp = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL}/dependentes/${effectiveHolder}`, { headers });
       if (depsResp.ok) {
         const depsData = await depsResp.json();
         setDependents((depsData.dependentes || []).map((d: any) => d));
