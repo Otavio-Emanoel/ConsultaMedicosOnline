@@ -18,6 +18,7 @@ import {
   User,
   Calendar,
   FileText,
+  Search,
 } from 'lucide-react';
 
 interface DependentBackend {
@@ -42,9 +43,18 @@ interface DependentForm {
   zipCode?: string;
 }
 
+interface RapidocBeneficiary {
+  uuid?: string;
+  name?: string;
+  cpf?: string;
+  birthday?: string;
+  holder?: string;
+  isActive?: boolean;
+}
+
 export default function DependentesPage() {
   const [dependents, setDependents] = useState<DependentBackend[]>([]);
-  const [loading, setLoading] = useState<boolean>(true);
+  const [loading, setLoading] = useState<boolean>(false);
   const [error, setError] = useState<string>('');
   const [showModal, setShowModal] = useState(false);
   const [editingCpf, setEditingCpf] = useState<string | null>(null);
@@ -58,6 +68,12 @@ export default function DependentesPage() {
     zipCode: '',
   });
   const [holderCpf, setHolderCpf] = useState<string>('');
+  // Rapidoc sync state
+  const [showRapidocModal, setShowRapidocModal] = useState(false);
+  const [rapidocItems, setRapidocItems] = useState<RapidocBeneficiary[]>([]);
+  const [loadingRapidoc, setLoadingRapidoc] = useState<boolean>(false);
+  const [errorRapidoc, setErrorRapidoc] = useState<string>('');
+  const [syncingCpf, setSyncingCpf] = useState<string | null>(null);
 
   // Extrai CPF do titular via custom claim do Firebase ou fallback localStorage
   useEffect(() => {
@@ -91,7 +107,7 @@ export default function DependentesPage() {
   // Carrega dependentes do backend
   useEffect(() => {
     const fetchDependents = async () => {
-      if (!holderCpf) return;
+      if (!holderCpf) { setLoading(false); return; }
       setLoading(true);
       setError('');
       try {
@@ -112,6 +128,63 @@ export default function DependentesPage() {
     };
     fetchDependents();
   }, [holderCpf]);
+
+  const normalizeCpf = (v?: string) => (v || '').replace(/\D/g, '');
+  const isRegisteredInLocal = (cpf?: string) => {
+    const n = normalizeCpf(cpf);
+    return dependents.some(d => normalizeCpf(d.cpf) === n);
+  };
+
+  const fetchRapidocBeneficiaries = async () => {
+    setLoadingRapidoc(true);
+    setErrorRapidoc('');
+    try {
+      let token: string | null = null;
+      if (auth.currentUser) token = await auth.currentUser.getIdToken();
+      else token = typeof window !== 'undefined' ? localStorage.getItem('auth_token') : null;
+      const headers: HeadersInit = { 'Content-Type': 'application/json' };
+      if (token) headers['Authorization'] = `Bearer ${token}`;
+      const resp = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL}/beneficiarios/rapidoc/me`, { headers });
+      if (!resp.ok) throw new Error('Falha ao consultar Rapidoc');
+      const data = await resp.json();
+      const items = Array.isArray(data?.beneficiarios) ? data.beneficiarios : [];
+      setRapidocItems(items);
+      setShowRapidocModal(true);
+    } catch (e: any) {
+      setErrorRapidoc(e?.message || 'Erro ao buscar beneficiários no Rapidoc.');
+    } finally {
+      setLoadingRapidoc(false);
+    }
+  };
+
+  const handleSyncRapidocBeneficiary = async (cpf?: string) => {
+    const c = normalizeCpf(cpf);
+    if (!c || !holderCpf) return;
+    setSyncingCpf(c);
+    try {
+      let token: string | null = null;
+      if (auth.currentUser) token = await auth.currentUser.getIdToken(true);
+      else token = typeof window !== 'undefined' ? localStorage.getItem('auth_token') : null;
+      const headers: HeadersInit = { 'Content-Type': 'application/json' };
+      if (token) headers['Authorization'] = `Bearer ${token}`;
+      const resp = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL}/beneficiarios/dependente`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ cpf: c, holder: holderCpf })
+      });
+      if (!resp.ok) throw new Error('Erro ao sincronizar dependente');
+      // Atualiza lista local de dependentes
+      const depsResp = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL}/dependentes/${holderCpf}`, { headers });
+      if (depsResp.ok) {
+        const depsData = await depsResp.json();
+        setDependents((depsData.dependentes || []).map((d: any) => d));
+      }
+    } catch (e: any) {
+      alert(e?.message || 'Falha ao adicionar dependente ao sistema');
+    } finally {
+      setSyncingCpf(null);
+    }
+  };
 
   const calculateAge = (birthDate: string) => {
     const today = new Date();
@@ -231,10 +304,16 @@ export default function DependentesPage() {
             Gerencie os dependentes do seu plano
           </p>
         </div>
+        <div className="flex items-center gap-2">
+        <Button variant="outline" onClick={fetchRapidocBeneficiaries} disabled={loadingRapidoc}>
+          <Search className="w-5 h-5 mr-2" />
+          Verificar no Rapidoc
+        </Button>
         <Button variant="primary" onClick={() => handleOpenModal()}>
           <Plus className="w-5 h-5 mr-2" />
           Adicionar Dependente
         </Button>
+        </div>
       </div>
 
       {/* Estados de carregamento / erro */}
@@ -453,6 +532,76 @@ export default function DependentesPage() {
               disabled={!formData.nome || !formData.cpf || !formData.birthDate || !formData.parentesco}
             >
               <Check className="w-4 h-4 mr-2" /> {editingCpf ? 'Salvar' : 'Adicionar'}
+            </Button>
+          </div>
+        </div>
+      </Dialog>
+
+      {/* Rapidoc Modal */}
+      <Dialog open={showRapidocModal} onOpenChange={(o) => { if (!o) setShowRapidocModal(false); }}>
+        <div className="bg-white dark:bg-gray-900 rounded-xl p-6 w-full max-w-2xl mx-auto space-y-4">
+          <div className="flex items-center justify-between">
+            <h2 className="text-lg font-semibold text-gray-900 dark:text-white">Beneficiários encontrados no Rapidoc</h2>
+            <Button variant="outline" size="sm" onClick={fetchRapidocBeneficiaries} disabled={loadingRapidoc}>
+              Atualizar
+            </Button>
+          </div>
+          {errorRapidoc && (
+            <Card className="border border-red-300 dark:border-red-600">
+              <CardBody>
+                <p className="text-red-600 dark:text-red-400 text-sm">{errorRapidoc}</p>
+              </CardBody>
+            </Card>
+          )}
+          {loadingRapidoc ? (
+            <Card>
+              <CardBody>
+                <p className="text-gray-600 dark:text-gray-400">Carregando dados do Rapidoc...</p>
+              </CardBody>
+            </Card>
+          ) : (
+            <div className="space-y-3">
+              {rapidocItems.length === 0 ? (
+                <p className="text-gray-600 dark:text-gray-400">Nenhum beneficiário encontrado para o titular.</p>
+              ) : (
+                rapidocItems.map((b, idx) => {
+                  const cpfN = normalizeCpf(b.cpf);
+                  const registered = isRegisteredInLocal(cpfN);
+                  const birthLabel = b.birthday ? new Date((/\d{2}\/\d{2}\/\d{4}/.test(b.birthday) ? b.birthday.split('/').reverse().join('-') : b.birthday) + 'T00:00:00').toLocaleDateString('pt-BR') : '—';
+                  return (
+                    <Card key={`${cpfN}-${idx}`}>
+                      <CardBody>
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <p className="font-medium text-gray-900 dark:text-white">{b.name || '—'}</p>
+                            <p className="text-sm text-gray-600 dark:text-gray-400">CPF: {cpfN || '—'} · Nasc.: {birthLabel}</p>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <Badge variant={registered ? 'success' : 'warning'}>
+                              {registered ? 'Cadastrado' : 'Não cadastrado'}
+                            </Badge>
+                            {!registered && (
+                              <Button
+                                variant="primary"
+                                size="sm"
+                                onClick={() => handleSyncRapidocBeneficiary(cpfN)}
+                                disabled={syncingCpf === cpfN}
+                              >
+                                {syncingCpf === cpfN ? 'Adicionando...' : 'Adicionar ao sistema'}
+                              </Button>
+                            )}
+                          </div>
+                        </div>
+                      </CardBody>
+                    </Card>
+                  );
+                })
+              )}
+            </div>
+          )}
+          <div className="flex space-x-3 pt-2">
+            <Button variant="outline" className="flex-1" onClick={() => setShowRapidocModal(false)}>
+              <X className="w-4 h-4 mr-2" /> Fechar
             </Button>
           </div>
         </div>
