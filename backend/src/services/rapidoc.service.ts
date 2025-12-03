@@ -220,8 +220,7 @@ export async function atualizarBeneficiarioRapidoc(uuid: string, data: {
   if (data.city) body.city = data.city;
   if (data.state) body.state = data.state;
   if (data.plans) body.plans = data.plans;
-  if (data.paymentType) body.paymentType = data.paymentType;
-  if (data.serviceType) body.serviceType = data.serviceType;
+  // Não enviar paymentType/serviceType no topo; usar somente dentro de plans
   if (data.specialties) body.specialties = data.specialties;
   if (typeof (data as any).isActive === 'boolean') body.isActive = (data as any).isActive;
 

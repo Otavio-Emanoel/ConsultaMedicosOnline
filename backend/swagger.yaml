@@ -759,6 +759,155 @@ paths:
           description: Dependente criado.
 
   /dependentes/{cpf}:
+    put:
+      summary: Atualiza dados de um dependente pelo CPF
+      description: |
+        Atualiza dados do dependente identificado pelo CPF na URL. 
+        - Campos locais (ex.: `parentesco`, `holder`) atualizam apenas o Firestore.
+        - Campos que impactam o Rapidoc (`nome`, `birthDate`, `email`, `phone`, `zipCode`, `address`, `city`, `state`, `cpf`, `plans`) também são enviados via PUT para o Rapidoc com cabeçalhos `Authorization`, `clientId` e `Content-Type: application/vnd.rapidoc.tema-v2+json`.
+        - O campo `birthDate` deve estar em `yyyy-MM-dd`.
+      tags:
+        - Dependentes
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: cpf
+          in: path
+          required: true
+          description: CPF do dependente a ser atualizado (apenas números)
+          schema:
+            type: string
+            example: "95877673068"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                nome:
+                  type: string
+                  description: Nome completo
+                  example: Gabriel Crispim
+                birthDate:
+                  type: string
+                  description: Data de nascimento em formato yyyy-MM-dd
+                  example: 2000-12-12
+                parentesco:
+                  type: string
+                  description: Grau de parentesco
+                  example: Filho(a)
+                holder:
+                  type: string
+                  description: CPF do titular associado ao dependente
+                  example: "95877673068"
+                email:
+                  type: string
+                  description: Email do dependente
+                  example: "gabriel@example.com"
+                phone:
+                  type: string
+                  description: Telefone (apenas números)
+                  example: "5555199394"
+                zipCode:
+                  type: string
+                  description: CEP (apenas números)
+                  example: "91060000"
+                address:
+                  type: string
+                  description: Endereço
+                  example: "Rua Teste"
+                city:
+                  type: string
+                  description: Cidade
+                  example: "Porto Alegre"
+                state:
+                  type: string
+                  description: Estado (UF)
+                  example: "RS"
+                cpf:
+                  type: string
+                  description: CPF do dependente (para alteração de CPF)
+                  example: "95877673068"
+                plans:
+                  type: array
+                  description: Planos para envio ao Rapidoc; cada item contém `paymentType` e `plan.uuid`
+                  items:
+                    type: object
+                    properties:
+                      paymentType:
+                        type: string
+                        description: "Tipo de pagamento (ex.: S)"
+                        example: "S"
+                      plan:
+                        type: object
+                        properties:
+                          uuid:
+                            type: string
+                            description: UUID do plano no Rapidoc
+                            example: "6676fb40-4b2f-4434-bd9c-ba6f38925c44"
+            examples:
+              atualizacaoBasica:
+                summary: Atualização apenas local (Firestore)
+                value:
+                  nome: Gabriel Crispim
+                  birthDate: 2000-12-12
+                  parentesco: Filho(a)
+                  email: 1764801637
+                  phone: 5555199394
+                  zipCode: 91060000
+                  holder: "95877673068"
+              atualizacaoComPlano:
+                summary: Atualização incluindo planos para Rapidoc
+                value:
+                  nome: Gabriel Crispim
+                  birthDate: 2000-12-12
+                  parentesco: Filho(a)
+                  email: 1764801637
+                  phone: 5555199394
+                  zipCode: 91060000
+                  holder: "95877673068"
+                  plans:
+                    - paymentType: "S"
+                      plan:
+                        uuid: "6676fb40-4b2f-4434-bd9c-ba6f38925c44"
+      responses:
+        '200':
+          description: Dependente atualizado com sucesso; retorna lista atualizada dos dependentes do titular
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  dependentes:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id:
+                          type: string
+                        nome:
+                          type: string
+                        cpf:
+                          type: string
+                        birthDate:
+                          type: string
+                        parentesco:
+                          type: string
+                        holder:
+                          type: string
+                        email:
+                          type: string
+                        phone:
+                          type: string
+                        zipCode:
+                          type: string
+        '400':
+          description: "Requisição inválida (ex.: nenhum campo para atualizar, erro ao atualizar no Rapidoc)"
+        '404':
+          description: Dependente não encontrado
+        '500':
+          description: Erro interno ao editar dependente
     get:
       summary: Listar Dependentes do Titular
       tags: [Beneficiários]
@@ -772,24 +921,6 @@ paths:
       responses:
         '200':
           description: Lista de dependentes.
-    put:
-      summary: Editar Dependente
-      tags: [Beneficiários]
-      security: [{ bearerAuth: [] }]
-      parameters:
-        - in: path
-          name: cpf
-          description: "CPF do dependente"
-          required: true
-          schema: { type: string }
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/DependenteDTO'
-      responses:
-        '200':
-          description: Atualizado.
 
   /beneficiarios/{cpf}/especialidades:
     get:

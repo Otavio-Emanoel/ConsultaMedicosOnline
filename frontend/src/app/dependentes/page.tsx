@@ -58,6 +58,7 @@ export default function DependentesPage() {
   const [error, setError] = useState<string>('');
   const [showModal, setShowModal] = useState(false);
   const [editingCpf, setEditingCpf] = useState<string | null>(null);
+  const [editingOriginal, setEditingOriginal] = useState<DependentBackend | null>(null);
   const [formData, setFormData] = useState<DependentForm>({
     nome: '',
     cpf: '',
@@ -147,6 +148,31 @@ export default function DependentesPage() {
   const isRegisteredInLocal = (cpf?: string) => {
     const n = normalizeCpf(cpf);
     return dependents.some(d => normalizeCpf(d.cpf) === n);
+  };
+
+  // Normaliza string de data para formato `yyyy-MM-dd` exigido pelo input type=date
+  const toDateInputValue = (v?: string) => {
+    const s = (v || '').trim();
+    if (!s) return '';
+    // dd/MM/yyyy -> yyyy-MM-dd
+    if (/^\d{2}\/\d{2}\/\d{4}$/.test(s)) {
+      const [dd, mm, yyyy] = s.split('/');
+      return `${yyyy}-${mm}-${dd}`;
+    }
+    // yyyy-MM-ddTHH:mm:ss... -> yyyy-MM-dd
+    if (/^\d{4}-\d{2}-\d{2}T/.test(s)) {
+      return s.slice(0, 10);
+    }
+    // yyyy-MM-dd já válido
+    if (/^\d{4}-\d{2}-\d{2}$/.test(s)) {
+      return s;
+    }
+    // Tentativa genérica
+    const d = new Date(s);
+    if (!isNaN(d.getTime())) {
+      return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
+    }
+    return '';
   };
 
   const fetchRapidocBeneficiaries = async () => {
@@ -258,10 +284,11 @@ export default function DependentesPage() {
   const handleOpenModal = (dependent?: DependentBackend) => {
     if (dependent) {
       setEditingCpf(dependent.cpf);
+      setEditingOriginal(dependent);
       setFormData({
         nome: dependent.nome || '',
         cpf: dependent.cpf || '',
-        birthDate: dependent.birthDate || '',
+        birthDate: toDateInputValue(dependent.birthDate) || '',
         parentesco: dependent.parentesco || '',
         email: dependent.email || '',
         phone: dependent.phone || '',
@@ -269,6 +296,7 @@ export default function DependentesPage() {
       });
     } else {
       setEditingCpf(null);
+      setEditingOriginal(null);
       setFormData({
         nome: '',
         cpf: '',
@@ -285,6 +313,7 @@ export default function DependentesPage() {
   const handleCloseModal = () => {
     setShowModal(false);
     setEditingCpf(null);
+    setEditingOriginal(null);
     setFormData({
       nome: '',
       cpf: '',
@@ -307,7 +336,9 @@ export default function DependentesPage() {
         // PUT atualizar dependente (campos enviados)
         const body: any = {};
         if (formData.nome) body.nome = formData.nome;
-        if (formData.birthDate) body.birthDate = formData.birthDate;
+        // Só envia birthDate se alterado em relação ao original
+        const originalBirthInput = toDateInputValue(editingOriginal?.birthDate || '');
+        if (formData.birthDate && formData.birthDate !== originalBirthInput) body.birthDate = formData.birthDate;
         if (formData.parentesco) body.parentesco = formData.parentesco;
         if (formData.email) body.email = formData.email;
         if (formData.phone) body.phone = formData.phone;
