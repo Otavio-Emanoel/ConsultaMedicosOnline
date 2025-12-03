@@ -23,5 +23,8 @@ router.post('/beneficiarios/:cpf/inativar-rapidoc', autenticarFirebase, Benefici
 
 // Remover do nosso banco de dados (titular e seus dependentes)
 router.delete('/beneficiarios/:cpf', autenticarFirebase, BeneficiarioController.removerDoBanco);
+ 
+ // Cadastrar/Sincronizar dependente a partir do CPF (Rapidoc -> Firestore)
+ router.post('/beneficiarios/dependente', autenticarFirebase, BeneficiarioController.cadastrarDependente);
 
 export default router;

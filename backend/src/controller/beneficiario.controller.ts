@@ -1,8 +1,92 @@
 import type { Request, Response } from 'express';
+import { getFirestore } from 'firebase-admin/firestore';
+import { firebaseApp } from '../config/firebase.js';
 import admin from 'firebase-admin';
 import { buscarBeneficiarioRapidocPorCpf, inativarBeneficiarioRapidoc, buscarEncaminhamentosBeneficiarioRapidoc, listarAgendamentosBeneficiarioRapidoc } from '../services/rapidoc.service.js';
 
 export class BeneficiarioController {
+  // Cadastrar/Sincronizar beneficiário (dependente) no Firestore a partir do Rapidoc
+  // POST /api/beneficiarios/dependente
+  // Body: { cpf: string; holder: string }
+  static async cadastrarDependente(req: Request, res: Response) {
+    try {
+      const { cpf, holder } = req.body as { cpf?: string; holder?: string };
+      if (!cpf || !holder) {
+        return res.status(400).json({ error: 'Campos obrigatórios: cpf (do beneficiário) e holder (CPF do responsável/assinante).' });
+      }
+
+      const cpfBenef = String(cpf).replace(/\D/g, '');
+      const cpfHolder = String(holder).replace(/\D/g, '');
+      if (cpfBenef.length !== 11 || cpfHolder.length !== 11) {
+        return res.status(400).json({ error: 'CPF inválido. Ambos devem ter 11 dígitos.' });
+      }
+
+      // Buscar beneficiário no Rapidoc pelo CPF
+      const { buscarBeneficiarioRapidocPorCpf } = await import('../services/rapidoc.service.js');
+      let rapidoc: any;
+      try {
+        const resp = await buscarBeneficiarioRapidocPorCpf(cpfBenef);
+        rapidoc = resp?.beneficiary;
+      } catch (e: any) {
+        return res.status(404).json({ error: 'Beneficiário não encontrado no Rapidoc para o CPF informado.' });
+      }
+
+      if (!rapidoc || !rapidoc.uuid) {
+        return res.status(404).json({ error: 'Beneficiário não possui UUID no Rapidoc.' });
+      }
+
+      // Montar documento no Firestore
+      const db = getFirestore(firebaseApp);
+      const data: Record<string, any> = {
+        nome: rapidoc.name || rapidoc.nome || rapidoc.fullName || '',
+        cpf: cpfBenef,
+        birthDate: rapidoc.birthday || rapidoc.birthDate || '',
+        email: rapidoc.email || rapidoc.emailAddress || '',
+        phone: rapidoc.phone || rapidoc.telefone || '',
+        zipCode: rapidoc.zipCode || rapidoc.cep || '',
+        address: rapidoc.address || rapidoc.endereco || '',
+        city: rapidoc.city || rapidoc.cidade || '',
+        state: rapidoc.state || rapidoc.estado || '',
+        paymentType: rapidoc.paymentType || undefined,
+        serviceType: rapidoc.serviceType || undefined,
+        holder: cpfHolder,
+        rapidocUuid: rapidoc.uuid,
+        isActive: (rapidoc.isActive === true) || (rapidoc.active === true),
+        updatedAt: new Date().toISOString(),
+      };
+
+      // Remover chaves undefined
+      Object.keys(data).forEach((k) => { if (data[k] === undefined) delete data[k]; });
+
+      // Se já existir o beneficiário no Firestore, atualiza; senão, cria
+      const coll = db.collection('beneficiarios');
+      const snap = await coll.where('cpf', '==', cpfBenef).limit(1).get();
+      let docId: string | undefined;
+      if (!snap.empty) {
+        const firstDoc = snap.docs[0]!;
+        docId = firstDoc.id;
+        await coll.doc(docId).set(data, { merge: true });
+      } else {
+        const created = await coll.add({ ...data, createdAt: new Date().toISOString() });
+        docId = created.id;
+      }
+
+      // Atualizar usuário (titular) com rapidocBeneficiaryUuid, se aplicável
+      try {
+        const userRef = db.collection('usuarios').doc(cpfHolder);
+        const userDoc = await userRef.get();
+        if (userDoc.exists) {
+          const u = userDoc.data() || {};
+          const rapidocBeneficiaryUuid = u?.rapidocBeneficiaryUuid || rapidoc.uuid;
+          await userRef.set({ rapidocBeneficiaryUuid }, { merge: true });
+        }
+      } catch {}
+
+      return res.status(200).json({ ok: true, id: docId, beneficiario: data });
+    } catch (error: any) {
+      return res.status(500).json({ error: error?.message || 'Erro ao cadastrar dependente.' });
+    }
+  }
   // Inativar beneficiário no Rapidoc via CPF
   static async inativarRapidoc(req: Request, res: Response) {
     try {
