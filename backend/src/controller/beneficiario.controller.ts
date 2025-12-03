@@ -105,6 +105,14 @@ export class BeneficiarioController {
         if (!resp || resp.success === false) {
           return res.status(400).json({ error: resp?.message || 'Falha ao inativar beneficiário no Rapidoc.', detail: resp });
         }
+        // Marca como inativo também no Firestore, se existir
+        try {
+          const db = admin.firestore();
+          const snap = await db.collection('beneficiarios').where('cpf', '==', String(cpf).replace(/\D/g, '')).limit(1).get();
+          if (!snap.empty) {
+            await snap.docs[0]!.ref.set({ isActive: false, updatedAt: new Date().toISOString() }, { merge: true });
+          }
+        } catch {}
         return res.status(200).json({ ok: true, beneficiaryUuid: beneficiario.uuid });
       } catch (e: any) {
         return res.status(400).json({ error: 'Erro ao inativar beneficiário no Rapidoc.', detail: e?.response?.data || e?.message });
@@ -145,6 +153,22 @@ export class BeneficiarioController {
       }});
     } catch (error: any) {
       return res.status(500).json({ error: error?.message || 'Erro ao remover do banco de dados.' });
+    }
+  }
+
+  // Remover apenas um beneficiário (dependente) por CPF do Firestore
+  static async removerBeneficiarioPorCpf(req: Request, res: Response) {
+    try {
+      const { cpf } = req.params as { cpf?: string };
+      if (!cpf) return res.status(400).json({ error: 'CPF é obrigatório.' });
+      const cleanCpf = String(cpf).replace(/\D/g, '');
+      const db = admin.firestore();
+      const snap = await db.collection('beneficiarios').where('cpf', '==', cleanCpf).limit(1).get();
+      if (snap.empty) return res.status(404).json({ error: 'Beneficiário não encontrado no banco.' });
+      await snap.docs[0]!.ref.delete();
+      return res.status(200).json({ ok: true, removedCpf: cleanCpf });
+    } catch (error: any) {
+      return res.status(500).json({ error: error?.message || 'Erro ao remover beneficiário por CPF.' });
     }
   }
 
