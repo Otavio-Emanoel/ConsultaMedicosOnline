@@ -343,6 +343,19 @@ export async function listarBeneficiariosRapidocPorHolder(holderCpf: string): Pr
     if (Array.isArray(resp.data)) data = resp.data;
     else if (Array.isArray(resp.data?.beneficiaries)) data = resp.data.beneficiaries;
     else if (Array.isArray(resp.data?.data)) data = resp.data.data;
+    // Garantir filtro por holder no client-side caso a API ignore o parâmetro
+    const holderKeyCandidates = ['holder', 'cpfTitular', 'responsavelCpf'];
+    data = data.filter((b: any) => {
+      if (!b || typeof b !== 'object') return false;
+      // campo padrão 'holder'
+      if (typeof b.holder === 'string' && b.holder.replace(/\D/g, '') === holderCpf) return true;
+      // tentar outras chaves conhecidas
+      for (const k of holderKeyCandidates) {
+        const v = (b as any)[k];
+        if (typeof v === 'string' && v.replace(/\D/g, '') === holderCpf) return true;
+      }
+      return false;
+    });
     setCached(cacheKey, data, 60000);
     return data;
   } catch (error: any) {
