@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { auth } from '@/lib/firebase';
 import { Dialog } from '@/components/ui/Dialog';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
@@ -75,6 +75,38 @@ export default function DependentesPage() {
   const [loadingRapidoc, setLoadingRapidoc] = useState<boolean>(false);
   const [errorRapidoc, setErrorRapidoc] = useState<string>('');
   const [syncingCpf, setSyncingCpf] = useState<string | null>(null);
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [dependentToDelete, setDependentToDelete] = useState<DependentBackend | null>(null);
+  const [deleteLoading, setDeleteLoading] = useState(false);
+  const [deleteError, setDeleteError] = useState('');
+
+  const normalizeCpf = (v?: string) => (v || '').replace(/\D/g, '');
+
+  const refreshDependents = useCallback(async () => {
+    const holderOnlyDigits = normalizeCpf(holderCpf);
+    if (!holderOnlyDigits) {
+      setDependents([]);
+      setLoading(false);
+      return;
+    }
+    setLoading(true);
+    setError('');
+    try {
+      let token: string | null = null;
+      if (auth.currentUser) token = await auth.currentUser.getIdToken();
+      else token = typeof window !== 'undefined' ? localStorage.getItem('auth_token') : null;
+      const headers: HeadersInit = { 'Content-Type': 'application/json' };
+      if (token) headers['Authorization'] = `Bearer ${token}`;
+      const resp = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL}/dependentes/${holderOnlyDigits}`, { headers });
+      if (!resp.ok) throw new Error('Erro ao buscar dependentes');
+      const data = await resp.json();
+      setDependents((data.dependentes || []).map((d: any) => d));
+    } catch (e: any) {
+      setError(e?.message || 'Falha ao carregar dependentes.');
+    } finally {
+      setLoading(false);
+    }
+  }, [holderCpf]);
 
   // Extrai CPF do titular via custom claim do Firebase ou fallback localStorage
   useEffect(() => {
@@ -121,31 +153,8 @@ export default function DependentesPage() {
 
   // Carrega dependentes do backend
   useEffect(() => {
-    const fetchDependents = async () => {
-      const holderOnlyDigits = normalizeCpf(holderCpf);
-      if (!holderOnlyDigits) { setLoading(false); return; }
-      setLoading(true);
-      setError('');
-      try {
-        let token: string | null = null;
-        if (auth.currentUser) token = await auth.currentUser.getIdToken();
-        else token = typeof window !== 'undefined' ? localStorage.getItem('auth_token') : null;
-        const headers: HeadersInit = { 'Content-Type': 'application/json' };
-        if (token) headers['Authorization'] = `Bearer ${token}`;
-        const resp = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL}/dependentes/${holderOnlyDigits}`, { headers });
-        if (!resp.ok) throw new Error('Erro ao buscar dependentes');
-        const data = await resp.json();
-        setDependents((data.dependentes || []).map((d: any) => d));
-      } catch (e: any) {
-        setError(e?.message || 'Falha ao carregar dependentes.');
-      } finally {
-        setLoading(false);
-      }
-    };
-    fetchDependents();
-  }, [holderCpf]);
-
-  const normalizeCpf = (v?: string) => (v || '').replace(/\D/g, '');
+    refreshDependents();
+  }, [refreshDependents]);
   const isRegisteredInLocal = (cpf?: string) => {
     const n = normalizeCpf(cpf);
     return dependents.some(d => normalizeCpf(d.cpf) === n);
@@ -403,8 +412,61 @@ export default function DependentesPage() {
     }
   };
 
-  const handleDelete = (cpf: string) => {
-    alert('Remoção de dependente não implementada no backend.');
+  const handleDelete = (dependent: DependentBackend) => {
+    setDependentToDelete(dependent);
+    setDeleteError('');
+    setShowDeleteModal(true);
+  };
+
+  const closeDeleteModal = () => {
+    if (deleteLoading) return;
+    setShowDeleteModal(false);
+    setDependentToDelete(null);
+    setDeleteError('');
+  };
+
+  const handleConfirmDelete = async () => {
+    if (!dependentToDelete) return;
+    const cpfToDelete = normalizeCpf(dependentToDelete.cpf);
+    if (!cpfToDelete) {
+      setDeleteError('CPF do dependente inválido.');
+      return;
+    }
+    setDeleteLoading(true);
+    setDeleteError('');
+    try {
+      let token: string | null = null;
+      if (auth.currentUser) token = await auth.currentUser.getIdToken(true);
+      else token = typeof window !== 'undefined' ? localStorage.getItem('auth_token') : null;
+      const headers: HeadersInit = { 'Content-Type': 'application/json' };
+      if (token) headers['Authorization'] = `Bearer ${token}`;
+
+      const rapidocResp = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL}/beneficiarios/${cpfToDelete}/inativar-rapidoc`, {
+        method: 'POST',
+        headers
+      });
+      if (!rapidocResp.ok) {
+        const detail = await rapidocResp.json().catch(() => ({}));
+        throw new Error(detail?.error || 'Erro ao inativar beneficiário no Rapidoc.');
+      }
+
+      const deleteResp = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL}/beneficiarios/${cpfToDelete}`, {
+        method: 'DELETE',
+        headers
+      });
+      if (!deleteResp.ok) {
+        const detail = await deleteResp.json().catch(() => ({}));
+        throw new Error(detail?.error || 'Erro ao remover beneficiário do banco.');
+      }
+
+      await refreshDependents();
+      setShowDeleteModal(false);
+      setDependentToDelete(null);
+    } catch (e: any) {
+      setDeleteError(e?.message || 'Falha ao remover dependente.');
+    } finally {
+      setDeleteLoading(false);
+    }
   };
 
   return (
@@ -530,7 +592,7 @@ export default function DependentesPage() {
                       <Button
                         variant="danger"
                         size="sm"
-                        onClick={() => handleDelete(dependent.cpf)}
+                        onClick={() => handleDelete(dependent)}
                       >
                         <Trash2 className="w-4 h-4" />
                       </Button>
@@ -644,6 +706,38 @@ export default function DependentesPage() {
               disabled={!formData.nome || !formData.cpf || !formData.birthDate || !formData.parentesco}
             >
               <Check className="w-4 h-4 mr-2" /> {editingCpf ? 'Salvar' : 'Adicionar'}
+            </Button>
+          </div>
+        </div>
+      </Dialog>
+
+      {/* Delete Confirmation Modal */}
+      <Dialog open={showDeleteModal} onOpenChange={(o) => { if (!o) closeDeleteModal(); }}>
+        <div className="bg-white dark:bg-gray-900 rounded-xl p-6 w-full max-w-md mx-auto space-y-4">
+          <h2 className="text-lg font-semibold text-gray-900 dark:text-white">Confirmar remoção</h2>
+          <p className="text-sm text-gray-600 dark:text-gray-400">
+            Ao confirmar, o dependente será inativado no Rapidoc e removido definitivamente do nosso sistema.
+          </p>
+          {dependentToDelete && (
+            <div className="p-3 rounded-lg bg-gray-50 dark:bg-gray-800/50">
+              <p className="text-gray-900 dark:text-white font-medium">{dependentToDelete.nome}</p>
+              <p className="text-sm text-gray-600 dark:text-gray-400">CPF: {dependentToDelete.cpf}</p>
+            </div>
+          )}
+          {deleteError && (
+            <p className="text-sm text-red-600 dark:text-red-400">{deleteError}</p>
+          )}
+          <div className="flex space-x-3 pt-4">
+            <Button variant="outline" className="flex-1" onClick={closeDeleteModal} disabled={deleteLoading}>
+              <X className="w-4 h-4 mr-2" /> Cancelar
+            </Button>
+            <Button
+              variant="danger"
+              className="flex-1"
+              onClick={handleConfirmDelete}
+              disabled={deleteLoading}
+            >
+              <Trash2 className="w-4 h-4 mr-2" /> {deleteLoading ? 'Removendo...' : 'Remover' }
             </Button>
           </div>
         </div>
