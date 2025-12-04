@@ -127,29 +127,39 @@ export class BeneficiarioController {
     try {
       const { cpf } = req.params as { cpf?: string };
       if (!cpf) return res.status(400).json({ error: 'CPF é obrigatório.' });
-
+      const cleanCpf = String(cpf).replace(/\D/g, '');
+      if (cleanCpf.length !== 11) {
+        return res.status(400).json({ error: 'CPF inválido. Deve conter 11 dígitos.' });
+      }
       const db = admin.firestore();
       const batch = db.batch();
 
-      // 1) usuarios (titular)
-      const usuarioRef = db.collection('usuarios').doc(cpf);
-      const usuarioDoc = await usuarioRef.get();
-      if (usuarioDoc.exists) batch.delete(usuarioRef);
+      // 1) usuarios (titular) — pode ter docId como uid; remover por docId=cpf e também por query cpf==cleanCpf
+      const usuarioRefById = db.collection('usuarios').doc(cleanCpf);
+      const usuarioDocById = await usuarioRefById.get();
+      if (usuarioDocById.exists) batch.delete(usuarioRefById);
+      const usuariosSnapByCpf = await db.collection('usuarios').where('cpf', '==', cleanCpf).get();
+      usuariosSnapByCpf.forEach(doc => batch.delete(doc.ref));
 
       // 2) assinaturas do titular
-      const assinSnap = await db.collection('assinaturas').where('cpfUsuario', '==', cpf).get();
+      const assinSnap = await db.collection('assinaturas').where('cpfUsuario', '==', cleanCpf).get();
       assinSnap.forEach(doc => batch.delete(doc.ref));
 
-      // 3) dependentes vinculados ao titular
-      const depsSnap = await db.collection('beneficiarios').where('holder', '==', cpf).get();
+      // 3) dependentes vinculados ao titular (holder = CPF do titular)
+      const depsSnap = await db.collection('beneficiarios').where('holder', '==', cleanCpf).get();
       depsSnap.forEach(doc => batch.delete(doc.ref));
+
+      // 4) registro do próprio titular na coleção de beneficiários (cpf = titular)
+      const titularSnap = await db.collection('beneficiarios').where('cpf', '==', cleanCpf).get();
+      titularSnap.forEach(doc => batch.delete(doc.ref));
 
       await batch.commit();
 
       return res.status(200).json({ ok: true, removed: {
-        usuario: usuarioDoc.exists,
+        usuario: usuarioDocById.exists || !usuariosSnapByCpf.empty,
         assinaturas: assinSnap.size,
-        dependentes: depsSnap.size
+        dependentes: depsSnap.size,
+        beneficiarioTitular: titularSnap.size
       }});
     } catch (error: any) {
       return res.status(500).json({ error: error?.message || 'Erro ao remover do banco de dados.' });
