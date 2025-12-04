@@ -652,6 +652,97 @@ paths:
           description: Retorna um objeto contendo o campo joinUrl (string).
 
   # ================= BENEFICIÁRIOS & DEPENDENTES =================
+  /beneficiarios/dependente:
+    post:
+      summary: Cadastrar/Sincronizar Dependente a partir do Rapidoc
+      description: |
+        Cadastra ou atualiza um beneficiário (dependente) no Firestore usando os dados do Rapidoc.
+        - `cpf`: CPF do beneficiário (11 dígitos).
+        - `holder`: CPF do responsável/assinante (11 dígitos).
+      tags: [Beneficiários]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - cpf
+                - holder
+              properties:
+                cpf:
+                  type: string
+                  example: "15186432997"
+                  description: CPF do beneficiário (11 dígitos)
+                holder:
+                  type: string
+                  example: "85309052020"
+                  description: CPF do responsável/assinante (11 dígitos)
+      responses:
+        '200':
+          description: Beneficiário cadastrado/atualizado com sucesso
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
+                    example: true
+                  id:
+                    type: string
+                    description: ID do documento do beneficiário no Firestore
+                  beneficiario:
+                    type: object
+                    description: Dados do beneficiário salvos
+        '400':
+          description: Requisição inválida (CPF/holder ausentes ou inválidos)
+        '401':
+          description: Não autenticado
+        '404':
+          description: Beneficiário não encontrado no Rapidoc
+        '500':
+          description: Erro interno ao cadastrar dependente
+  /beneficiarios/rapidoc/me:
+    get:
+      summary: Listar beneficiários do Rapidoc do usuário logado
+      description: |
+        Retorna os beneficiários (Rapidoc) cujo `holder` é igual ao CPF do usuário autenticado.
+        O CPF é resolvido a partir do token JWT (custom claim `cpf`) com fallbacks para `uid` (se for 11 dígitos)
+        ou busca por `email` no Firestore.
+      tags: [Beneficiários]
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: Lista de beneficiários do Rapidoc vinculados ao titular logado
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  holder:
+                    type: string
+                    description: CPF do titular resolvido
+                    example: "85309052020"
+                  count:
+                    type: integer
+                    example: 2
+                  beneficiarios:
+                    type: array
+                    items:
+                      type: object
+                      description: Objeto retornado pelo Rapidoc (beneficiary)
+        '400':
+          description: CPF do usuário não identificado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Não autenticado
+        '500':
+          description: Erro interno ao listar beneficiários
   /dependentes:
     post:
       summary: Adicionar Dependente
@@ -668,6 +759,155 @@ paths:
           description: Dependente criado.
 
   /dependentes/{cpf}:
+    put:
+      summary: Atualiza dados de um dependente pelo CPF
+      description: |
+        Atualiza dados do dependente identificado pelo CPF na URL. 
+        - Campos locais (ex.: `parentesco`, `holder`) atualizam apenas o Firestore.
+        - Campos que impactam o Rapidoc (`nome`, `birthDate`, `email`, `phone`, `zipCode`, `address`, `city`, `state`, `cpf`, `plans`) também são enviados via PUT para o Rapidoc com cabeçalhos `Authorization`, `clientId` e `Content-Type: application/vnd.rapidoc.tema-v2+json`.
+        - O campo `birthDate` deve estar em `yyyy-MM-dd`.
+      tags:
+        - Dependentes
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: cpf
+          in: path
+          required: true
+          description: CPF do dependente a ser atualizado (apenas números)
+          schema:
+            type: string
+            example: "95877673068"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                nome:
+                  type: string
+                  description: Nome completo
+                  example: Gabriel Crispim
+                birthDate:
+                  type: string
+                  description: Data de nascimento em formato yyyy-MM-dd
+                  example: 2000-12-12
+                parentesco:
+                  type: string
+                  description: Grau de parentesco
+                  example: Filho(a)
+                holder:
+                  type: string
+                  description: CPF do titular associado ao dependente
+                  example: "95877673068"
+                email:
+                  type: string
+                  description: Email do dependente
+                  example: "gabriel@example.com"
+                phone:
+                  type: string
+                  description: Telefone (apenas números)
+                  example: "5555199394"
+                zipCode:
+                  type: string
+                  description: CEP (apenas números)
+                  example: "91060000"
+                address:
+                  type: string
+                  description: Endereço
+                  example: "Rua Teste"
+                city:
+                  type: string
+                  description: Cidade
+                  example: "Porto Alegre"
+                state:
+                  type: string
+                  description: Estado (UF)
+                  example: "RS"
+                cpf:
+                  type: string
+                  description: CPF do dependente (para alteração de CPF)
+                  example: "95877673068"
+                plans:
+                  type: array
+                  description: Planos para envio ao Rapidoc; cada item contém `paymentType` e `plan.uuid`
+                  items:
+                    type: object
+                    properties:
+                      paymentType:
+                        type: string
+                        description: "Tipo de pagamento (ex.: S)"
+                        example: "S"
+                      plan:
+                        type: object
+                        properties:
+                          uuid:
+                            type: string
+                            description: UUID do plano no Rapidoc
+                            example: "6676fb40-4b2f-4434-bd9c-ba6f38925c44"
+            examples:
+              atualizacaoBasica:
+                summary: Atualização apenas local (Firestore)
+                value:
+                  nome: Gabriel Crispim
+                  birthDate: 2000-12-12
+                  parentesco: Filho(a)
+                  email: 1764801637
+                  phone: 5555199394
+                  zipCode: 91060000
+                  holder: "95877673068"
+              atualizacaoComPlano:
+                summary: Atualização incluindo planos para Rapidoc
+                value:
+                  nome: Gabriel Crispim
+                  birthDate: 2000-12-12
+                  parentesco: Filho(a)
+                  email: 1764801637
+                  phone: 5555199394
+                  zipCode: 91060000
+                  holder: "95877673068"
+                  plans:
+                    - paymentType: "S"
+                      plan:
+                        uuid: "6676fb40-4b2f-4434-bd9c-ba6f38925c44"
+      responses:
+        '200':
+          description: Dependente atualizado com sucesso; retorna lista atualizada dos dependentes do titular
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  dependentes:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id:
+                          type: string
+                        nome:
+                          type: string
+                        cpf:
+                          type: string
+                        birthDate:
+                          type: string
+                        parentesco:
+                          type: string
+                        holder:
+                          type: string
+                        email:
+                          type: string
+                        phone:
+                          type: string
+                        zipCode:
+                          type: string
+        '400':
+          description: "Requisição inválida (ex.: nenhum campo para atualizar, erro ao atualizar no Rapidoc)"
+        '404':
+          description: Dependente não encontrado
+        '500':
+          description: Erro interno ao editar dependente
     get:
       summary: Listar Dependentes do Titular
       tags: [Beneficiários]
@@ -681,24 +921,6 @@ paths:
       responses:
         '200':
           description: Lista de dependentes.
-    put:
-      summary: Editar Dependente
-      tags: [Beneficiários]
-      security: [{ bearerAuth: [] }]
-      parameters:
-        - in: path
-          name: cpf
-          description: "CPF do dependente"
-          required: true
-          schema: { type: string }
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/DependenteDTO'
-      responses:
-        '200':
-          description: Atualizado.
 
   /beneficiarios/{cpf}/especialidades:
     get:

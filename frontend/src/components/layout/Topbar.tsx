@@ -1,5 +1,6 @@
 'use client';
 
+import { useEffect, useState } from 'react';
 import { Menu, Bell } from 'lucide-react';
 import { ThemeToggle } from './ThemeToggle';
 
@@ -9,21 +10,24 @@ interface TopbarProps {
 }
 
 export function Topbar({ onMenuClick, title }: TopbarProps) {
-  
-  const nomeUsuario = typeof window !== 'undefined' ? (localStorage.getItem('nomeUsuario') || 'Usuário') : 'Usuário';
-  // Busca o nome do usuário logado salvo em localStorage.user (JSON)
-  let letra = 'U';
-  if (typeof window !== 'undefined') {
+  // Evita hydration mismatch: inicia com 'U' e atualiza após mount
+  const [letra, setLetra] = useState<string>('U');
+  useEffect(() => {
     try {
-      const userStr = localStorage.getItem('user');
+      const userStr = typeof window !== 'undefined' ? localStorage.getItem('user') : null;
       if (userStr) {
-        const user = JSON.parse(userStr);
-        if (user?.name) {
-          letra = user.name.trim()[0]?.toUpperCase() || 'U';
+        const user = JSON.parse(userStr || '{}');
+        if (user?.name && typeof user.name === 'string' && user.name.trim().length > 0) {
+          setLetra(user.name.trim()[0].toUpperCase());
+        }
+      } else {
+        const nomeUsuario = typeof window !== 'undefined' ? localStorage.getItem('nomeUsuario') : null;
+        if (nomeUsuario && nomeUsuario.trim().length > 0) {
+          setLetra(nomeUsuario.trim()[0].toUpperCase());
         }
       }
     } catch {}
-  }
+  }, []);
 
   return (
     <header className="h-16 bg-white dark:bg-surface-dark border-b border-border-light dark:border-border-dark sticky top-0 z-30">

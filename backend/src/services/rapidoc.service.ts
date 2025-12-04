@@ -220,8 +220,7 @@ export async function atualizarBeneficiarioRapidoc(uuid: string, data: {
   if (data.city) body.city = data.city;
   if (data.state) body.state = data.state;
   if (data.plans) body.plans = data.plans;
-  if (data.paymentType) body.paymentType = data.paymentType;
-  if (data.serviceType) body.serviceType = data.serviceType;
+  // Não enviar paymentType/serviceType no topo; usar somente dentro de plans
   if (data.specialties) body.specialties = data.specialties;
   if (typeof (data as any).isActive === 'boolean') body.isActive = (data as any).isActive;
 
@@ -321,6 +320,48 @@ export async function buscarBeneficiarioRapidocPorCpf(cpf: string) {
   return data;
 }
 
+// Listar beneficiários Rapidoc com filtros opcionais (ex.: { holder })
+export async function listarBeneficiariosRapidocPorHolder(holderCpf: string): Promise<any[]> {
+  if (!RAPIDOC_BASE_URL || !RAPIDOC_TOKEN || !RAPIDOC_CLIENT_ID) {
+    throw new Error('Configuração Rapidoc ausente');
+  }
+  const cacheKey = `rapidoc:beneficiaries:holder:${holderCpf}`;
+  const cached = getCached<any[]>(cacheKey);
+  if (cached) return cached;
+  const url = `${RAPIDOC_BASE_URL}/tema/api/beneficiaries`;
+  try {
+    const resp = await rapidocAxios.get(url, {
+      params: { holder: holderCpf },
+      headers: {
+        Authorization: `Bearer ${RAPIDOC_TOKEN}`,
+        clientId: RAPIDOC_CLIENT_ID,
+        'Content-Type': 'application/vnd.rapidoc.tema-v2+json'
+      }
+    });
+    let data: any[] = [];
+    if (Array.isArray(resp.data)) data = resp.data;
+    else if (Array.isArray(resp.data?.beneficiaries)) data = resp.data.beneficiaries;
+    else if (Array.isArray(resp.data?.data)) data = resp.data.data;
+    // Garantir filtro por holder no client-side caso a API ignore o parâmetro
+    const holderKeyCandidates = ['holder', 'cpfTitular', 'responsavelCpf'];
+    data = data.filter((b: any) => {
+      if (!b || typeof b !== 'object') return false;
+      // campo padrão 'holder'
+      if (typeof b.holder === 'string' && b.holder.replace(/\D/g, '') === holderCpf) return true;
+      // tentar outras chaves conhecidas
+      for (const k of holderKeyCandidates) {
+        const v = (b as any)[k];
+        if (typeof v === 'string' && v.replace(/\D/g, '') === holderCpf) return true;
+      }
+      return false;
+    });
+    setCached(cacheKey, data, 60000);
+    return data;
+  } catch (error: any) {
+    throw new Error(`Erro ao listar beneficiários por holder: ${error?.message || 'Erro desconhecido'}`);
+  }
+}
+
 // Agendar consulta no Rapidoc (corpo flexível para acompanhar a API)
 export async function agendarConsultaRapidoc(body: Record<string, any>) {
   if (!RAPIDOC_BASE_URL || !RAPIDOC_TOKEN || !RAPIDOC_CLIENT_ID) throw new Error('Configuração Rapidoc ausente');
@@ -412,34 +453,25 @@ export async function listarAgendamentosRapidoc(params: Record<string, any>) {
 // Inativa beneficiário no Rapidoc tentando chaves isActive/active
 export async function inativarBeneficiarioRapidoc(uuid: string) {
   if (!RAPIDOC_BASE_URL || !RAPIDOC_TOKEN || !RAPIDOC_CLIENT_ID) throw new Error('Configuração Rapidoc ausente');
+  // De acordo com a documentação, a operação correta é DELETE
   const url = `${RAPIDOC_BASE_URL}/tema/api/beneficiaries/${uuid}`;
   const headers = {
     Authorization: `Bearer ${RAPIDOC_TOKEN}`,
-    clientId: RAPIDOC_CLIENT_ID,
-    'Content-Type': 'application/vnd.rapidoc.tema-v2+json'
+    clientId: RAPIDOC_CLIENT_ID
   } as const;
-  // 1) Tenta com isActive
-  try {
-    const resp = await rapidocAxios.put(url, { uuid, isActive: false }, { headers });
-    // Invalidar cache do beneficiário
-    cache.delete(`rapidoc:beneficiary:uuid:${uuid}`);
-    for (const key of cache.keys()) {
-      if (key.startsWith('rapidoc:beneficiary:cpf:')) {
-        cache.delete(key);
-      }
-    }
-    return resp.data;
-  } catch (e1: any) {
-    // 2) Fallback: tenta com active
-    try {
-      const resp2 = await rapidocAxios.put(url, { uuid, active: false }, { headers });
-      // Invalidar cache do beneficiário
-      cache.delete(`rapidoc:beneficiary:uuid:${uuid}`);
-      return resp2.data;
-    } catch (e2: any) {
-      throw e2 || e1;
+  const resp = await rapidocAxios.delete(url, { headers });
+  cache.delete(`rapidoc:beneficiary:uuid:${uuid}`);
+  for (const key of cache.keys()) {
+    if (key.startsWith('rapidoc:beneficiary:cpf:')) {
+      cache.delete(key);
     }
   }
+  return resp.data;
+}
+
+// Remover beneficiário (DELETE) por UUID — alias semântica
+export async function removerBeneficiarioRapidoc(uuid: string) {
+  return inativarBeneficiarioRapidoc(uuid);
 }
 
 // Busca disponibilidade de especialidades para um beneficiário

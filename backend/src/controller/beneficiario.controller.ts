@@ -1,8 +1,93 @@
 import type { Request, Response } from 'express';
+import { getFirestore } from 'firebase-admin/firestore';
+import { firebaseApp } from '../config/firebase.js';
 import admin from 'firebase-admin';
 import { buscarBeneficiarioRapidocPorCpf, inativarBeneficiarioRapidoc, buscarEncaminhamentosBeneficiarioRapidoc, listarAgendamentosBeneficiarioRapidoc } from '../services/rapidoc.service.js';
+import { listarBeneficiariosRapidocPorHolder } from '../services/rapidoc.service.js';
 
 export class BeneficiarioController {
+  // Cadastrar/Sincronizar beneficiário (dependente) no Firestore a partir do Rapidoc
+  // POST /api/beneficiarios/dependente
+  // Body: { cpf: string; holder: string }
+  static async cadastrarDependente(req: Request, res: Response) {
+    try {
+      const { cpf, holder } = req.body as { cpf?: string; holder?: string };
+      if (!cpf || !holder) {
+        return res.status(400).json({ error: 'Campos obrigatórios: cpf (do beneficiário) e holder (CPF do responsável/assinante).' });
+      }
+
+      const cpfBenef = String(cpf).replace(/\D/g, '');
+      const cpfHolder = String(holder).replace(/\D/g, '');
+      if (cpfBenef.length !== 11 || cpfHolder.length !== 11) {
+        return res.status(400).json({ error: 'CPF inválido. Ambos devem ter 11 dígitos.' });
+      }
+
+      // Buscar beneficiário no Rapidoc pelo CPF
+      const { buscarBeneficiarioRapidocPorCpf } = await import('../services/rapidoc.service.js');
+      let rapidoc: any;
+      try {
+        const resp = await buscarBeneficiarioRapidocPorCpf(cpfBenef);
+        rapidoc = resp?.beneficiary;
+      } catch (e: any) {
+        return res.status(404).json({ error: 'Beneficiário não encontrado no Rapidoc para o CPF informado.' });
+      }
+
+      if (!rapidoc || !rapidoc.uuid) {
+        return res.status(404).json({ error: 'Beneficiário não possui UUID no Rapidoc.' });
+      }
+
+      // Montar documento no Firestore
+      const db = getFirestore(firebaseApp);
+      const data: Record<string, any> = {
+        nome: rapidoc.name || rapidoc.nome || rapidoc.fullName || '',
+        cpf: cpfBenef,
+        birthDate: rapidoc.birthday || rapidoc.birthDate || '',
+        email: rapidoc.email || rapidoc.emailAddress || '',
+        phone: rapidoc.phone || rapidoc.telefone || '',
+        zipCode: rapidoc.zipCode || rapidoc.cep || '',
+        address: rapidoc.address || rapidoc.endereco || '',
+        city: rapidoc.city || rapidoc.cidade || '',
+        state: rapidoc.state || rapidoc.estado || '',
+        paymentType: rapidoc.paymentType || undefined,
+        serviceType: rapidoc.serviceType || undefined,
+        holder: cpfHolder,
+        rapidocUuid: rapidoc.uuid,
+        isActive: (rapidoc.isActive === true) || (rapidoc.active === true),
+        updatedAt: new Date().toISOString(),
+      };
+
+      // Remover chaves undefined
+      Object.keys(data).forEach((k) => { if (data[k] === undefined) delete data[k]; });
+
+      // Se já existir o beneficiário no Firestore, atualiza; senão, cria
+      const coll = db.collection('beneficiarios');
+      const snap = await coll.where('cpf', '==', cpfBenef).limit(1).get();
+      let docId: string | undefined;
+      if (!snap.empty) {
+        const firstDoc = snap.docs[0]!;
+        docId = firstDoc.id;
+        await coll.doc(docId).set(data, { merge: true });
+      } else {
+        const created = await coll.add({ ...data, createdAt: new Date().toISOString() });
+        docId = created.id;
+      }
+
+      // Atualizar usuário (titular) com rapidocBeneficiaryUuid, se aplicável
+      try {
+        const userRef = db.collection('usuarios').doc(cpfHolder);
+        const userDoc = await userRef.get();
+        if (userDoc.exists) {
+          const u = userDoc.data() || {};
+          const rapidocBeneficiaryUuid = u?.rapidocBeneficiaryUuid || rapidoc.uuid;
+          await userRef.set({ rapidocBeneficiaryUuid }, { merge: true });
+        }
+      } catch {}
+
+      return res.status(200).json({ ok: true, id: docId, beneficiario: data });
+    } catch (error: any) {
+      return res.status(500).json({ error: error?.message || 'Erro ao cadastrar dependente.' });
+    }
+  }
   // Inativar beneficiário no Rapidoc via CPF
   static async inativarRapidoc(req: Request, res: Response) {
     try {
@@ -20,6 +105,14 @@ export class BeneficiarioController {
         if (!resp || resp.success === false) {
           return res.status(400).json({ error: resp?.message || 'Falha ao inativar beneficiário no Rapidoc.', detail: resp });
         }
+        // Marca como inativo também no Firestore, se existir
+        try {
+          const db = admin.firestore();
+          const snap = await db.collection('beneficiarios').where('cpf', '==', String(cpf).replace(/\D/g, '')).limit(1).get();
+          if (!snap.empty) {
+            await snap.docs[0]!.ref.set({ isActive: false, updatedAt: new Date().toISOString() }, { merge: true });
+          }
+        } catch {}
         return res.status(200).json({ ok: true, beneficiaryUuid: beneficiario.uuid });
       } catch (e: any) {
         return res.status(400).json({ error: 'Erro ao inativar beneficiário no Rapidoc.', detail: e?.response?.data || e?.message });
@@ -34,32 +127,58 @@ export class BeneficiarioController {
     try {
       const { cpf } = req.params as { cpf?: string };
       if (!cpf) return res.status(400).json({ error: 'CPF é obrigatório.' });
-
+      const cleanCpf = String(cpf).replace(/\D/g, '');
+      if (cleanCpf.length !== 11) {
+        return res.status(400).json({ error: 'CPF inválido. Deve conter 11 dígitos.' });
+      }
       const db = admin.firestore();
       const batch = db.batch();
 
-      // 1) usuarios (titular)
-      const usuarioRef = db.collection('usuarios').doc(cpf);
-      const usuarioDoc = await usuarioRef.get();
-      if (usuarioDoc.exists) batch.delete(usuarioRef);
+      // 1) usuarios (titular) — pode ter docId como uid; remover por docId=cpf e também por query cpf==cleanCpf
+      const usuarioRefById = db.collection('usuarios').doc(cleanCpf);
+      const usuarioDocById = await usuarioRefById.get();
+      if (usuarioDocById.exists) batch.delete(usuarioRefById);
+      const usuariosSnapByCpf = await db.collection('usuarios').where('cpf', '==', cleanCpf).get();
+      usuariosSnapByCpf.forEach(doc => batch.delete(doc.ref));
 
       // 2) assinaturas do titular
-      const assinSnap = await db.collection('assinaturas').where('cpfUsuario', '==', cpf).get();
+      const assinSnap = await db.collection('assinaturas').where('cpfUsuario', '==', cleanCpf).get();
       assinSnap.forEach(doc => batch.delete(doc.ref));
 
-      // 3) dependentes vinculados ao titular
-      const depsSnap = await db.collection('beneficiarios').where('holder', '==', cpf).get();
+      // 3) dependentes vinculados ao titular (holder = CPF do titular)
+      const depsSnap = await db.collection('beneficiarios').where('holder', '==', cleanCpf).get();
       depsSnap.forEach(doc => batch.delete(doc.ref));
+
+      // 4) registro do próprio titular na coleção de beneficiários (cpf = titular)
+      const titularSnap = await db.collection('beneficiarios').where('cpf', '==', cleanCpf).get();
+      titularSnap.forEach(doc => batch.delete(doc.ref));
 
       await batch.commit();
 
       return res.status(200).json({ ok: true, removed: {
-        usuario: usuarioDoc.exists,
+        usuario: usuarioDocById.exists || !usuariosSnapByCpf.empty,
         assinaturas: assinSnap.size,
-        dependentes: depsSnap.size
+        dependentes: depsSnap.size,
+        beneficiarioTitular: titularSnap.size
       }});
     } catch (error: any) {
       return res.status(500).json({ error: error?.message || 'Erro ao remover do banco de dados.' });
+    }
+  }
+
+  // Remover apenas um beneficiário (dependente) por CPF do Firestore
+  static async removerBeneficiarioPorCpf(req: Request, res: Response) {
+    try {
+      const { cpf } = req.params as { cpf?: string };
+      if (!cpf) return res.status(400).json({ error: 'CPF é obrigatório.' });
+      const cleanCpf = String(cpf).replace(/\D/g, '');
+      const db = admin.firestore();
+      const snap = await db.collection('beneficiarios').where('cpf', '==', cleanCpf).limit(1).get();
+      if (snap.empty) return res.status(404).json({ error: 'Beneficiário não encontrado no banco.' });
+      await snap.docs[0]!.ref.delete();
+      return res.status(200).json({ ok: true, removedCpf: cleanCpf });
+    } catch (error: any) {
+      return res.status(500).json({ error: error?.message || 'Erro ao remover beneficiário por CPF.' });
     }
   }
 
@@ -261,6 +380,53 @@ export class BeneficiarioController {
       }
     } catch (error: any) {
       return res.status(500).json({ error: error?.message || 'Erro ao buscar encaminhamentos.' });
+    }
+  }
+}
+
+// Listar beneficiários do Rapidoc cujo holder é o CPF do usuário logado
+export class BeneficiariosRapidocQueryController {
+  static async listarMe(req: Request, res: Response) {
+    try {
+      let holderCpf = (req.user as any)?.cpf as string | undefined;
+      const uid = (req.user as any)?.uid as string | undefined;
+      const email = (req.user as any)?.email as string | undefined;
+
+      // Fallbacks para descobrir CPF
+      if (!holderCpf && uid) {
+        if (/^\d{11}$/.test(uid)) {
+          holderCpf = uid;
+        } else {
+          try {
+            const usuarioSnap = await admin.firestore().collection('usuarios').doc(uid).get();
+            if (usuarioSnap.exists) holderCpf = (usuarioSnap.data() as any)?.cpf || holderCpf;
+          } catch {}
+        }
+      }
+      if (!holderCpf && email) {
+        try {
+          const snap = await admin.firestore().collection('usuarios')
+            .where('email', '==', email)
+            .limit(1)
+            .get();
+          if (!snap.empty) {
+            const first = snap.docs[0]!;
+            holderCpf = (first.data() as any)?.cpf || first.id;
+          }
+        } catch {}
+      }
+
+      if (!holderCpf) return res.status(400).json({ error: 'CPF do usuário não identificado.' });
+
+      try {
+        const beneficiarios = await listarBeneficiariosRapidocPorHolder(holderCpf);
+        const lista = Array.isArray(beneficiarios) ? beneficiarios : [];
+        return res.status(200).json({ holder: holderCpf, count: lista.length, beneficiarios: lista });
+      } catch (e: any) {
+        return res.status(400).json({ error: 'Erro ao listar beneficiários do Rapidoc.', detail: e?.response?.data || e?.message });
+      }
+    } catch (error: any) {
+      return res.status(500).json({ error: error?.message || 'Erro no servidor.' });
     }
   }
 }

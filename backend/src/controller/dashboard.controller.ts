@@ -88,20 +88,49 @@ export class DashboardController {
       // OTIMIZAÇÃO 4: Buscar apenas faturas (consultas removidas)
       const faturas = await asaasPromise;
 
-      // Status da assinatura (pode ser otimizado no futuro para chamada interna direta)
+      // Status da assinatura com fallbacks (ASAAS por CPF e Rapidoc)
       let statusAssinatura = 'inativa';
+      const baseUrl = process.env.BASE_URL;
+      const cpfUsuario = (usuario?.cpf as string) || (typeof uid === 'string' && /^\d{11}$/.test(uid) ? uid : undefined);
+
+      // 1) Se houver idAssinaturaAtual, validar via serviço interno
       if (idAssinaturaAtual) {
         try {
-          const baseUrl = process.env.BASE_URL;
-          const resp = await axios.get(`${baseUrl}/subscription/check-payment/${idAssinaturaAtual}`, {
-            timeout: 60000, // Timeout para não travar
+          const resp = await axios.get(`${baseUrl}/subscription/check-payment/${idAssinaturaAtual}`, { timeout: 60000 });
+          if (resp.data && resp.data.pago === true) statusAssinatura = 'ativa';
+        } catch {}
+      }
+
+      // 2) Fallback ASAAS: procurar pagamentos RECEIVED por CPF
+      if (statusAssinatura !== 'ativa' && ASAAS_API_KEY && cpfUsuario) {
+        try {
+          const clientesResp = await axios.get(`${ASAAS_API_URL}/customers`, {
+            params: { cpfCnpj: cpfUsuario },
+            headers: { access_token: ASAAS_API_KEY },
+            timeout: 60000,
           });
-          if (resp.data && resp.data.pago === true) {
-            statusAssinatura = 'ativa';
+          const clientes = clientesResp.data?.data || [];
+          if (clientes.length) {
+            const customerId = clientes[0].id;
+            const paymentsResp = await axios.get(`${ASAAS_API_URL}/payments`, {
+              params: { customer: customerId, limit: 50 },
+              headers: { access_token: ASAAS_API_KEY },
+              timeout: 60000,
+            });
+            const payments: any[] = paymentsResp.data?.data || [];
+            const hasRecentPaid = payments.some((p: any) => String(p?.status || '').toUpperCase() === 'RECEIVED');
+            if (hasRecentPaid) statusAssinatura = 'ativa';
           }
-        } catch {
-          statusAssinatura = 'inativa';
-        }
+        } catch {}
+      }
+
+      // 3) Fallback Rapidoc: beneficiário ativo e com plano associado
+      if (statusAssinatura !== 'ativa' && rapidoc) {
+        try {
+          const isActive = (rapidoc.isActive === true) || (rapidoc.active === true);
+          const hasPlans = Array.isArray(rapidoc.plans) ? rapidoc.plans.length > 0 : !!rapidoc.plan || !!rapidoc.serviceType;
+          if (isActive && hasPlans) statusAssinatura = 'ativa';
+        } catch {}
       }
 
       // Data da próxima cobrança (menor dueDate de fatura pendente)

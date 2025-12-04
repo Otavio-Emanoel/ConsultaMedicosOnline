@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { auth } from '@/lib/firebase';
 import { Dialog } from '@/components/ui/Dialog';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
@@ -18,6 +18,7 @@ import {
   User,
   Calendar,
   FileText,
+  Search,
 } from 'lucide-react';
 
 interface DependentBackend {
@@ -42,12 +43,22 @@ interface DependentForm {
   zipCode?: string;
 }
 
+interface RapidocBeneficiary {
+  uuid?: string;
+  name?: string;
+  cpf?: string;
+  birthday?: string;
+  holder?: string;
+  isActive?: boolean;
+}
+
 export default function DependentesPage() {
   const [dependents, setDependents] = useState<DependentBackend[]>([]);
-  const [loading, setLoading] = useState<boolean>(true);
+  const [loading, setLoading] = useState<boolean>(false);
   const [error, setError] = useState<string>('');
   const [showModal, setShowModal] = useState(false);
   const [editingCpf, setEditingCpf] = useState<string | null>(null);
+  const [editingOriginal, setEditingOriginal] = useState<DependentBackend | null>(null);
   const [formData, setFormData] = useState<DependentForm>({
     nome: '',
     cpf: '',
@@ -58,6 +69,44 @@ export default function DependentesPage() {
     zipCode: '',
   });
   const [holderCpf, setHolderCpf] = useState<string>('');
+  // Rapidoc sync state
+  const [showRapidocModal, setShowRapidocModal] = useState(false);
+  const [rapidocItems, setRapidocItems] = useState<RapidocBeneficiary[]>([]);
+  const [loadingRapidoc, setLoadingRapidoc] = useState<boolean>(false);
+  const [errorRapidoc, setErrorRapidoc] = useState<string>('');
+  const [syncingCpf, setSyncingCpf] = useState<string | null>(null);
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [dependentToDelete, setDependentToDelete] = useState<DependentBackend | null>(null);
+  const [deleteLoading, setDeleteLoading] = useState(false);
+  const [deleteError, setDeleteError] = useState('');
+
+  const normalizeCpf = (v?: string) => (v || '').replace(/\D/g, '');
+
+  const refreshDependents = useCallback(async () => {
+    const holderOnlyDigits = normalizeCpf(holderCpf);
+    if (!holderOnlyDigits) {
+      setDependents([]);
+      setLoading(false);
+      return;
+    }
+    setLoading(true);
+    setError('');
+    try {
+      let token: string | null = null;
+      if (auth.currentUser) token = await auth.currentUser.getIdToken();
+      else token = typeof window !== 'undefined' ? localStorage.getItem('auth_token') : null;
+      const headers: HeadersInit = { 'Content-Type': 'application/json' };
+      if (token) headers['Authorization'] = `Bearer ${token}`;
+      const resp = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL}/dependentes/${holderOnlyDigits}`, { headers });
+      if (!resp.ok) throw new Error('Erro ao buscar dependentes');
+      const data = await resp.json();
+      setDependents((data.dependentes || []).map((d: any) => d));
+    } catch (e: any) {
+      setError(e?.message || 'Falha ao carregar dependentes.');
+    } finally {
+      setLoading(false);
+    }
+  }, [holderCpf]);
 
   // Extrai CPF do titular via custom claim do Firebase ou fallback localStorage
   useEffect(() => {
@@ -68,21 +117,35 @@ export default function DependentesPage() {
           const tokenResult = await auth.currentUser.getIdTokenResult();
           const claims: any = tokenResult.claims || {};
           if (claims.cpf) {
-            setHolderCpf(claims.cpf as string);
+            setHolderCpf((claims.cpf as string).replace(/\D/g, ''));
             return;
           }
           // Se não houver claim cpf, tenta decodificar o próprio JWT
           const raw = await auth.currentUser.getIdToken();
           const payloadBase64 = raw.split('.')[1];
           const payloadJson = JSON.parse(atob(payloadBase64));
-          if (payloadJson.cpf) setHolderCpf(payloadJson.cpf);
+          if (payloadJson.cpf) setHolderCpf(String(payloadJson.cpf).replace(/\D/g, ''));
         } else {
           const token = typeof window !== 'undefined' ? localStorage.getItem('auth_token') : null;
           if (token) {
             const payloadBase64 = token.split('.')[1];
             const payloadJson = JSON.parse(atob(payloadBase64));
-            if (payloadJson.cpf) setHolderCpf(payloadJson.cpf);
+            if (payloadJson.cpf) setHolderCpf(String(payloadJson.cpf).replace(/\D/g, ''));
           }
+        }
+        // Fallback extra: ler user do localStorage (pode conter cpf ou uid numérico)
+        if (typeof window !== 'undefined' && !holderCpf) {
+          try {
+            const userStr = localStorage.getItem('user');
+            if (userStr) {
+              const user = JSON.parse(userStr);
+              const maybeCpf = (user?.cpf || user?.uid || '').toString();
+              const onlyDigits = maybeCpf.replace(/\D/g, '');
+              if (/^\d{11}$/.test(onlyDigits)) {
+                setHolderCpf(onlyDigits);
+              }
+            }
+          } catch {}
         }
       } catch {}
     })();
@@ -90,28 +153,154 @@ export default function DependentesPage() {
 
   // Carrega dependentes do backend
   useEffect(() => {
-    const fetchDependents = async () => {
-      if (!holderCpf) return;
-      setLoading(true);
-      setError('');
+    refreshDependents();
+  }, [refreshDependents]);
+  const isRegisteredInLocal = (cpf?: string) => {
+    const n = normalizeCpf(cpf);
+    return dependents.some(d => normalizeCpf(d.cpf) === n);
+  };
+
+  // Normaliza string de data para formato `yyyy-MM-dd` exigido pelo input type=date
+  const toDateInputValue = (v?: string) => {
+    const s = (v || '').trim();
+    if (!s) return '';
+    // dd/MM/yyyy -> yyyy-MM-dd
+    if (/^\d{2}\/\d{2}\/\d{4}$/.test(s)) {
+      const [dd, mm, yyyy] = s.split('/');
+      return `${yyyy}-${mm}-${dd}`;
+    }
+    // yyyy-MM-ddTHH:mm:ss... -> yyyy-MM-dd
+    if (/^\d{4}-\d{2}-\d{2}T/.test(s)) {
+      return s.slice(0, 10);
+    }
+    // yyyy-MM-dd já válido
+    if (/^\d{4}-\d{2}-\d{2}$/.test(s)) {
+      return s;
+    }
+    // Tentativa genérica
+    const d = new Date(s);
+    if (!isNaN(d.getTime())) {
+      return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
+    }
+    return '';
+  };
+
+  // Formata data para exibição em pt-BR, aceitando dd/MM/yyyy, yyyy-MM-dd e ISO
+  const formatBirthLabel = (v?: string) => {
+    const s = (v || '').trim();
+    if (!s) return '—';
+    // dd/MM/yyyy -> Date
+    if (/^\d{2}\/\d{2}\/\d{4}$/.test(s)) {
+      const [dd, mm, yyyy] = s.split('/');
+      const iso = `${yyyy}-${mm}-${dd}T00:00:00`;
+      const d = new Date(iso);
+      if (!isNaN(d.getTime())) return d.toLocaleDateString('pt-BR');
+    }
+    // yyyy-MM-dd -> Date
+    if (/^\d{4}-\d{2}-\d{2}$/.test(s)) {
+      const d = new Date(`${s}T00:00:00`);
+      if (!isNaN(d.getTime())) return d.toLocaleDateString('pt-BR');
+    }
+    // ISO completo -> Date
+    const d = new Date(s);
+    if (!isNaN(d.getTime())) return d.toLocaleDateString('pt-BR');
+    return '—';
+  };
+
+  const fetchRapidocBeneficiaries = async () => {
+    setLoadingRapidoc(true);
+    setErrorRapidoc('');
+    try {
+      let token: string | null = null;
+      if (auth.currentUser) token = await auth.currentUser.getIdToken();
+      else token = typeof window !== 'undefined' ? localStorage.getItem('auth_token') : null;
+      const headers: HeadersInit = { 'Content-Type': 'application/json' };
+      if (token) headers['Authorization'] = `Bearer ${token}`;
+      const resp = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL}/beneficiarios/rapidoc/me`, { headers });
+      if (!resp.ok) throw new Error('Falha ao consultar Rapidoc');
+      const data = await resp.json();
+      const items = Array.isArray(data?.beneficiarios) ? data.beneficiarios : [];
+      setRapidocItems(items);
+      setShowRapidocModal(true);
+    } catch (e: any) {
+      setErrorRapidoc(e?.message || 'Erro ao buscar beneficiários no Rapidoc.');
+    } finally {
+      setLoadingRapidoc(false);
+    }
+  };
+
+  const handleSyncRapidocBeneficiary = async (cpf?: string) => {
+    const c = normalizeCpf(cpf);
+    if (!c) {
+      alert('CPF do beneficiário ausente na resposta do Rapidoc.');
+      return;
+    }
+    // Garantir holderCpf resolvido antes de sincronizar
+    let effectiveHolder = normalizeCpf(holderCpf);
+    if (!effectiveHolder) {
       try {
-        let token: string | null = null;
-        if (auth.currentUser) token = await auth.currentUser.getIdToken();
-        else token = typeof window !== 'undefined' ? localStorage.getItem('auth_token') : null;
-        const headers: HeadersInit = { 'Content-Type': 'application/json' };
-        if (token) headers['Authorization'] = `Bearer ${token}`;
-        const resp = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL}/dependentes/${holderCpf}`, { headers });
-        if (!resp.ok) throw new Error('Erro ao buscar dependentes');
-        const data = await resp.json();
-        setDependents((data.dependentes || []).map((d: any) => d));
-      } catch (e: any) {
-        setError(e?.message || 'Falha ao carregar dependentes.');
-      } finally {
-        setLoading(false);
+        if (auth.currentUser) {
+          const tokenResult = await auth.currentUser.getIdTokenResult();
+          const claims: any = tokenResult.claims || {};
+          if (claims.cpf) effectiveHolder = String(claims.cpf).replace(/\D/g, '');
+          if (!effectiveHolder) {
+            const raw = await auth.currentUser.getIdToken();
+            const payloadBase64 = raw.split('.')[1];
+            const payloadJson = JSON.parse(atob(payloadBase64));
+            if (payloadJson.cpf) effectiveHolder = String(payloadJson.cpf).replace(/\D/g, '');
+          }
+        } else {
+          const token = typeof window !== 'undefined' ? localStorage.getItem('auth_token') : null;
+          if (token) {
+            const payloadBase64 = token.split('.')[1];
+            const payloadJson = JSON.parse(atob(payloadBase64));
+            if (payloadJson.cpf) effectiveHolder = String(payloadJson.cpf).replace(/\D/g, '');
+          }
+        }
+        // Fallback: localStorage.user
+        if (!effectiveHolder && typeof window !== 'undefined') {
+          const userStr = localStorage.getItem('user');
+          if (userStr) {
+            try {
+              const user = JSON.parse(userStr);
+              const maybeCpf = (user?.cpf || user?.uid || '').toString();
+              const onlyDigits = maybeCpf.replace(/\D/g, '');
+              if (/^\d{11}$/.test(onlyDigits)) effectiveHolder = onlyDigits;
+            } catch {}
+          }
+        }
+      } catch {}
+      if (!effectiveHolder) {
+        alert('CPF do titular não identificado. Aguarde carregar o perfil e tente novamente.');
+        return;
       }
-    };
-    fetchDependents();
-  }, [holderCpf]);
+      setHolderCpf(effectiveHolder);
+    }
+    setSyncingCpf(c);
+    try {
+      let token: string | null = null;
+      if (auth.currentUser) token = await auth.currentUser.getIdToken(true);
+      else token = typeof window !== 'undefined' ? localStorage.getItem('auth_token') : null;
+      const headers: HeadersInit = { 'Content-Type': 'application/json' };
+      if (token) headers['Authorization'] = `Bearer ${token}`;
+      const resp = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL}/beneficiarios/dependente`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ cpf: c, holder: effectiveHolder })
+      });
+      if (!resp.ok) throw new Error('Erro ao sincronizar dependente');
+      // Atualiza lista local de dependentes
+      const depsResp = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL}/dependentes/${normalizeCpf(effectiveHolder)}`, { headers });
+      if (depsResp.ok) {
+        const depsData = await depsResp.json();
+        setDependents((depsData.dependentes || []).map((d: any) => d));
+      }
+    } catch (e: any) {
+      alert(e?.message || 'Falha ao adicionar dependente ao sistema');
+    } finally {
+      setSyncingCpf(null);
+    }
+  };
 
   const calculateAge = (birthDate: string) => {
     const today = new Date();
@@ -127,10 +316,11 @@ export default function DependentesPage() {
   const handleOpenModal = (dependent?: DependentBackend) => {
     if (dependent) {
       setEditingCpf(dependent.cpf);
+      setEditingOriginal(dependent);
       setFormData({
         nome: dependent.nome || '',
         cpf: dependent.cpf || '',
-        birthDate: dependent.birthDate || '',
+        birthDate: toDateInputValue(dependent.birthDate) || '',
         parentesco: dependent.parentesco || '',
         email: dependent.email || '',
         phone: dependent.phone || '',
@@ -138,6 +328,7 @@ export default function DependentesPage() {
       });
     } else {
       setEditingCpf(null);
+      setEditingOriginal(null);
       setFormData({
         nome: '',
         cpf: '',
@@ -154,6 +345,7 @@ export default function DependentesPage() {
   const handleCloseModal = () => {
     setShowModal(false);
     setEditingCpf(null);
+    setEditingOriginal(null);
     setFormData({
       nome: '',
       cpf: '',
@@ -176,13 +368,15 @@ export default function DependentesPage() {
         // PUT atualizar dependente (campos enviados)
         const body: any = {};
         if (formData.nome) body.nome = formData.nome;
-        if (formData.birthDate) body.birthDate = formData.birthDate;
+        // Só envia birthDate se alterado em relação ao original
+        const originalBirthInput = toDateInputValue(editingOriginal?.birthDate || '');
+        if (formData.birthDate && formData.birthDate !== originalBirthInput) body.birthDate = formData.birthDate;
         if (formData.parentesco) body.parentesco = formData.parentesco;
         if (formData.email) body.email = formData.email;
         if (formData.phone) body.phone = formData.phone;
         if (formData.zipCode) body.zipCode = formData.zipCode;
         if (formData.cpf && formData.cpf !== editingCpf) body.cpf = formData.cpf; // alteração de cpf
-        body.holder = holderCpf;
+        body.holder = normalizeCpf(holderCpf);
         const resp = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL}/dependentes/${editingCpf}`, {
           method: 'PUT',
           headers,
@@ -198,7 +392,7 @@ export default function DependentesPage() {
             cpf: formData.cpf,
             birthDate: formData.birthDate,
             parentesco: formData.parentesco,
-            holder: holderCpf,
+            holder: normalizeCpf(holderCpf),
             email: formData.email || undefined,
             phone: formData.phone || undefined,
             zipCode: formData.zipCode || undefined
@@ -218,8 +412,61 @@ export default function DependentesPage() {
     }
   };
 
-  const handleDelete = (cpf: string) => {
-    alert('Remoção de dependente não implementada no backend.');
+  const handleDelete = (dependent: DependentBackend) => {
+    setDependentToDelete(dependent);
+    setDeleteError('');
+    setShowDeleteModal(true);
+  };
+
+  const closeDeleteModal = () => {
+    if (deleteLoading) return;
+    setShowDeleteModal(false);
+    setDependentToDelete(null);
+    setDeleteError('');
+  };
+
+  const handleConfirmDelete = async () => {
+    if (!dependentToDelete) return;
+    const cpfToDelete = normalizeCpf(dependentToDelete.cpf);
+    if (!cpfToDelete) {
+      setDeleteError('CPF do dependente inválido.');
+      return;
+    }
+    setDeleteLoading(true);
+    setDeleteError('');
+    try {
+      let token: string | null = null;
+      if (auth.currentUser) token = await auth.currentUser.getIdToken(true);
+      else token = typeof window !== 'undefined' ? localStorage.getItem('auth_token') : null;
+      const headers: HeadersInit = { 'Content-Type': 'application/json' };
+      if (token) headers['Authorization'] = `Bearer ${token}`;
+
+      const rapidocResp = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL}/beneficiarios/${cpfToDelete}/inativar-rapidoc`, {
+        method: 'POST',
+        headers
+      });
+      if (!rapidocResp.ok) {
+        const detail = await rapidocResp.json().catch(() => ({}));
+        throw new Error(detail?.error || 'Erro ao inativar beneficiário no Rapidoc.');
+      }
+
+      const deleteResp = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL}/beneficiarios/${cpfToDelete}`, {
+        method: 'DELETE',
+        headers
+      });
+      if (!deleteResp.ok) {
+        const detail = await deleteResp.json().catch(() => ({}));
+        throw new Error(detail?.error || 'Erro ao remover beneficiário do banco.');
+      }
+
+      await refreshDependents();
+      setShowDeleteModal(false);
+      setDependentToDelete(null);
+    } catch (e: any) {
+      setDeleteError(e?.message || 'Falha ao remover dependente.');
+    } finally {
+      setDeleteLoading(false);
+    }
   };
 
   return (
@@ -231,10 +478,16 @@ export default function DependentesPage() {
             Gerencie os dependentes do seu plano
           </p>
         </div>
+        <div className="flex items-center gap-2">
+        <Button variant="outline" onClick={fetchRapidocBeneficiaries} disabled={loadingRapidoc}>
+          <Search className="w-5 h-5 mr-2" />
+          Verificar no Rapidoc
+        </Button>
         <Button variant="primary" onClick={() => handleOpenModal()}>
           <Plus className="w-5 h-5 mr-2" />
           Adicionar Dependente
         </Button>
+        </div>
       </div>
 
       {/* Estados de carregamento / erro */}
@@ -320,7 +573,7 @@ export default function DependentesPage() {
                           Nascimento
                         </span>
                         <span className="font-medium text-gray-900 dark:text-white">
-                          {new Date(dependent.birthDate + 'T00:00:00').toLocaleDateString('pt-BR')}
+                          {formatBirthLabel(dependent.birthDate)}
                         </span>
                       </div>
                     </div>
@@ -339,7 +592,7 @@ export default function DependentesPage() {
                       <Button
                         variant="danger"
                         size="sm"
-                        onClick={() => handleDelete(dependent.cpf)}
+                        onClick={() => handleDelete(dependent)}
                       >
                         <Trash2 className="w-4 h-4" />
                       </Button>
@@ -453,6 +706,108 @@ export default function DependentesPage() {
               disabled={!formData.nome || !formData.cpf || !formData.birthDate || !formData.parentesco}
             >
               <Check className="w-4 h-4 mr-2" /> {editingCpf ? 'Salvar' : 'Adicionar'}
+            </Button>
+          </div>
+        </div>
+      </Dialog>
+
+      {/* Delete Confirmation Modal */}
+      <Dialog open={showDeleteModal} onOpenChange={(o) => { if (!o) closeDeleteModal(); }}>
+        <div className="bg-white dark:bg-gray-900 rounded-xl p-6 w-full max-w-md mx-auto space-y-4">
+          <h2 className="text-lg font-semibold text-gray-900 dark:text-white">Confirmar remoção</h2>
+          <p className="text-sm text-gray-600 dark:text-gray-400">
+            Ao confirmar, o dependente será inativado no Rapidoc e removido definitivamente do nosso sistema.
+          </p>
+          {dependentToDelete && (
+            <div className="p-3 rounded-lg bg-gray-50 dark:bg-gray-800/50">
+              <p className="text-gray-900 dark:text-white font-medium">{dependentToDelete.nome}</p>
+              <p className="text-sm text-gray-600 dark:text-gray-400">CPF: {dependentToDelete.cpf}</p>
+            </div>
+          )}
+          {deleteError && (
+            <p className="text-sm text-red-600 dark:text-red-400">{deleteError}</p>
+          )}
+          <div className="flex space-x-3 pt-4">
+            <Button variant="outline" className="flex-1" onClick={closeDeleteModal} disabled={deleteLoading}>
+              <X className="w-4 h-4 mr-2" /> Cancelar
+            </Button>
+            <Button
+              variant="danger"
+              className="flex-1"
+              onClick={handleConfirmDelete}
+              disabled={deleteLoading}
+            >
+              <Trash2 className="w-4 h-4 mr-2" /> {deleteLoading ? 'Removendo...' : 'Remover' }
+            </Button>
+          </div>
+        </div>
+      </Dialog>
+
+      {/* Rapidoc Modal */}
+      <Dialog open={showRapidocModal} onOpenChange={(o) => { if (!o) setShowRapidocModal(false); }}>
+        <div className="bg-white dark:bg-gray-900 rounded-xl p-6 w-full max-w-2xl mx-auto space-y-4">
+          <div className="flex items-center justify-between">
+            <h2 className="text-lg font-semibold text-gray-900 dark:text-white">Beneficiários encontrados no Rapidoc</h2>
+            <Button variant="outline" size="sm" onClick={fetchRapidocBeneficiaries} disabled={loadingRapidoc}>
+              Atualizar
+            </Button>
+          </div>
+          {errorRapidoc && (
+            <Card className="border border-red-300 dark:border-red-600">
+              <CardBody>
+                <p className="text-red-600 dark:text-red-400 text-sm">{errorRapidoc}</p>
+              </CardBody>
+            </Card>
+          )}
+          {loadingRapidoc ? (
+            <Card>
+              <CardBody>
+                <p className="text-gray-600 dark:text-gray-400">Carregando dados do Rapidoc...</p>
+              </CardBody>
+            </Card>
+          ) : (
+            <div className="space-y-3">
+              {rapidocItems.length === 0 ? (
+                <p className="text-gray-600 dark:text-gray-400">Nenhum beneficiário encontrado para o titular.</p>
+              ) : (
+                rapidocItems.map((b, idx) => {
+                  const cpfN = normalizeCpf(b.cpf);
+                  const registered = isRegisteredInLocal(cpfN);
+                  const birthLabel = b.birthday ? new Date((/\d{2}\/\d{2}\/\d{4}/.test(b.birthday) ? b.birthday.split('/').reverse().join('-') : b.birthday) + 'T00:00:00').toLocaleDateString('pt-BR') : '—';
+                  return (
+                    <Card key={`${cpfN}-${idx}`}>
+                      <CardBody>
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <p className="font-medium text-gray-900 dark:text-white">{b.name || '—'}</p>
+                            <p className="text-sm text-gray-600 dark:text-gray-400">CPF: {cpfN || '—'} · Nasc.: {birthLabel}</p>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <Badge variant={registered ? 'success' : 'warning'}>
+                              {registered ? 'Cadastrado' : 'Não cadastrado'}
+                            </Badge>
+                            {!registered && (
+                              <Button
+                                variant="primary"
+                                size="sm"
+                                onClick={() => handleSyncRapidocBeneficiary(cpfN)}
+                                disabled={syncingCpf === cpfN}
+                              >
+                                {syncingCpf === cpfN ? 'Adicionando...' : 'Adicionar ao sistema'}
+                              </Button>
+                            )}
+                          </div>
+                        </div>
+                      </CardBody>
+                    </Card>
+                  );
+                })
+              )}
+            </div>
+          )}
+          <div className="flex space-x-3 pt-2">
+            <Button variant="outline" className="flex-1" onClick={() => setShowRapidocModal(false)}>
+              <X className="w-4 h-4 mr-2" /> Fechar
             </Button>
           </div>
         </div>
