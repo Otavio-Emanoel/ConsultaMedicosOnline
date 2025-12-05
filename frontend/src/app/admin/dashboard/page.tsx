@@ -23,6 +23,7 @@ import {
 import Link from 'next/link';
 
 import { useEffect, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { getAuth } from 'firebase/auth';
 import { app } from '@/lib/firebase';
 
@@ -72,6 +73,7 @@ export default function AdminDashboardPage() {
   const [dashboard, setDashboard] = useState<DashboardData | null>(null);
   const [loading, setLoading] = useState(true);
   const [erro, setErro] = useState("");
+  const router = useRouter();
 
   useEffect(() => {
     const fetchDashboard = async () => {
@@ -82,8 +84,10 @@ export default function AdminDashboardPage() {
         const auth = getAuth(app);
         const user = auth.currentUser;
         if (!user) {
+          // Sem sessão → vai para login
           setErro("Usuário não autenticado.");
           setLoading(false);
+          router.push('/login');
           return;
         }
         const token = await user.getIdToken();
@@ -92,7 +96,14 @@ export default function AdminDashboardPage() {
             Authorization: `Bearer ${token}`,
           },
         });
-        if (!res.ok) throw new Error('Erro ao buscar dados do dashboard');
+        if (!res.ok) {
+          if (res.status === 401 || res.status === 403) {
+            router.push('/login');
+            setLoading(false);
+            return;
+          }
+          throw new Error('Erro ao buscar dados do dashboard');
+        }
         const data = await res.json();
         setDashboard(data);
       } catch (e) {
