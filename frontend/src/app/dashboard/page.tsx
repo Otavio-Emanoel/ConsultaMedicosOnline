@@ -19,6 +19,7 @@ import {
 } from 'lucide-react';
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
+import { useRouter } from 'next/navigation';
 
 
 type DashboardData = {
@@ -36,32 +37,37 @@ type DashboardData = {
 export default function DashboardPage() {
   const [data, setData] = useState<DashboardData | null>(null);
   const [loading, setLoading] = useState(true);
+  const router = useRouter();
 
   useEffect(() => {
-    // OTIMIZAÇÃO: AbortController para cancelar requisição se componente desmontar
-    // Evita requisições pendentes que ficam travadas
+    let cancel = false;
     const controller = new AbortController();
-    let mounted = true;
     let timeoutId: NodeJS.Timeout | null = null;
-
-    const loadDashboard = async () => {
+    const checkTokenAndLoadDashboard = async () => {
+      setLoading(true);
+      let token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
+      let tries = 0;
+      while (!token && tries < 3 && !cancel) {
+        await new Promise(res => setTimeout(res, 1000));
+        token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
+        tries++;
+      }
+      if (!token && !cancel) {
+        setLoading(false);
+        setTimeout(() => {
+          if (!cancel) router.push('/login');
+        }, 3000);
+        return;
+      }
       try {
-        const apiBase = process.env.NEXT_PUBLIC_API_BASE_URL;
-        const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
-        
-        if (!token) {
-          if (mounted) setLoading(false);
-          return;
-        }
-
         // Timeout de 60 segundos para não travar indefinidamente
         timeoutId = setTimeout(() => {
           controller.abort();
         }, 60000);
 
-        const response = await fetch(`${apiBase}/dashboard`, {
+        const response = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL}/dashboard`, {
           headers: { Authorization: `Bearer ${token}` },
-          signal: controller.signal, // Permite cancelar a requisição
+          signal: controller.signal,
         });
 
         if (timeoutId) {
@@ -69,106 +75,86 @@ export default function DashboardPage() {
           timeoutId = null;
         }
 
-        if (!mounted) return; // Componente foi desmontado
-
         if (!response.ok) {
+          if (response.status === 401 || response.status === 403) {
+            setLoading(false);
+            setTimeout(() => {
+              if (!cancel) router.push('/login');
+            }, 3000);
+            return;
+          }
           throw new Error(`Erro ${response.status}: ${response.statusText}`);
         }
 
         const json = await response.json();
-        
-        if (mounted) {
-          setData(json);
-          setLoading(false); // Libera UI rapidamente
-        }
+        setData(json);
+        setLoading(false);
 
         // Carregar próximas consultas em background, via /dashboard/agendamentos
-        if (mounted) {
-          const appointmentsController = new AbortController();
-          
-          // Timeout aumentado para 120 segundos para agendamentos
-          const appointmentsTimeoutId = setTimeout(() => {
-            appointmentsController.abort();
-          }, 120000);
+        const appointmentsController = new AbortController();
+        const appointmentsTimeoutId = setTimeout(() => {
+          appointmentsController.abort();
+        }, 120000);
 
-          fetch(`${apiBase}/dashboard/agendamentos?limit=5`, {
-            headers: { Authorization: `Bearer ${token}` },
-            signal: appointmentsController.signal,
-          })
-            .then((appointmentsRes) => {
-              clearTimeout(appointmentsTimeoutId);
-              if (!mounted) return;
-              
-              if (!appointmentsRes.ok) {
-                console.error('Erro ao buscar agendamentos:', appointmentsRes.status, appointmentsRes.statusText);
+        fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL}/dashboard/agendamentos?limit=5`, {
+          headers: { Authorization: `Bearer ${token}` },
+          signal: appointmentsController.signal,
+        })
+          .then((appointmentsRes) => {
+            clearTimeout(appointmentsTimeoutId);
+            if (!appointmentsRes.ok) {
+              if (appointmentsRes.status === 401 || appointmentsRes.status === 403) {
+                setTimeout(() => {
+                  if (!cancel) router.push('/login');
+                }, 3000);
                 return null;
               }
-              
-              return appointmentsRes.json();
-            })
-            .then((appointmentsData) => {
-              if (!mounted || !appointmentsData) return;
-              
-              const appointmentsList = appointmentsData?.appointments || appointmentsData?.data || [];
-              
-              // Mapear agendamentos para formato esperado
-              const mappedAppointments = appointmentsList.map((apt: any) => ({
-                uuid: apt?.uuid || apt?.id || null,
-                status: apt?.status || null,
-                date: apt?.detail?.date || apt?.date || null,
-                from: apt?.detail?.from || apt?.from || null,
-                to: apt?.detail?.to || apt?.to || null,
-                specialty: apt?.specialty || (apt?.specialtyObject?.name || apt?.specialtyObject?.description || apt?.specialtyObject?.title) || null
-              }));
-
-              // Log apenas em desenvolvimento para debug
-              if (process.env.NODE_ENV === 'development') {
-                console.log('Consultas carregadas:', mappedAppointments.length, mappedAppointments);
-              }
-
-              // Atualizar dados com próximas consultas carregadas em background
-              setData((prevData) => {
-                if (!prevData) return prevData;
-                return {
-                  ...prevData,
-                  consultas: mappedAppointments
-                };
-              });
-            })
-            .catch((err: any) => {
-              clearTimeout(appointmentsTimeoutId);
-              if (err.name !== 'AbortError' && mounted) {
-                console.error('Erro ao carregar consultas em background:', err);
-                // Não atualiza estado se erro (mantém consultas vazias)
-              }
+              console.error('Erro ao buscar agendamentos:', appointmentsRes.status, appointmentsRes.statusText);
+              return null;
+            }
+            return appointmentsRes.json();
+          })
+          .then((appointmentsData) => {
+            if (!appointmentsData) return;
+            const appointmentsList = appointmentsData?.appointments || appointmentsData?.data || [];
+            const mappedAppointments = appointmentsList.map((apt: any) => ({
+              uuid: apt?.uuid || apt?.id || null,
+              status: apt?.status || null,
+              date: apt?.detail?.date || apt?.date || null,
+              from: apt?.detail?.from || apt?.from || null,
+              to: apt?.detail?.to || apt?.to || null,
+              specialty: apt?.specialty || (apt?.specialtyObject?.name || apt?.specialtyObject?.description || apt?.specialtyObject?.title) || null
+            }));
+            setData((prevData) => {
+              if (!prevData) return prevData;
+              return {
+                ...prevData,
+                consultas: mappedAppointments
+              };
             });
-        }
+          })
+          .catch((err: any) => {
+            clearTimeout(appointmentsTimeoutId);
+            if (err.name !== 'AbortError' && !cancel) {
+              console.error('Erro ao carregar consultas em background:', err);
+            }
+          });
       } catch (error: any) {
-        // Ignora erro se foi cancelado (componente desmontou ou timeout)
         if (error.name === 'AbortError') {
           return;
         }
-        
-        if (mounted) {
-          console.error('Erro ao carregar dashboard:', error);
-          setLoading(false);
-        }
+        setLoading(false);
       } finally {
-        // Garantir que o timeout é limpo
         if (timeoutId) {
           clearTimeout(timeoutId);
           timeoutId = null;
         }
       }
     };
-
-    loadDashboard();
-
-    // Cleanup: cancela requisição se componente desmontar
+    checkTokenAndLoadDashboard();
     return () => {
-      mounted = false;
+      cancel = true;
       controller.abort();
-      // Limpar timeout se houver
       if (timeoutId) {
         clearTimeout(timeoutId);
       }

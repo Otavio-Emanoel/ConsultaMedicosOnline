@@ -23,6 +23,7 @@ import {
 import Link from 'next/link';
 
 import { useEffect, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { getAuth } from 'firebase/auth';
 import { app } from '@/lib/firebase';
 
@@ -40,8 +41,8 @@ type LogErro = {
 };
 
 type DashboardData = {
-  totais: { usuarios: number };
-  faturamento: { mesAtual: number };
+  totais: { usuarios: number; usuariosMesAtual?: number; usuariosMesAnterior?: number; variacaoUsuarios?: number | null };
+  faturamento: { mesAtual: number; mesAnterior?: number; variacaoMes?: number | null };
   planos?: {
     numeroPlanos: number;
     mediaValorPlanos: number;
@@ -72,27 +73,48 @@ export default function AdminDashboardPage() {
   const [dashboard, setDashboard] = useState<DashboardData | null>(null);
   const [loading, setLoading] = useState(true);
   const [erro, setErro] = useState("");
+  const router = useRouter();
 
   useEffect(() => {
-    const fetchDashboard = async () => {
+    let cancel = false;
+    const checkAuthAndFetch = async () => {
       setLoading(true);
       setErro("");
+      const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL;
+      const auth = getAuth(app);
+      let user = auth.currentUser;
+      let tries = 0;
+      while (!user && tries < 3 && !cancel) {
+        await new Promise(res => setTimeout(res, 1000));
+        user = auth.currentUser;
+        tries++;
+      }
+      if (!user && !cancel) {
+        setErro("Usuário não autenticado.");
+        setLoading(false);
+        setTimeout(() => {
+          if (!cancel) router.push('/login');
+        }, 3000);
+        return;
+      }
       try {
-        const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL;
-        const auth = getAuth(app);
-        const user = auth.currentUser;
-        if (!user) {
-          setErro("Usuário não autenticado.");
-          setLoading(false);
-          return;
-        }
+        if (!user) return; // proteção extra para typescript
         const token = await user.getIdToken();
         const res = await fetch(`${API_BASE}/admin/dashboard`, {
           headers: {
             Authorization: `Bearer ${token}`,
           },
         });
-        if (!res.ok) throw new Error('Erro ao buscar dados do dashboard');
+        if (!res.ok) {
+          if (res.status === 401 || res.status === 403) {
+            setLoading(false);
+            setTimeout(() => {
+              if (!cancel) router.push('/login');
+            }, 3000);
+            return;
+          }
+          throw new Error('Erro ao buscar dados do dashboard');
+        }
         const data = await res.json();
         setDashboard(data);
       } catch (e) {
@@ -101,7 +123,8 @@ export default function AdminDashboardPage() {
         setLoading(false);
       }
     };
-    fetchDashboard();
+    checkAuthAndFetch();
+    return () => { cancel = true; };
   }, []);
 
   return (
@@ -118,11 +141,24 @@ export default function AdminDashboardPage() {
                 <p className="text-2xl font-bold text-gray-900 dark:text-white">
                   {loading ? '...' : erro ? '-' : dashboard?.totais?.usuarios?.toLocaleString('pt-BR') ?? '-'}
                 </p>
-                <p className="text-xs text-success mt-1 flex items-center">
-                  <TrendingUp className="w-3 h-3 mr-1" />
-                  {/* Placeholder, ajuste depois se quiser variação real */}
-                  +12% este mês
-                </p>
+                {(() => {
+                  const variacao = dashboard?.totais?.variacaoUsuarios;
+                  if (loading) return <p className="text-xs text-gray-500 mt-1">...</p>;
+                  if (erro) return <p className="text-xs text-gray-500 mt-1">-</p>;
+                  if (variacao === null || variacao === undefined) {
+                    return <p className="text-xs text-gray-500 mt-1">Sem base do mês anterior</p>;
+                  }
+                  const isUp = variacao > 0;
+                  const isFlat = variacao === 0;
+                  const color = isFlat ? 'text-gray-500' : (isUp ? 'text-success' : 'text-danger');
+                  const Icon = isFlat ? Activity : (isUp ? TrendingUp : AlertTriangle);
+                  return (
+                    <p className={`text-xs mt-1 flex items-center ${color}`}>
+                      <Icon className="w-3 h-3 mr-1" />
+                      {variacao.toFixed(1)}% novos usuários vs mês anterior
+                    </p>
+                  );
+                })()}
               </div>
               <div className="w-12 h-12 bg-blue-100 dark:bg-slate-700 rounded-xl flex items-center justify-center">
                 <Users className="w-6 h-6 text-primary" />
@@ -141,11 +177,24 @@ export default function AdminDashboardPage() {
                 <p className="text-2xl font-bold text-gray-900 dark:text-white">
                   {loading ? '...' : erro ? '-' : `R$ ${dashboard?.faturamento?.mesAtual?.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`}
                 </p>
-                <p className="text-xs text-success mt-1 flex items-center">
-                  <TrendingUp className="w-3 h-3 mr-1" />
-                  {/* Placeholder, ajuste depois se quiser variação real */}
-                  +8% este mês
-                </p>
+                {(() => {
+                  const variacao = dashboard?.faturamento?.variacaoMes;
+                  if (loading) return <p className="text-xs text-gray-500 mt-1">...</p>;
+                  if (erro) return <p className="text-xs text-gray-500 mt-1">-</p>;
+                  if (variacao === null || variacao === undefined) {
+                    return <p className="text-xs text-gray-500 mt-1">Sem base do mês anterior</p>;
+                  }
+                  const isUp = variacao > 0;
+                  const isFlat = variacao === 0;
+                  const color = isFlat ? 'text-gray-500' : (isUp ? 'text-success' : 'text-danger');
+                  const Icon = isFlat ? Activity : (isUp ? TrendingUp : AlertTriangle);
+                  return (
+                    <p className={`text-xs mt-1 flex items-center ${color}`}>
+                      <Icon className="w-3 h-3 mr-1" />
+                      {variacao.toFixed(1)}% vs mês anterior
+                    </p>
+                  );
+                })()}
               </div>
               <div className="w-12 h-12 bg-green-100 dark:bg-slate-700 rounded-xl flex items-center justify-center">
                 <DollarSign className="w-6 h-6 text-success" />
