@@ -19,6 +19,7 @@ import {
 } from 'lucide-react';
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
+import { useRouter } from 'next/navigation';
 
 
 type DashboardData = {
@@ -36,6 +37,7 @@ type DashboardData = {
 export default function DashboardPage() {
   const [data, setData] = useState<DashboardData | null>(null);
   const [loading, setLoading] = useState(true);
+  const router = useRouter();
 
   useEffect(() => {
     // OTIMIZAÇÃO: AbortController para cancelar requisição se componente desmontar
@@ -50,7 +52,11 @@ export default function DashboardPage() {
         const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
         
         if (!token) {
-          if (mounted) setLoading(false);
+          // Sem token: redireciona para login
+          if (mounted) {
+            setLoading(false);
+            router.push('/login');
+          }
           return;
         }
 
@@ -72,6 +78,12 @@ export default function DashboardPage() {
         if (!mounted) return; // Componente foi desmontado
 
         if (!response.ok) {
+          // Token expirado/sem autorização → redireciona
+          if (response.status === 401 || response.status === 403) {
+            router.push('/login');
+            if (mounted) setLoading(false);
+            return;
+          }
           throw new Error(`Erro ${response.status}: ${response.statusText}`);
         }
 
@@ -100,6 +112,10 @@ export default function DashboardPage() {
               if (!mounted) return;
               
               if (!appointmentsRes.ok) {
+                if (appointmentsRes.status === 401 || appointmentsRes.status === 403) {
+                  router.push('/login');
+                  return null;
+                }
                 console.error('Erro ao buscar agendamentos:', appointmentsRes.status, appointmentsRes.statusText);
                 return null;
               }
