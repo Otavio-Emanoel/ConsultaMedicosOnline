@@ -155,8 +155,30 @@ export class AdminController {
         db.collection('planos').get(),
       ]);
 
+      // Usuários criados por mês (mês atual vs anterior)
+      const hoje = new Date();
+      const inicioMesAtual = new Date(hoje.getFullYear(), hoje.getMonth(), 1);
+      const inicioMesAnterior = new Date(hoje.getFullYear(), hoje.getMonth() - 1, 1);
+      const fimMesAnterior = new Date(hoje.getFullYear(), hoje.getMonth(), 0);
+
+      let usuariosMesAtual = 0;
+      let usuariosMesAnterior = 0;
+      (usuariosSnap as any).forEach((doc: any) => {
+        const data = doc.data();
+        const raw = data?.criadoEm || data?.createdAt || data?.created_at;
+        if (!raw) return;
+        const dt = raw.toDate ? raw.toDate() : new Date(raw);
+        if (isNaN(dt.getTime())) return;
+        if (dt >= inicioMesAtual) usuariosMesAtual += 1;
+        else if (dt >= inicioMesAnterior && dt <= fimMesAnterior) usuariosMesAnterior += 1;
+      });
+      const variacaoUsuarios = usuariosMesAnterior > 0 ? ((usuariosMesAtual - usuariosMesAnterior) / usuariosMesAnterior) * 100 : null;
+
       const totais = {
         usuarios: (usuariosSnap as any).size ?? 0,
+        usuariosMesAtual,
+        usuariosMesAnterior,
+        variacaoUsuarios,
         assinaturas: (assinSnap as any).size ?? 0,
         assinaturasAtivas: (ativasSnap as any).size ?? 0,
         assinaturasCanceladas: (canceladasSnap as any).size ?? 0,
