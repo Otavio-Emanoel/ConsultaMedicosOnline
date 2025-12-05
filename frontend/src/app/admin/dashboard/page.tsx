@@ -42,7 +42,7 @@ type LogErro = {
 
 type DashboardData = {
   totais: { usuarios: number };
-  faturamento: { mesAtual: number };
+  faturamento: { mesAtual: number; mesAnterior?: number; variacaoMes?: number | null };
   planos?: {
     numeroPlanos: number;
     mediaValorPlanos: number;
@@ -152,11 +152,24 @@ export default function AdminDashboardPage() {
                 <p className="text-2xl font-bold text-gray-900 dark:text-white">
                   {loading ? '...' : erro ? '-' : `R$ ${dashboard?.faturamento?.mesAtual?.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`}
                 </p>
-                <p className="text-xs text-success mt-1 flex items-center">
-                  <TrendingUp className="w-3 h-3 mr-1" />
-                  {/* Placeholder, ajuste depois se quiser variação real */}
-                  +8% este mês
-                </p>
+                {(() => {
+                  const variacao = dashboard?.faturamento?.variacaoMes;
+                  if (loading) return <p className="text-xs text-gray-500 mt-1">...</p>;
+                  if (erro) return <p className="text-xs text-gray-500 mt-1">-</p>;
+                  if (variacao === null || variacao === undefined) {
+                    return <p className="text-xs text-gray-500 mt-1">Sem base do mês anterior</p>;
+                  }
+                  const isUp = variacao > 0;
+                  const isFlat = variacao === 0;
+                  const color = isFlat ? 'text-gray-500' : (isUp ? 'text-success' : 'text-danger');
+                  const Icon = isFlat ? Activity : (isUp ? TrendingUp : AlertTriangle);
+                  return (
+                    <p className={`text-xs mt-1 flex items-center ${color}`}>
+                      <Icon className="w-3 h-3 mr-1" />
+                      {variacao.toFixed(1)}% vs mês anterior
+                    </p>
+                  );
+                })()}
               </div>
               <div className="w-12 h-12 bg-green-100 dark:bg-slate-700 rounded-xl flex items-center justify-center">
                 <DollarSign className="w-6 h-6 text-success" />

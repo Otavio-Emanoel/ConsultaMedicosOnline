@@ -252,7 +252,7 @@ export class AdminController {
       // Faturamento (Asaas) - melhor esforço, primeira página
       const ASAAS_API_URL = process.env.ASAAS_BASE_URL || 'https://sandbox.asaas.com/api/v3';
       const ASAAS_API_KEY = process.env.ASAAS_API_KEY as string | undefined;
-      let faturamento = { mesAtual: 0, ultimos30Dias: 0, pendencias: 0 };
+      let faturamento = { mesAtual: 0, ultimos30Dias: 0, pendencias: 0, mesAnterior: 0, variacaoMes: null as number | null };
       if (ASAAS_API_KEY) {
         try {
           const paymentsResp = await axios.get(`${ASAAS_API_URL}/payments`, {
@@ -262,22 +262,27 @@ export class AdminController {
           const payments: any[] = paymentsResp.data?.data || [];
           const hoje = new Date();
           const inicioMes = new Date(hoje.getFullYear(), hoje.getMonth(), 1);
+          const inicioMesAnterior = new Date(hoje.getFullYear(), hoje.getMonth() - 1, 1);
+          const fimMesAnterior = new Date(hoje.getFullYear(), hoje.getMonth(), 0); // último dia do mês anterior
           const trintaDiasAtras = new Date(hoje.getTime() - 30 * 24 * 60 * 60 * 1000);
 
           let mesAtual = 0;
           let ultimos30 = 0;
           let pendencias = 0;
+          let mesAnterior = 0;
           for (const p of payments) {
             const status = String(p?.status || '').toUpperCase();
             if (status === 'PENDING' || status === 'OVERDUE') pendencias += 1;
-            const pago = status === 'RECEIVED';
+            const pago = ['RECEIVED', 'RECEIVED_IN_CASH', 'CONFIRMED'].includes(status);
             const dataPag = p.paymentDate || p.receivedDate || p.dueDate;
             if (!dataPag) continue;
             const data = new Date(dataPag);
             if (pago && data >= inicioMes) mesAtual += Number(p.value || 0);
+            if (pago && data >= inicioMesAnterior && data <= fimMesAnterior) mesAnterior += Number(p.value || 0);
             if (pago && data >= trintaDiasAtras) ultimos30 += Number(p.value || 0);
           }
-          faturamento = { mesAtual, ultimos30Dias: ultimos30, pendencias };
+          const variacaoMes = mesAnterior > 0 ? ((mesAtual - mesAnterior) / mesAnterior) * 100 : null;
+          faturamento = { mesAtual, ultimos30Dias: ultimos30, pendencias, mesAnterior, variacaoMes };
         } catch {}
       }
 
