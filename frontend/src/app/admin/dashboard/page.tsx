@@ -76,20 +76,29 @@ export default function AdminDashboardPage() {
   const router = useRouter();
 
   useEffect(() => {
-    const fetchDashboard = async () => {
+    let cancel = false;
+    const checkAuthAndFetch = async () => {
       setLoading(true);
       setErro("");
+      const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL;
+      const auth = getAuth(app);
+      let user = auth.currentUser;
+      let tries = 0;
+      while (!user && tries < 3 && !cancel) {
+        await new Promise(res => setTimeout(res, 1000));
+        user = auth.currentUser;
+        tries++;
+      }
+      if (!user && !cancel) {
+        setErro("Usuário não autenticado.");
+        setLoading(false);
+        setTimeout(() => {
+          if (!cancel) router.push('/login');
+        }, 3000);
+        return;
+      }
       try {
-        const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL;
-        const auth = getAuth(app);
-        const user = auth.currentUser;
-        if (!user) {
-          // Sem sessão → vai para login
-          setErro("Usuário não autenticado.");
-          setLoading(false);
-          router.push('/login');
-          return;
-        }
+        if (!user) return; // proteção extra para typescript
         const token = await user.getIdToken();
         const res = await fetch(`${API_BASE}/admin/dashboard`, {
           headers: {
@@ -98,8 +107,10 @@ export default function AdminDashboardPage() {
         });
         if (!res.ok) {
           if (res.status === 401 || res.status === 403) {
-            router.push('/login');
             setLoading(false);
+            setTimeout(() => {
+              if (!cancel) router.push('/login');
+            }, 3000);
             return;
           }
           throw new Error('Erro ao buscar dados do dashboard');
@@ -112,7 +123,8 @@ export default function AdminDashboardPage() {
         setLoading(false);
       }
     };
-    fetchDashboard();
+    checkAuthAndFetch();
+    return () => { cancel = true; };
   }, []);
 
   return (
