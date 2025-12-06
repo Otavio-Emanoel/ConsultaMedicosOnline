@@ -7,6 +7,7 @@ import { Badge } from '@/components/ui/Badge';
 import {
   Users,
   CreditCard,
+  BarChart,
   TrendingUp,
   AlertTriangle,
   Package,
@@ -294,15 +295,15 @@ export default function AdminDashboardPage() {
               </Button>
             </Link>
 
-            <Link href="/admin/configuracoes">
+            <Link href="/admin/relatorios">
               <Button
                 variant="outline"
                 size="lg"
                 className="w-full justify-between group"
               >
                 <span className="flex items-center">
-                  <Settings className="w-5 h-5 mr-2" />
-                  Configurações
+                  <BarChart className="w-5 h-5 mr-2" />
+                  Relatórios
                 </span>
                 <ArrowRight className="w-5 h-5 group-hover:translate-x-1 transition-transform" />
               </Button>
