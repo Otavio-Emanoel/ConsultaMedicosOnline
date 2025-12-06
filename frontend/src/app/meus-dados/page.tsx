@@ -14,9 +14,10 @@ import {
   MapPin,
   Lock,
   Save,
+  Globe2,
 } from 'lucide-react';
 
-type TabType = 'personal' | 'address' | 'security';
+type TabType = 'local' | 'rapidoc' | 'security';
 
 export default function MeusDadosPage() {
   const [loading, setLoading] = useState(false);
@@ -24,8 +25,9 @@ export default function MeusDadosPage() {
   const [success, setSuccess] = useState<string>('');
   const [userCpf, setUserCpf] = useState<string>('');
 
-  const [activeTab, setActiveTab] = useState<TabType>('personal');
-  const [personalData, setPersonalData] = useState({
+  const [activeTab, setActiveTab] = useState<TabType>('local');
+
+  const [localData, setLocalData] = useState({
     name: '',
     email: '',
     phone: '',
@@ -34,7 +36,7 @@ export default function MeusDadosPage() {
     gender: '',
   });
 
-  const [addressData, setAddressData] = useState({
+  const [localAddress, setLocalAddress] = useState({
     zipCode: '',
     street: '',
     number: '',
@@ -42,6 +44,20 @@ export default function MeusDadosPage() {
     neighborhood: '',
     city: '',
     state: '',
+  });
+
+  const [rapidocData, setRapidocData] = useState({
+    name: '',
+    email: '',
+    phone: '',
+    cpf: '',
+    birthDate: '',
+    zipCode: '',
+    address: '',
+    city: '',
+    state: '',
+    serviceType: '',
+    paymentType: '',
   });
 
   const [securityData, setSecurityData] = useState({
@@ -71,7 +87,6 @@ export default function MeusDadosPage() {
         return;
       }
 
-      // Tenta obter CPF do token
       const cpfFromToken = getCpfFromToken(token);
       if (cpfFromToken) {
         setUserCpf(cpfFromToken);
@@ -80,6 +95,8 @@ export default function MeusDadosPage() {
       try {
         setLoading(true);
         setError('');
+
+        // Dados locais (Firestore)
         const res = await fetch(`${apiBase}/usuario/me`, {
           headers: { Authorization: `Bearer ${token}` },
         });
@@ -90,25 +107,20 @@ export default function MeusDadosPage() {
         }
 
         const data = await res.json();
-        
-        // Define CPF se não foi obtido do token
-        if (!cpfFromToken && data.cpf) {
-          setUserCpf(data.cpf);
-        }
+        const cpfResolvido = cpfFromToken || data.cpf || '';
+        if (cpfResolvido) setUserCpf(cpfResolvido);
 
-        // Ajuste os campos conforme a resposta da API
-        setPersonalData({
+        setLocalData({
           name: data.nome || '',
           email: data.email || '',
           phone: data.telefone || '',
           cpf: data.cpf || '',
-          birthDate: data.dataNascimento ? (data.dataNascimento.substring(0, 10)) : '',
+          birthDate: data.dataNascimento ? data.dataNascimento.substring(0, 10) : '',
           gender: data.genero || '',
         });
-        
-        // Verifica se há endereço no formato objeto ou campos diretos
+
         const endereco = data.endereco || {};
-        const addressDataToSet = {
+        setLocalAddress({
           zipCode: endereco.cep || data.cep || '',
           street: endereco.rua || endereco.street || data.rua || '',
           number: endereco.numero || endereco.number || data.numero || '',
@@ -116,9 +128,35 @@ export default function MeusDadosPage() {
           neighborhood: endereco.bairro || endereco.neighborhood || data.bairro || '',
           city: endereco.cidade || endereco.city || data.cidade || '',
           state: endereco.estado || endereco.state || data.estado || '',
-        };
-        
-        setAddressData(addressDataToSet);
+        });
+
+        // Dados Rapidoc
+        if (cpfResolvido) {
+          try {
+            const rapidocRes = await fetch(`${apiBase}/rapidoc/beneficiario/${cpfResolvido}`, {
+              headers: { Authorization: `Bearer ${token}` },
+            });
+            if (rapidocRes.ok) {
+              const rapidoc = await rapidocRes.json();
+              const beneficiary = rapidoc?.beneficiary || rapidoc;
+              setRapidocData({
+                name: beneficiary?.name || '',
+                email: beneficiary?.email || '',
+                phone: beneficiary?.phone || '',
+                cpf: beneficiary?.cpf || cpfResolvido,
+                birthDate: beneficiary?.birthday || '',
+                zipCode: beneficiary?.zipCode || '',
+                address: beneficiary?.address || '',
+                city: beneficiary?.city || '',
+                state: beneficiary?.state || '',
+                serviceType: beneficiary?.serviceType || '',
+                paymentType: beneficiary?.paymentType || '',
+              });
+            }
+          } catch (rapidocErr: any) {
+            console.warn('Falha ao carregar dados Rapidoc', rapidocErr?.message);
+          }
+        }
       } catch (err: any) {
         setError(err.message || 'Erro ao carregar dados do usuário');
       } finally {
@@ -130,8 +168,8 @@ export default function MeusDadosPage() {
   }, []);
 
   const tabs = [
-    { id: 'personal' as TabType, label: 'Dados Pessoais', icon: User },
-    { id: 'address' as TabType, label: 'Endereço', icon: MapPin },
+    { id: 'local' as TabType, label: 'Dados do Banco', icon: User },
+    { id: 'rapidoc' as TabType, label: 'Dados Rapidoc', icon: Globe2 },
     { id: 'security' as TabType, label: 'Segurança', icon: Lock },
   ];
 
@@ -143,7 +181,6 @@ export default function MeusDadosPage() {
       return;
     }
 
-    // Validações
     if (activeTab === 'security') {
       if (!securityData.currentPassword || !securityData.newPassword || !securityData.confirmPassword) {
         setError('Preencha todos os campos de senha');
@@ -163,35 +200,43 @@ export default function MeusDadosPage() {
     let endpoint = '';
     let method = 'PATCH';
 
-    if (activeTab === 'personal') {
+    if (activeTab === 'local') {
       if (!userCpf) {
         setError('CPF não encontrado. Por favor, recarregue a página.');
         return;
       }
       endpoint = `/usuario/${userCpf}`;
       body = {
-        nome: personalData.name,
-        email: personalData.email,
-        telefone: personalData.phone,
-        dataNascimento: personalData.birthDate,
-        genero: personalData.gender,
-      };
-    } else if (activeTab === 'address') {
-      if (!userCpf) {
-        setError('CPF não encontrado. Por favor, recarregue a página.');
-        return;
-      }
-      endpoint = `/usuario/${userCpf}`;
-      body = {
+        nome: localData.name,
+        email: localData.email,
+        telefone: localData.phone,
+        dataNascimento: localData.birthDate,
+        genero: localData.gender,
         endereco: {
-          cep: addressData.zipCode,
-          rua: addressData.street,
-          numero: addressData.number,
-          complemento: addressData.complement,
-          bairro: addressData.neighborhood,
-          cidade: addressData.city,
-          estado: addressData.state,
+          cep: localAddress.zipCode,
+          rua: localAddress.street,
+          numero: localAddress.number,
+          complemento: localAddress.complement,
+          bairro: localAddress.neighborhood,
+          cidade: localAddress.city,
+          estado: localAddress.state,
         },
+      };
+    } else if (activeTab === 'rapidoc') {
+      if (!userCpf) {
+        setError('CPF não encontrado. Por favor, recarregue a página.');
+        return;
+      }
+      endpoint = `/rapidoc/beneficiario/${userCpf}`;
+      body = {
+        nome: rapidocData.name,
+        email: rapidocData.email,
+        telefone: rapidocData.phone,
+        dataNascimento: rapidocData.birthDate,
+        zipCode: rapidocData.zipCode,
+        address: rapidocData.address,
+        city: rapidocData.city,
+        state: rapidocData.state,
       };
     } else if (activeTab === 'security') {
       endpoint = '/usuario/senha';
@@ -222,8 +267,7 @@ export default function MeusDadosPage() {
       }
 
       setSuccess('Dados salvos com sucesso!');
-      
-      // Limpa campos de senha após sucesso
+
       if (activeTab === 'security') {
         setSecurityData({
           currentPassword: '',
@@ -232,33 +276,52 @@ export default function MeusDadosPage() {
         });
       }
 
-      // Recarrega dados após salvar
-      if (activeTab !== 'security') {
+      if (activeTab === 'local') {
         const resUser = await fetch(`${apiBase}/usuario/me`, {
           headers: { Authorization: `Bearer ${token}` },
         });
         if (resUser.ok) {
           const userData = await resUser.json();
-          if (activeTab === 'personal') {
-            setPersonalData({
-              name: userData.nome || '',
-              email: userData.email || '',
-              phone: userData.telefone || '',
-              cpf: userData.cpf || '',
-              birthDate: userData.dataNascimento ? userData.dataNascimento.substring(0, 10) : '',
-              gender: userData.genero || '',
-            });
-          } else if (activeTab === 'address') {
-            setAddressData({
-              zipCode: userData.endereco?.cep || '',
-              street: userData.endereco?.rua || '',
-              number: userData.endereco?.numero || '',
-              complement: userData.endereco?.complemento || '',
-              neighborhood: userData.endereco?.bairro || '',
-              city: userData.endereco?.cidade || '',
-              state: userData.endereco?.estado || '',
-            });
-          }
+          setLocalData({
+            name: userData.nome || '',
+            email: userData.email || '',
+            phone: userData.telefone || '',
+            cpf: userData.cpf || '',
+            birthDate: userData.dataNascimento ? userData.dataNascimento.substring(0, 10) : '',
+            gender: userData.genero || '',
+          });
+          setLocalAddress({
+            zipCode: userData.endereco?.cep || '',
+            street: userData.endereco?.rua || '',
+            number: userData.endereco?.numero || '',
+            complement: userData.endereco?.complemento || '',
+            neighborhood: userData.endereco?.bairro || '',
+            city: userData.endereco?.cidade || '',
+            state: userData.endereco?.estado || '',
+          });
+        }
+      }
+
+      if (activeTab === 'rapidoc') {
+        const resRapidoc = await fetch(`${apiBase}/rapidoc/beneficiario/${userCpf}`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (resRapidoc.ok) {
+          const rapidoc = await resRapidoc.json();
+          const beneficiary = rapidoc?.beneficiary || rapidoc;
+          setRapidocData({
+            name: beneficiary?.name || '',
+            email: beneficiary?.email || '',
+            phone: beneficiary?.phone || '',
+            cpf: beneficiary?.cpf || userCpf,
+            birthDate: beneficiary?.birthday || '',
+            zipCode: beneficiary?.zipCode || '',
+            address: beneficiary?.address || '',
+            city: beneficiary?.city || '',
+            state: beneficiary?.state || '',
+            serviceType: beneficiary?.serviceType || '',
+            paymentType: beneficiary?.paymentType || '',
+          });
         }
       }
     } catch (err: any) {
@@ -307,21 +370,234 @@ export default function MeusDadosPage() {
         {/* Tab Content */}
         <Card>
           <CardHeader>
-            {activeTab === 'personal' && 'Dados Pessoais'}
-            {activeTab === 'address' && 'Endereço'}
+            {activeTab === 'local' && 'Dados do Banco (Firestore/Asaas)'}
+            {activeTab === 'rapidoc' && 'Dados Rapidoc'}
             {activeTab === 'security' && 'Segurança'}
           </CardHeader>
           <CardBody>
-            {/* Personal Data Tab */}
-            {activeTab === 'personal' && (
+            {/* Dados locais */}
+            {activeTab === 'local' && (
+              <div className="space-y-6">
+                <div className="space-y-4">
+                  <Input
+                    label="Nome Completo"
+                    type="text"
+                    value={localData.name}
+                    onChange={(e) =>
+                      setLocalData({ ...localData, name: e.target.value })
+                    }
+                    icon={<User className="w-5 h-5" />}
+                  />
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <Input
+                      label="Email"
+                      type="email"
+                      value={localData.email}
+                      onChange={(e) =>
+                        setLocalData({
+                          ...localData,
+                          email: e.target.value,
+                        })
+                      }
+                      icon={<Mail className="w-5 h-5" />}
+                    />
+
+                    <Input
+                      label="Telefone"
+                      type="tel"
+                      value={localData.phone}
+                      onChange={(e) =>
+                        setLocalData({
+                          ...localData,
+                          phone: e.target.value,
+                        })
+                      }
+                      icon={<Phone className="w-5 h-5" />}
+                    />
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <Input
+                      label="CPF"
+                      type="text"
+                      value={localData.cpf}
+                      disabled
+                      icon={<FileText className="w-5 h-5" />}
+                    />
+
+                    <Input
+                      label="Data de Nascimento"
+                      type="date"
+                      value={localData.birthDate}
+                      onChange={(e) =>
+                        setLocalData({
+                          ...localData,
+                          birthDate: e.target.value,
+                        })
+                      }
+                      icon={<Calendar className="w-5 h-5" />}
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                      Sexo
+                    </label>
+                    <div className="flex flex-wrap gap-4">
+                      {[
+                        { value: 'M', label: 'Masculino' },
+                        { value: 'F', label: 'Feminino' },
+                        { value: 'O', label: 'Outro' },
+                      ].map((option) => (
+                        <label className="flex items-center" key={option.value}>
+                          <input
+                            type="radio"
+                            name="gender"
+                            value={option.value}
+                            checked={localData.gender === option.value}
+                            onChange={(e) =>
+                              setLocalData({
+                                ...localData,
+                                gender: e.target.value,
+                              })
+                            }
+                            className="w-4 h-4 text-primary focus:ring-primary"
+                          />
+                          <span className="ml-2 text-gray-700 dark:text-gray-300">
+                            {option.label}
+                          </span>
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+
+                <div className="space-y-4">
+                  {(!localAddress.zipCode || !localAddress.street || !localAddress.number || !localAddress.neighborhood || !localAddress.city || !localAddress.state) && (
+                    <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-xl p-4 mb-4">
+                      <div className="flex items-start">
+                        <MapPin className="w-5 h-5 text-blue-600 dark:text-blue-400 mr-3 mt-0.5 flex-shrink-0" />
+                        <div>
+                          <p className="text-sm font-medium text-blue-800 dark:text-blue-300 mb-1">
+                            Complete seus dados de endereço
+                          </p>
+                          <p className="text-sm text-blue-700 dark:text-blue-400">
+                            {!localAddress.zipCode && !localAddress.street && !localAddress.city
+                              ? 'Seu endereço não está cadastrado. Por favor, preencha todos os campos abaixo para completar seu cadastro.'
+                              : 'Alguns campos do endereço estão incompletos. Por favor, preencha todos os campos obrigatórios.'}
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <Input
+                      label="CEP"
+                      type="text"
+                      value={localAddress.zipCode}
+                      onChange={(e) =>
+                        setLocalAddress({
+                          ...localAddress,
+                          zipCode: e.target.value,
+                        })
+                      }
+                      icon={<MapPin className="w-5 h-5" />}
+                    />
+
+                    <div className="md:col-span-2">
+                      <Input
+                        label="Rua"
+                        type="text"
+                        value={localAddress.street}
+                        onChange={(e) =>
+                          setLocalAddress({
+                            ...localAddress,
+                            street: e.target.value,
+                          })
+                        }
+                      />
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <Input
+                      label="Número"
+                      type="text"
+                      value={localAddress.number}
+                      onChange={(e) =>
+                        setLocalAddress({
+                          ...localAddress,
+                          number: e.target.value,
+                        })
+                      }
+                    />
+
+                    <Input
+                      label="Complemento"
+                      type="text"
+                      value={localAddress.complement}
+                      onChange={(e) =>
+                        setLocalAddress({
+                          ...localAddress,
+                          complement: e.target.value,
+                        })
+                      }
+                    />
+                  </div>
+
+                  <Input
+                    label="Bairro"
+                    type="text"
+                    value={localAddress.neighborhood}
+                    onChange={(e) =>
+                      setLocalAddress({
+                        ...localAddress,
+                        neighborhood: e.target.value,
+                      })
+                    }
+                  />
+
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div className="md:col-span-2">
+                      <Input
+                        label="Cidade"
+                        type="text"
+                        value={localAddress.city}
+                        onChange={(e) =>
+                          setLocalAddress({
+                            ...localAddress,
+                            city: e.target.value,
+                          })
+                        }
+                      />
+                    </div>
+
+                    <Input
+                      label="Estado (UF)"
+                      type="text"
+                      value={localAddress.state}
+                      onChange={(e) =>
+                        setLocalAddress({
+                          ...localAddress,
+                          state: e.target.value,
+                        })
+                      }
+                    />
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Dados Rapidoc */}
+            {activeTab === 'rapidoc' && (
               <div className="space-y-4">
                 <Input
-                  label="Nome Completo"
+                  label="Nome (Rapidoc)"
                   type="text"
-                  value={personalData.name}
-                  onChange={(e) =>
-                    setPersonalData({ ...personalData, name: e.target.value })
-                  }
+                  value={rapidocData.name}
+                  onChange={(e) => setRapidocData({ ...rapidocData, name: e.target.value })}
                   icon={<User className="w-5 h-5" />}
                 />
 
@@ -329,26 +605,16 @@ export default function MeusDadosPage() {
                   <Input
                     label="Email"
                     type="email"
-                    value={personalData.email}
-                    onChange={(e) =>
-                      setPersonalData({
-                        ...personalData,
-                        email: e.target.value,
-                      })
-                    }
+                    value={rapidocData.email}
+                    onChange={(e) => setRapidocData({ ...rapidocData, email: e.target.value })}
                     icon={<Mail className="w-5 h-5" />}
                   />
 
                   <Input
                     label="Telefone"
                     type="tel"
-                    value={personalData.phone}
-                    onChange={(e) =>
-                      setPersonalData({
-                        ...personalData,
-                        phone: e.target.value,
-                      })
-                    }
+                    value={rapidocData.phone}
+                    onChange={(e) => setRapidocData({ ...rapidocData, phone: e.target.value })}
                     icon={<Phone className="w-5 h-5" />}
                   />
                 </div>
@@ -357,7 +623,7 @@ export default function MeusDadosPage() {
                   <Input
                     label="CPF"
                     type="text"
-                    value={personalData.cpf}
+                    value={rapidocData.cpf}
                     disabled
                     icon={<FileText className="w-5 h-5" />}
                   />
@@ -365,205 +631,65 @@ export default function MeusDadosPage() {
                   <Input
                     label="Data de Nascimento"
                     type="date"
-                    value={personalData.birthDate}
-                    onChange={(e) =>
-                      setPersonalData({
-                        ...personalData,
-                        birthDate: e.target.value,
-                      })
-                    }
+                    value={rapidocData.birthDate ? rapidocData.birthDate.substring(0, 10) : ''}
+                    onChange={(e) => setRapidocData({ ...rapidocData, birthDate: e.target.value })}
                     icon={<Calendar className="w-5 h-5" />}
                   />
                 </div>
 
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                    Sexo
-                  </label>
-                  <div className="flex space-x-4">
-                    <label className="flex items-center">
-                      <input
-                        type="radio"
-                        name="gender"
-                        value="M"
-                        checked={personalData.gender === 'M'}
-                        onChange={(e) =>
-                          setPersonalData({
-                            ...personalData,
-                            gender: e.target.value,
-                          })
-                        }
-                        className="w-4 h-4 text-primary focus:ring-primary"
-                      />
-                      <span className="ml-2 text-gray-700 dark:text-gray-300">
-                        Masculino
-                      </span>
-                    </label>
-                    <label className="flex items-center">
-                      <input
-                        type="radio"
-                        name="gender"
-                        value="F"
-                        checked={personalData.gender === 'F'}
-                        onChange={(e) =>
-                          setPersonalData({
-                            ...personalData,
-                            gender: e.target.value,
-                          })
-                        }
-                        className="w-4 h-4 text-primary focus:ring-primary"
-                      />
-                      <span className="ml-2 text-gray-700 dark:text-gray-300">
-                        Feminino
-                      </span>
-                    </label>
-                    <label className="flex items-center">
-                      <input
-                        type="radio"
-                        name="gender"
-                        value="O"
-                        checked={personalData.gender === 'O'}
-                        onChange={(e) =>
-                          setPersonalData({
-                            ...personalData,
-                            gender: e.target.value,
-                          })
-                        }
-                        className="w-4 h-4 text-primary focus:ring-primary"
-                      />
-                      <span className="ml-2 text-gray-700 dark:text-gray-300">
-                        Outro
-                      </span>
-                    </label>
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {/* Address Tab */}
-            {activeTab === 'address' && (
-              <div className="space-y-4">
-                {/* Mensagem quando endereço estiver vazio */}
-                {(!addressData.zipCode || !addressData.street || !addressData.number || !addressData.neighborhood || !addressData.city || !addressData.state) && (
-                  <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-xl p-4 mb-4">
-                    <div className="flex items-start">
-                      <MapPin className="w-5 h-5 text-blue-600 dark:text-blue-400 mr-3 mt-0.5 flex-shrink-0" />
-                      <div>
-                        <p className="text-sm font-medium text-blue-800 dark:text-blue-300 mb-1">
-                          Complete seus dados de endereço
-                        </p>
-                        <p className="text-sm text-blue-700 dark:text-blue-400">
-                          {!addressData.zipCode && !addressData.street && !addressData.city 
-                            ? 'Seu endereço não está cadastrado. Por favor, preencha todos os campos abaixo para completar seu cadastro.'
-                            : 'Alguns campos do endereço estão incompletos. Por favor, preencha todos os campos obrigatórios.'}
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-                )}
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                   <Input
                     label="CEP"
                     type="text"
-                    value={addressData.zipCode}
-                    onChange={(e) =>
-                      setAddressData({
-                        ...addressData,
-                        zipCode: e.target.value,
-                      })
-                    }
+                    value={rapidocData.zipCode}
+                    onChange={(e) => setRapidocData({ ...rapidocData, zipCode: e.target.value })}
                     icon={<MapPin className="w-5 h-5" />}
                   />
 
                   <div className="md:col-span-2">
                     <Input
-                      label="Rua"
+                      label="Endereço"
                       type="text"
-                      value={addressData.street}
-                      onChange={(e) =>
-                        setAddressData({
-                          ...addressData,
-                          street: e.target.value,
-                        })
-                      }
+                      value={rapidocData.address}
+                      onChange={(e) => setRapidocData({ ...rapidocData, address: e.target.value })}
                     />
                   </div>
                 </div>
-
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <Input
-                    label="Número"
-                    type="text"
-                    value={addressData.number}
-                    onChange={(e) =>
-                      setAddressData({
-                        ...addressData,
-                        number: e.target.value,
-                      })
-                    }
-                  />
-
-                  <Input
-                    label="Complemento"
-                    type="text"
-                    value={addressData.complement}
-                    onChange={(e) =>
-                      setAddressData({
-                        ...addressData,
-                        complement: e.target.value,
-                      })
-                    }
-                  />
-                </div>
-
-                <Input
-                  label="Bairro"
-                  type="text"
-                  value={addressData.neighborhood}
-                  onChange={(e) =>
-                    setAddressData({
-                      ...addressData,
-                      neighborhood: e.target.value,
-                    })
-                  }
-                />
 
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                   <div className="md:col-span-2">
                     <Input
                       label="Cidade"
                       type="text"
-                      value={addressData.city}
-                      onChange={(e) =>
-                        setAddressData({
-                          ...addressData,
-                          city: e.target.value,
-                        })
-                      }
+                      value={rapidocData.city}
+                      onChange={(e) => setRapidocData({ ...rapidocData, city: e.target.value })}
                     />
                   </div>
+                  <Input
+                    label="Estado"
+                    type="text"
+                    value={rapidocData.state}
+                    onChange={(e) => setRapidocData({ ...rapidocData, state: e.target.value })}
+                  />
+                </div>
 
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                      Estado
-                    </label>
-                    <select
-                      value={addressData.state}
-                      onChange={(e) =>
-                        setAddressData({
-                          ...addressData,
-                          state: e.target.value,
-                        })
-                      }
-                      className="w-full px-4 py-3 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-xl focus:ring-2 focus:ring-primary focus:border-transparent"
-                    >
-                      <option value="SP">SP</option>
-                      <option value="RJ">RJ</option>
-                      <option value="MG">MG</option>
-                      <option value="RS">RS</option>
-                      {/* Add more states as needed */}
-                    </select>
-                  </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <Input
+                    label="Payment Type (S/A)"
+                    type="text"
+                    value={rapidocData.paymentType}
+                    onChange={(e) => setRapidocData({ ...rapidocData, paymentType: e.target.value })}
+                    disabled
+                    helperText="Este campo é gerenciado pelo Rapidoc."
+                  />
+                  <Input
+                    label="Service/Plan UUID"
+                    type="text"
+                    value={rapidocData.serviceType}
+                    onChange={(e) => setRapidocData({ ...rapidocData, serviceType: e.target.value })}
+                    disabled
+                    helperText="Gerenciado pelo Rapidoc/assinatura."
+                  />
                 </div>
               </div>
             )}

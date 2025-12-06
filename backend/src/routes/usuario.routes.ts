@@ -10,8 +10,11 @@ router.patch('/usuario/senha', autenticarFirebase, UsuarioController.atualizarSe
 // GET /api/usuario/me - Obtém dados do usuário autenticado
 router.get('/usuario/me', autenticarFirebase, UsuarioController.obterDadosAutenticado);
 
-// PATCH /api/usuario/:cpf - Atualiza dados do usuário
-router.patch('/usuario/:cpf', autenticarFirebase, UsuarioController.atualizarDados);
+// PATCH /api/usuario/:cpf - Atualiza dados do usuário no banco local e sincroniza Firebase Auth
+router.patch('/usuario/:cpf', autenticarFirebase, UsuarioController.atualizarDadosLocal);
+
+// PATCH /api/rapidoc/beneficiario/:cpf - Atualiza dados do beneficiário no Rapidoc
+router.patch('/rapidoc/beneficiario/:cpf', autenticarFirebase, UsuarioController.atualizarDadosRapidoc);
 
 // GET /api/usuario/:cpf - Obtém dados do usuário pelo CPF
 router.get('/usuario/:cpf', autenticarFirebase, UsuarioController.obterDados);

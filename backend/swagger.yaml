@@ -57,6 +57,42 @@ components:
         nome: { type: string }
         email: { type: string }
         telefone: { type: string }
+        dataNascimento: { type: string, example: "1990-01-01" }
+        genero: { type: string, example: "M" }
+        endereco:
+          type: object
+          properties:
+            cep: { type: string }
+            rua: { type: string }
+            numero: { type: string }
+            complemento: { type: string }
+            bairro: { type: string }
+            cidade: { type: string }
+            estado: { type: string }
+    UsuarioRapidocUpdateDTO:
+      type: object
+      properties:
+        nome: { type: string }
+        email: { type: string }
+        telefone: { type: string, description: "Apenas dígitos, 11 caracteres" }
+        dataNascimento: { type: string, example: "1990-01-01" }
+        zipCode: { type: string }
+        address: { type: string }
+        city: { type: string }
+        state: { type: string }
+        cpf: { type: string }
+        paymentType: { type: string, description: "S ou A" }
+        serviceType: { type: string, description: "UUID do plano" }
+        plans:
+          type: array
+          items:
+            type: object
+            properties:
+              paymentType: { type: string, description: "S ou A" }
+              plan:
+                type: object
+                properties:
+                  uuid: { type: string }
 
     UsuarioSenhaDTO:
       type: object
@@ -347,8 +383,8 @@ paths:
         '200':
           description: Dados encontrados.
     patch:
-      summary: Atualizar dados cadastrais
-      description: Atualiza Firestore, Rapidoc e Asaas simultaneamente.
+      summary: Atualizar dados cadastrais (Banco + Firebase Auth)
+      description: Atualiza Firestore e Asaas; se o email for alterado, sincroniza também no Firebase Auth.
       tags: [Usuário]
       security: [{ bearerAuth: [] }]
       parameters:
@@ -378,6 +414,24 @@ paths:
       responses:
         '200':
           description: Objeto beneficiary do Rapidoc.
+    patch:
+      summary: Atualizar dados do beneficiário no Rapidoc
+      description: Atualiza diretamente no Rapidoc (nome, email, telefone, endereço, planos).
+      tags: [Usuário]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: path
+          name: cpf
+          required: true
+          schema: { type: string }
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UsuarioRapidocUpdateDTO'
+      responses:
+        '200':
+          description: Atualizado no Rapidoc.
 
   # ================= DASHBOARD =================
   /dashboard:

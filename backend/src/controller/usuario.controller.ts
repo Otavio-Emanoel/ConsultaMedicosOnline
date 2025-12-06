@@ -280,71 +280,60 @@ export class UsuarioController {
         }
     }
 
-    static async atualizarDados(req: Request, res: Response) {
+    static async atualizarDadosLocal(req: Request, res: Response) {
 
         const { cpf } = req.params;
         const { nome, email, telefone, dataNascimento, genero, endereco } = req.body;
-        if (!cpf) return res.status(400).json({ error: 'CPF é obrigatório.' });
+        const cleanCpf = String(cpf || '').replace(/\D/g, '');
+        if (!cleanCpf || cleanCpf.length !== 11) return res.status(400).json({ error: 'CPF é obrigatório e deve ter 11 dígitos.' });
         if (!nome && !email && !telefone && !dataNascimento && !genero && !endereco) return res.status(400).json({ error: 'Informe ao menos um campo para atualizar.' });
 
         // Monta objeto apenas com campos definidos
         const updateData: Record<string, any> = {};
         if (nome !== undefined) updateData.nome = nome;
         if (email !== undefined) updateData.email = email;
-        if (telefone !== undefined) updateData.telefone = telefone;
+        if (telefone !== undefined) updateData.telefone = telefone ? telefone.replace(/\D/g, '') : telefone;
         if (dataNascimento !== undefined) updateData.dataNascimento = dataNascimento;
         if (genero !== undefined) updateData.genero = genero;
         if (endereco !== undefined) updateData.endereco = endereco;
 
         try {
             // Atualiza no Firestore
-            const usuarioRef = admin.firestore().collection('usuarios').doc(cpf);
+            const usuarioRef = admin.firestore().collection('usuarios').doc(cleanCpf);
             const usuarioDoc = await usuarioRef.get();
             if (!usuarioDoc.exists) return res.status(404).json({ error: 'Usuário não encontrado.' });
+
+            const before = usuarioDoc.data() || {};
             await usuarioRef.set(updateData, { merge: true });
 
-            // Atualiza no Rapidoc 
-            if (process.env.RAPIDOC_BASE_URL && process.env.RAPIDOC_TOKEN) {
+            // Se email mudou, sincroniza com Firebase Auth
+            if (email && email !== before.email) {
                 try {
-                    // Busca dados atuais do beneficiário
-                    const getResp = await axios.get(`${process.env.RAPIDOC_BASE_URL}/tema/api/beneficiaries/${cpf}`,
-                        {
-                            headers: {
-                                Authorization: `Bearer ${process.env.RAPIDOC_TOKEN}`,
-                                clientId: process.env.RAPIDOC_CLIENT_ID,
-                                'Content-Type': 'application/vnd.rapidoc.tema-v2+json',
-                            },
+                    let uid = req.user?.uid as string | undefined;
+                    if (!uid) {
+                        // tenta achar pelo email anterior ou pelo CPF como uid
+                        if (before.email) {
+                            try {
+                                const record = await admin.auth().getUserByEmail(before.email);
+                                uid = record.uid;
+                            } catch {}
                         }
-                    );
-                    const atual = getResp.data && getResp.data.beneficiary ? getResp.data.beneficiary : {};
-                    // Monta payload completo, mesclando alterações
-                    const rapidocData: Record<string, any> = {
-                        name: nome !== undefined ? nome : atual.name,
-                        email: email !== undefined ? email : atual.email,
-                        phone: telefone !== undefined ? telefone : atual.phone,
-                        birthday: dataNascimento !== undefined ? dataNascimento : atual.birthday,
-                        zipCode: endereco?.cep !== undefined ? endereco.cep : atual.zipCode,
-                        address: endereco?.rua !== undefined ? endereco.rua : atual.address,
-                        city: endereco?.cidade !== undefined ? endereco.cidade : atual.city,
-                        state: endereco?.estado !== undefined ? endereco.estado : atual.state,
-                        paymentType: atual.paymentType,
-                        serviceType: atual.serviceType,
-                        holder: atual.holder,
-                        isActive: atual.isActive,
-                        clientId: atual.clientId,
-                    };
-                    await axios.patch(
-                        `${process.env.RAPIDOC_BASE_URL}/${cpf}`,
-                        rapidocData,
-                        {
-                            headers: {
-                                Authorization: `Bearer ${process.env.RAPIDOC_TOKEN}`,
-                                clientId: process.env.RAPIDOC_CLIENT_ID,
-                                'Content-Type': 'application/vnd.rapidoc.tema-v2+json',
-                            },
+                        if (!uid) {
+                            try {
+                                const record = await admin.auth().getUser(cleanCpf);
+                                uid = record.uid;
+                            } catch {}
                         }
-                    );
-                } catch (e) {/* ignora erro do Rapidoc, segue fluxo */ }
+                    }
+                    if (!uid) {
+                        throw new Error('Não foi possível localizar o usuário no Firebase Auth para atualizar o e-mail.');
+                    }
+                    await admin.auth().updateUser(uid, { email });
+                } catch (authErr: any) {
+                    // se falhar, reverte e informa
+                    await usuarioRef.set({ email: before.email }, { merge: true });
+                    return res.status(400).json({ error: authErr?.message || 'Falha ao atualizar e-mail no Firebase Auth.' });
+                }
             }
 
             // Atualiza no Asaas (se necessário)
@@ -352,15 +341,19 @@ export class UsuarioController {
                 try {
                     // Buscar cliente Asaas pelo CPF
                     const clientesResp = await axios.get(`${process.env.ASAAS_BASE_URL}/customers`, {
-                        params: { cpfCnpj: cpf },
+                        params: { cpfCnpj: cleanCpf },
                         headers: { access_token: process.env.ASAAS_API_KEY },
                     });
                     const clientes = clientesResp.data.data;
                     if (clientes && clientes.length > 0) {
                         const clienteId = clientes[0].id;
+                        const body: Record<string, any> = {};
+                        if (nome) body.name = nome;
+                        if (email) body.email = email;
+                        if (telefone) body.phone = telefone.replace(/\D/g, '');
                         await axios.post(
                             `${process.env.ASAAS_BASE_URL}/customers/${clienteId}`,
-                            { name: nome, email, phone: telefone },
+                            body,
                             { headers: { access_token: process.env.ASAAS_API_KEY } }
                         );
                     }
@@ -371,8 +364,8 @@ export class UsuarioController {
         } catch (error: any) {
             try {
                 await admin.firestore().collection('logsErros').add({
-                    endpoint: 'atualizarDados',
-                    cpf,
+                    endpoint: 'atualizarDadosLocal',
+                    cpf: cleanCpf,
                     body: req.body,
                     errorMessage: error?.message || 'Erro ao atualizar dados.',
                     stack: error?.stack || null,
@@ -380,6 +373,178 @@ export class UsuarioController {
                 });
             } catch {}
             return res.status(500).json({ error: error.message || 'Erro ao atualizar dados.' });
+        }
+    }
+
+    static async atualizarDadosRapidoc(req: Request, res: Response) {
+        const cpfParam = (req.params as any).cpf;
+        const cleanCpf = String(cpfParam || '').replace(/\D/g, '');
+        const { nome, dataNascimento, email, telefone, zipCode, address, city, state, cpf, plans, paymentType, serviceType } = req.body || {};
+
+        const hasAnyUpdateField = (
+            (typeof nome === 'string' && nome.trim().length > 0) ||
+            (typeof dataNascimento === 'string' && dataNascimento.trim().length > 0) ||
+            (typeof email === 'string' && email.trim().length > 0) ||
+            (typeof telefone === 'string' && telefone.trim().length > 0) ||
+            (typeof zipCode === 'string' && zipCode.trim().length > 0) ||
+            (typeof address === 'string' && address.trim().length > 0) ||
+            (typeof city === 'string' && city.trim().length > 0) ||
+            (typeof state === 'string' && state.trim().length > 0) ||
+            (typeof cpf === 'string' && cpf.trim().length > 0) ||
+            (Array.isArray(plans) && plans.length > 0) ||
+            (typeof paymentType === 'string' && paymentType.trim().length > 0) ||
+            (typeof serviceType === 'string' && serviceType.trim().length > 0)
+        );
+
+        if (!cleanCpf || cleanCpf.length !== 11) return res.status(400).json({ error: 'CPF é obrigatório e deve ter 11 dígitos.' });
+        if (!hasAnyUpdateField) return res.status(400).json({ error: 'Nenhum campo para atualizar informado.' });
+
+        try {
+            const { RAPIDOC_BASE_URL, RAPIDOC_TOKEN, RAPIDOC_CLIENT_ID } = process.env as Record<string, string | undefined>;
+            if (!RAPIDOC_BASE_URL || !RAPIDOC_TOKEN || !RAPIDOC_CLIENT_ID) {
+                return res.status(500).json({ error: 'Configuração Rapidoc ausente.' });
+            }
+
+            // Busca dados atuais no Rapidoc por CPF
+            let atualRapidoc: any;
+            try {
+                const resp = await axios.get(`${RAPIDOC_BASE_URL}/tema/api/beneficiaries/${cleanCpf}`, {
+                    headers: {
+                        Authorization: `Bearer ${RAPIDOC_TOKEN}`,
+                        clientId: RAPIDOC_CLIENT_ID,
+                        'Content-Type': 'application/vnd.rapidoc.tema-v2+json'
+                    }
+                });
+                if (resp.data && (resp.data.beneficiary || resp.data.data?.beneficiary)) {
+                    atualRapidoc = resp.data.beneficiary || resp.data.data?.beneficiary;
+                } else if (resp.data && resp.data.data) {
+                    atualRapidoc = resp.data.data;
+                }
+            } catch (e: any) {
+                return res.status(404).json({ error: 'Beneficiário não encontrado no Rapidoc.' });
+            }
+
+            if (!atualRapidoc || !atualRapidoc.uuid) {
+                return res.status(400).json({ error: 'UUID do beneficiário não encontrado no Rapidoc.' });
+            }
+
+            // Monta body apenas com campos enviados
+            const bodyRapidoc: any = { uuid: atualRapidoc?.uuid };
+            if (typeof nome === 'string' && nome.trim()) bodyRapidoc.name = nome.trim();
+            if (typeof dataNascimento === 'string' && dataNascimento.trim()) {
+                let birthday = dataNascimento.trim();
+                // dd/MM/yyyy -> yyyy-MM-dd
+                if (/^\d{2}\/\d{2}\/\d{4}$/.test(birthday)) {
+                    const [d, m, y] = birthday.split('/');
+                    birthday = `${y}-${m}-${d}`;
+                }
+                // ISO or other string -> tentar normalizar para yyyy-MM-dd
+                if (/^\d{4}-\d{2}-\d{2}$/.test(birthday) === false) {
+                    const parsed = new Date(birthday);
+                    if (!isNaN(parsed.getTime())) {
+                        const yyyy = parsed.getFullYear();
+                        const mm = String(parsed.getMonth() + 1).padStart(2, '0');
+                        const dd = String(parsed.getDate()).padStart(2, '0');
+                        birthday = `${yyyy}-${mm}-${dd}`;
+                    }
+                }
+                bodyRapidoc.birthday = birthday;
+            }
+            if (typeof email === 'string' && email.trim()) bodyRapidoc.email = email.trim();
+            if (typeof telefone === 'string' && telefone.trim()) {
+                const digits = telefone.replace(/\D/g, '');
+                if (digits.length === 11) bodyRapidoc.phone = digits;
+            }
+            if (typeof zipCode === 'string' && zipCode.trim()) bodyRapidoc.zipCode = zipCode.trim();
+            if (typeof address === 'string' && address.trim()) bodyRapidoc.address = address.trim();
+            if (typeof city === 'string' && city.trim()) bodyRapidoc.city = city.trim();
+            if (typeof state === 'string' && state.trim()) bodyRapidoc.state = state.trim();
+            if (typeof cpf === 'string' && cpf.trim()) bodyRapidoc.cpf = cpf.trim();
+
+            if (Array.isArray(plans) && plans.length > 0) {
+                bodyRapidoc.plans = plans
+                    .filter((p: any) => p && p.plan && typeof p.plan.uuid === 'string' && p.plan.uuid.trim().length > 0)
+                    .map((p: any) => {
+                        const out: any = { plan: { uuid: String(p.plan.uuid).trim() } };
+                        const pt = String(p.paymentType || '').trim().toUpperCase();
+                        if (pt === 'S' || pt === 'A') out.paymentType = pt;
+                        return out;
+                    });
+            } else if (typeof serviceType === 'string' && serviceType.trim()) {
+                const planEntry: any = { plan: { uuid: serviceType.trim() } };
+                if (typeof paymentType === 'string' && paymentType.trim()) {
+                    const pt = paymentType.trim().toUpperCase();
+                    if (pt === 'S' || pt === 'A') planEntry.paymentType = pt;
+                }
+                bodyRapidoc.plans = [planEntry];
+            }
+
+            // Se não vier plano no payload, mas o Rapidoc tiver planos, envia-os normalizados (paymentType S/A)
+            if (!bodyRapidoc.plans && Array.isArray(atualRapidoc?.plans) && atualRapidoc.plans.length > 0) {
+                const normalizedPlans = atualRapidoc.plans
+                    .map((p: any) => {
+                        const uuid = p?.plan?.uuid || p?.planUuid || p?.uuid || p?.id;
+                        if (!uuid || typeof uuid !== 'string') return null;
+                        const rawPt = String(p?.paymentType || '').trim().toUpperCase();
+                        const paymentTypeNormalized = rawPt === 'A' ? 'A' : 'S';
+                        return { plan: { uuid: uuid.trim() }, paymentType: paymentTypeNormalized };
+                    })
+                    .filter(Boolean);
+                if (normalizedPlans.length > 0) {
+                    bodyRapidoc.plans = normalizedPlans;
+                }
+            }
+
+            // Remove campos vazios
+            Object.keys(bodyRapidoc).forEach((k) => {
+                if (bodyRapidoc[k] === undefined) delete bodyRapidoc[k];
+            });
+
+            const url = `${RAPIDOC_BASE_URL}/tema/api/beneficiaries/${bodyRapidoc.uuid}`;
+
+            const doUpdate = async (payload: any) => axios.put(url, payload, {
+                headers: {
+                    Authorization: `Bearer ${RAPIDOC_TOKEN}`,
+                    clientId: RAPIDOC_CLIENT_ID,
+                    'Content-Type': 'application/vnd.rapidoc.tema-v2+json'
+                }
+            });
+
+            try {
+                const rapidocResp = await doUpdate(bodyRapidoc);
+                return res.status(200).json({ ok: true, rapidoc: rapidocResp.data });
+            } catch (rapidocError: any) {
+                // Se o erro for "Email address already in use.", tenta novamente sem atualizar o email
+                const detail = rapidocError?.response?.data || rapidocError?.message;
+                const errors = (detail as any)?.errors;
+                const emailInUse = Array.isArray(errors) && errors.some((e: any) => typeof e?.description === 'string' && e.description.toLowerCase().includes('email address already in use'));
+
+                if (emailInUse && bodyRapidoc.email) {
+                    const retryPayload = { ...bodyRapidoc };
+                    delete retryPayload.email;
+                    try {
+                        const retryResp = await doUpdate(retryPayload);
+                        return res.status(200).json({ ok: true, rapidoc: retryResp.data, warning: 'Email não alterado no Rapidoc pois já está em uso.' });
+                    } catch (retryError: any) {
+                        const retryDetail = retryError?.response?.data || retryError?.message;
+                        return res.status(400).json({ error: 'Falha ao atualizar no Rapidoc (mesmo sem alterar email).', detail: retryDetail });
+                    }
+                }
+
+                return res.status(400).json({ error: 'Falha ao atualizar no Rapidoc.', detail });
+            }
+        } catch (error: any) {
+            try {
+                await admin.firestore().collection('logsErros').add({
+                    endpoint: 'atualizarDadosRapidoc',
+                    cpf: cleanCpf,
+                    body: req.body,
+                    errorMessage: error?.message || 'Erro ao atualizar dados Rapidoc.',
+                    stack: error?.stack || null,
+                    data: new Date().toISOString(),
+                });
+            } catch {}
+            return res.status(500).json({ error: error.message || 'Erro ao atualizar dados Rapidoc.' });
         }
     }
 
