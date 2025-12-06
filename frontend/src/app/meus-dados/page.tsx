@@ -20,6 +20,18 @@ import {
 type TabType = 'local' | 'rapidoc' | 'security';
 
 export default function MeusDadosPage() {
+    // Função para formatar a data de nascimento para exibição
+    function formatBirthday(birthday: string) {
+      if (!birthday) return '';
+      // Se já está no formato dd/mm/yyyy, retorna direto
+      if (/^\d{2}\/\d{2}\/\d{4}$/.test(birthday)) return birthday;
+      // Se está no formato yyyy-mm-dd, converte para dd/mm/yyyy
+      if (/^\d{4}-\d{2}-\d{2}$/.test(birthday)) {
+        const [year, month, day] = birthday.split('-');
+        return `${day}/${month}/${year}`;
+      }
+      return birthday;
+    }
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string>('');
   const [success, setSuccess] = useState<string>('');
@@ -630,11 +642,13 @@ export default function MeusDadosPage() {
 
                   <Input
                     label="Data de Nascimento"
-                    type="date"
-                    value={rapidocData.birthDate ? rapidocData.birthDate.substring(0, 10) : ''}
+                    type="text"
+                    value={formatBirthday(rapidocData.birthDate)}
                     onChange={(e) => setRapidocData({ ...rapidocData, birthDate: e.target.value })}
                     icon={<Calendar className="w-5 h-5" />}
+                    placeholder="dd/mm/aaaa"
                   />
+
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
