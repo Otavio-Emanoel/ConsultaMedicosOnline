@@ -25,26 +25,29 @@ import {
   Edit,
   Trash2,
   Plus,
+  Loader2,
 } from 'lucide-react';
 import { useState, useEffect, useMemo, FormEvent } from 'react';
 import { useRouter } from 'next/navigation';
 import { Dialog } from '@/components/ui/Dialog';
 import { auth } from '@/lib/firebase';
 
-// Corrigido: definição da interface AssinanteItem estava fora do lugar e sem o "interface"
+// Interfaces
 interface AssinanteItem {
   id: string;
   nome: string;
   email: string;
   cpf: string;
   plano: string;
-  planoId?: string; // Adicionado para corresponder ao uso no código
+  planoId?: string;
   status: string;
   dataAdesao: string;
   ultimoPagamento: string;
   dependentes: number;
   valorMensal: number;
   faturas?: any[];
+  planoRapidocUuid?: string;
+  paymentType?: string;
 }
 
 interface AssinaturaDoc {
@@ -97,30 +100,46 @@ const toDateInputValue = (value?: string | null) => {
 export default function AdminAssinantesPage() {
   const router = useRouter();
   const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL;
+
+  // Estados Gerais
   const [searchTerm, setSearchTerm] = useState('');
   const [assinantes, setAssinantes] = useState<AssinanteItem[]>([]);
   const [assinantesPagamentos, setAssinantesPagamentos] = useState<Record<string, string>>({});
+  const [loading, setLoading] = useState<boolean>(true);
+  const [error, setError] = useState<string>('');
+
+  // Modais e Operações
   const [modalAssinante, setModalAssinante] = useState<AssinanteItem | null>(null);
   const [modalFaturas, setModalFaturas] = useState<any[] | null>(null);
   const [modalLoading, setModalLoading] = useState(false);
-  const [loading, setLoading] = useState<boolean>(true);
-  const [error, setError] = useState<string>('');
+
   const [beneficiariosSemConta, setBeneficiariosSemConta] = useState<BeneficiarioSemConta[]>([]);
   const [loadingBeneficiarios, setLoadingBeneficiarios] = useState<boolean>(false);
   const [mostrarBeneficiariosSemConta, setMostrarBeneficiariosSemConta] = useState<boolean>(false);
+
   const [modalSenha, setModalSenha] = useState<{ cpf: string; nome: string; email: string; senha: string } | null>(null);
   const [mostrarSenha, setMostrarSenha] = useState<boolean>(false);
   const [gerandoSenha, setGerandoSenha] = useState<boolean>(false);
+
   const [modalEditar, setModalEditar] = useState<AssinanteItem | null>(null);
+
+  // Cadastro de Vidas / Dependentes
   const [modalCadastrarVida, setModalCadastrarVida] = useState<{ cpfTitular: string; nomeTitular: string } | null>(null);
+  const [cadastrandoVida, setCadastrandoVida] = useState(false); // Loading específico do botão
+  const [modalCadastroError, setModalCadastroError] = useState(''); // Erro específico do modal
+
   const [dependentes, setDependentes] = useState<any[]>([]);
   const [loadingDependentes, setLoadingDependentes] = useState<boolean>(false);
   const [dependentesError, setDependentesError] = useState<string>('');
+
   const [planos, setPlanos] = useState<any[]>([]);
   const [planoSelecionadoId, setPlanoSelecionadoId] = useState<string>('');
+
   const [showFilters, setShowFilters] = useState(false);
   const [filtroStatus, setFiltroStatus] = useState<string>('');
   const [filtroPlano, setFiltroPlano] = useState<string>('');
+
+  // Edição de Dependente
   const [dependenteEmEdicao, setDependenteEmEdicao] = useState<any | null>(null);
   const [dependenteLocalForm, setDependenteLocalForm] = useState({
     nome: '',
@@ -148,13 +167,14 @@ export default function AdminAssinantesPage() {
   const [salvandoDependenteLocal, setSalvandoDependenteLocal] = useState(false);
   const [salvandoDependenteRapidoc, setSalvandoDependenteRapidoc] = useState(false);
 
+  // --- Helpers de Auth ---
   const getAuthToken = async () => {
     try {
       if (auth.currentUser) {
         return await auth.currentUser.getIdToken(true);
       }
     } catch {
-      // ignore and fallback to storage
+      // ignore
     }
     if (typeof window !== 'undefined') {
       return localStorage.getItem('auth_token') || localStorage.getItem('token');
@@ -173,14 +193,14 @@ export default function AdminAssinantesPage() {
     } as HeadersInit;
   };
 
+  // --- Fetch Inicial ---
   useEffect(() => {
     const fetchData = async () => {
       setLoading(true);
       setError('');
       try {
-        // Pega token do localStorage se existir (tenta ambos os nomes possíveis)
-        const token = typeof window !== 'undefined' 
-          ? (localStorage.getItem('token') || localStorage.getItem('auth_token')) 
+        const token = typeof window !== 'undefined'
+          ? (localStorage.getItem('token') || localStorage.getItem('auth_token'))
           : null;
         const headers: HeadersInit = {
           'Content-Type': 'application/json',
@@ -231,7 +251,7 @@ export default function AdminAssinantesPage() {
         });
         setAssinantes(itens);
 
-        // Buscar último pagamento para cada assinante (paralelo, mas limitado)
+        // Buscar pagamentos
         const pagamentos: Record<string, string> = {};
         await Promise.all(itens.map(async (a) => {
           try {
@@ -241,7 +261,6 @@ export default function AdminAssinantesPage() {
             const faturas = data.faturas || [];
             const pagas = faturas.filter((f: any) => f.status === 'RECEIVED');
             if (pagas.length > 0) {
-              // Pega a mais recente
               pagas.sort((a: any, b: any) => new Date(b.paymentDate || b.dueDate).getTime() - new Date(a.paymentDate || a.dueDate).getTime());
               pagamentos[a.cpf] = formatarDataBR(pagas[0].paymentDate || pagas[0].dueDate);
             } else {
@@ -259,21 +278,20 @@ export default function AdminAssinantesPage() {
       }
     };
     fetchData();
-  }, []);
+  }, [API_BASE]);
 
   const buscarBeneficiariosSemConta = async () => {
     setLoadingBeneficiarios(true);
     setError('');
     try {
       const headers = await buildAuthHeaders();
-
       const resp = await fetch(`${API_BASE}/admin/beneficiarios-sem-conta`, { headers });
-      
+
       if (!resp.ok) {
         const errorData = await resp.json().catch(() => ({ error: 'Erro desconhecido' }));
         throw new Error(errorData.error || `Erro ${resp.status}: ${resp.statusText}`);
       }
-      
+
       const data = await resp.json();
       setBeneficiariosSemConta(data.beneficiarios || []);
       setMostrarBeneficiariosSemConta(true);
@@ -288,19 +306,15 @@ export default function AdminAssinantesPage() {
     setGerandoSenha(true);
     try {
       const headers = await buildAuthHeaders();
-
       const resp = await fetch(`${API_BASE}/admin/gerar-nova-senha`, {
         method: 'POST',
         headers,
         body: JSON.stringify({ cpf }),
       });
-
       const data = await resp.json();
-
       if (!resp.ok) {
         throw new Error(data.error || 'Erro ao gerar nova senha.');
       }
-
       setModalSenha({
         cpf: data.usuario?.cpf || cpf,
         nome: data.usuario?.nome || nome,
@@ -318,7 +332,6 @@ export default function AdminAssinantesPage() {
   const copiarSenha = () => {
     if (modalSenha?.senha) {
       navigator.clipboard.writeText(modalSenha.senha);
-      // Feedback visual pode ser adicionado aqui
     }
   };
 
@@ -345,7 +358,6 @@ export default function AdminAssinantesPage() {
   const ativarVida = async (cpf: string) => {
     try {
       const headers = await buildAuthHeaders();
-      
       const resp = await fetch(`${API_BASE}/admin/beneficiarios/${cpf}/ativar-rapidoc`, {
         method: 'POST',
         headers,
@@ -354,7 +366,6 @@ export default function AdminAssinantesPage() {
         const errorData = await resp.json().catch(() => ({ error: 'Erro desconhecido' }));
         throw new Error(errorData.error || 'Erro ao ativar vida');
       }
-      // Atualiza estado local: status ativo
       setAssinantes(prev => prev.map(a => a.cpf === cpf ? { ...a, status: 'ativo' } : a));
       if (modalAssinante && modalAssinante.cpf === cpf) {
         setModalAssinante({ ...modalAssinante, status: 'ativo' });
@@ -369,7 +380,6 @@ export default function AdminAssinantesPage() {
     if (!confirm('Tem certeza que deseja inativar esta vida?')) return;
     try {
       const headers = await buildAuthHeaders();
-      
       const resp = await fetch(`${API_BASE}/admin/beneficiarios/${cpf}/inativar-rapidoc`, {
         method: 'POST',
         headers,
@@ -378,7 +388,6 @@ export default function AdminAssinantesPage() {
         const errorData = await resp.json().catch(() => ({ error: 'Erro desconhecido' }));
         throw new Error(errorData.error || 'Erro ao inativar vida');
       }
-      // Atualiza estado local: status suspenso
       setAssinantes(prev => prev.map(a => a.cpf === cpf ? { ...a, status: 'suspenso' } : a));
       if (modalAssinante && modalAssinante.cpf === cpf) {
         setModalAssinante({ ...modalAssinante, status: 'suspenso' });
@@ -393,7 +402,6 @@ export default function AdminAssinantesPage() {
     if (!confirm('Tem certeza que deseja remover este dependente? Esta ação não pode ser desfeita.')) return;
     try {
       const headers = await buildAuthHeaders();
-      
       const resp = await fetch(`${API_BASE}/beneficiarios/${cpf}`, {
         method: 'DELETE',
         headers,
@@ -402,12 +410,11 @@ export default function AdminAssinantesPage() {
         const errorData = await resp.json().catch(() => ({ error: 'Erro desconhecido' }));
         throw new Error(errorData.error || 'Erro ao remover dependente');
       }
-      // Recarregar lista de dependentes
       if (modalAssinante) {
         buscarDependentes(modalAssinante.cpf);
       }
     } catch (e: any) {
-      setError(e?.message || 'Erro ao remover dependente');
+      setDependentesError(e?.message || 'Erro ao remover dependente');
     }
   };
 
@@ -454,29 +461,8 @@ export default function AdminAssinantesPage() {
     setDependenteEmEdicao(null);
     setSalvandoDependenteLocal(false);
     setSalvandoDependenteRapidoc(false);
-    setDependenteLocalForm({
-      nome: '',
-      cpf: '',
-      birthDate: '',
-      parentesco: '',
-      email: '',
-      phone: '',
-      zipCode: '',
-      address: '',
-      city: '',
-      state: '',
-    });
-    setDependenteRapidocForm({
-      serviceType: '',
-      paymentType: '',
-      email: '',
-      phone: '',
-      zipCode: '',
-      address: '',
-      city: '',
-      state: '',
-      cpf: '',
-    });
+    setDependenteLocalForm({ nome: '', cpf: '', birthDate: '', parentesco: '', email: '', phone: '', zipCode: '', address: '', city: '', state: '' });
+    setDependenteRapidocForm({ serviceType: '', paymentType: '', email: '', phone: '', zipCode: '', address: '', city: '', state: '', cpf: '' });
   };
 
   const salvarDependenteLocal = async (e: FormEvent) => {
@@ -580,20 +566,15 @@ export default function AdminAssinantesPage() {
 
   const getStatusBadge = (status: string) => {
     switch (status) {
-      case 'ativo':
-        return <Badge variant="success">Ativo</Badge>;
-      case 'pendente':
-        return <Badge variant="warning">Pendente</Badge>;
-      case 'suspenso':
-        return <Badge variant="danger">Suspenso</Badge>;
-      default:
-        return <Badge>Desconhecido</Badge>;
+      case 'ativo': return <Badge variant="success">Ativo</Badge>;
+      case 'pendente': return <Badge variant="warning">Pendente</Badge>;
+      case 'suspenso': return <Badge variant="danger">Suspenso</Badge>;
+      default: return <Badge>Desconhecido</Badge>;
     }
   };
 
   return (
     <DashboardLayout title="Gerenciar Assinantes">
-      {/* Header */}
       <div className="mb-6">
         <h1 className="text-2xl font-bold text-gray-900 dark:text-white mb-1">
           Assinantes do Sistema
@@ -603,66 +584,46 @@ export default function AdminAssinantesPage() {
         </p>
       </div>
 
-      {/* Estatísticas */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
         <Card>
           <CardBody>
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm text-gray-600 dark:text-gray-400 mb-1">
-                  Total Assinantes
-                </p>
-                <p className="text-2xl font-bold text-gray-900 dark:text-white">
-                  {assinantes.length}
-                </p>
+                <p className="text-sm text-gray-600 dark:text-gray-400 mb-1">Total Assinantes</p>
+                <p className="text-2xl font-bold text-gray-900 dark:text-white">{assinantes.length}</p>
               </div>
               <Users className="w-10 h-10 text-primary opacity-20" />
             </div>
           </CardBody>
         </Card>
-
         <Card>
           <CardBody>
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm text-gray-600 dark:text-gray-400 mb-1">
-                  Ativos
-                </p>
-                <p className="text-2xl font-bold text-gray-900 dark:text-white">
-                  {assinantes.filter(a => a.status === 'ativo').length}
-                </p>
+                <p className="text-sm text-gray-600 dark:text-gray-400 mb-1">Ativos</p>
+                <p className="text-2xl font-bold text-gray-900 dark:text-white">{assinantes.filter(a => a.status === 'ativo').length}</p>
               </div>
               <CheckCircle className="w-10 h-10 text-success opacity-20" />
             </div>
           </CardBody>
         </Card>
-
         <Card>
           <CardBody>
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm text-gray-600 dark:text-gray-400 mb-1">
-                  Pendentes
-                </p>
-                <p className="text-2xl font-bold text-gray-900 dark:text-white">
-                  {assinantes.filter(a => a.status === 'pendente').length}
-                </p>
+                <p className="text-sm text-gray-600 dark:text-gray-400 mb-1">Pendentes</p>
+                <p className="text-2xl font-bold text-gray-900 dark:text-white">{assinantes.filter(a => a.status === 'pendente').length}</p>
               </div>
               <XCircle className="w-10 h-10 text-warning opacity-20" />
             </div>
           </CardBody>
         </Card>
-
         <Card>
           <CardBody>
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm text-gray-600 dark:text-gray-400 mb-1">
-                  Suspensos
-                </p>
-                <p className="text-2xl font-bold text-gray-900 dark:text-white">
-                  {assinantes.filter(a => a.status === 'suspenso').length}
-                </p>
+                <p className="text-sm text-gray-600 dark:text-gray-400 mb-1">Suspensos</p>
+                <p className="text-2xl font-bold text-gray-900 dark:text-white">{assinantes.filter(a => a.status === 'suspenso').length}</p>
               </div>
               <Ban className="w-10 h-10 text-danger opacity-20" />
             </div>
@@ -670,7 +631,6 @@ export default function AdminAssinantesPage() {
         </Card>
       </div>
 
-      {/* Seção de Beneficiários sem Conta */}
       <Card className="mb-6 border-orange-200 dark:border-orange-800">
         <CardHeader>
           <div className="flex items-center justify-between">
@@ -722,8 +682,8 @@ export default function AdminAssinantesPage() {
                             <div>📧 {beneficiario.email}</div>
                             <div>🆔 {beneficiario.cpf}</div>
                             <div className="text-xs text-gray-500 dark:text-gray-500">
-                              Firestore: {beneficiario.temUsuarioFirestore ? '✓' : '✗'} | 
-                              Auth: {beneficiario.temUsuarioAuth ? '✓' : '✗'} | 
+                              Firestore: {beneficiario.temUsuarioFirestore ? '✓' : '✗'} |
+                              Auth: {beneficiario.temUsuarioAuth ? '✓' : '✗'} |
                               Asaas: {beneficiario.temAssinaturaAsaas ? '✓' : '✗'}
                             </div>
                           </div>
@@ -750,7 +710,6 @@ export default function AdminAssinantesPage() {
         )}
       </Card>
 
-      {/* Filtros e Busca */}
       <Card className="mb-6">
         <CardBody>
           <div className="flex flex-col md:flex-row gap-4">
@@ -814,7 +773,6 @@ export default function AdminAssinantesPage() {
         </CardBody>
       </Card>
 
-      {/* Loading / Erro */}
       {loading && (
         <Card className="mb-6">
           <CardBody>
@@ -826,52 +784,13 @@ export default function AdminAssinantesPage() {
         <Card className="mb-6 border border-red-300 dark:border-red-600">
           <CardBody>
             <p className="text-red-600 dark:text-red-400 text-sm">{error}</p>
-            <Button variant="outline" size="sm" className="mt-3" onClick={() => {
-              setLoading(true); setError('');
-              (async () => {
-                try {
-                  const token = typeof window !== 'undefined' 
-                    ? (localStorage.getItem('token') || localStorage.getItem('auth_token')) 
-                    : null;
-                  const headers: HeadersInit = {
-                    'Content-Type': 'application/json',
-                  };
-                  if (token) headers['Authorization'] = `Bearer ${token}`;
-                  const [assinaturasResp, usuariosResp] = await Promise.all([
-                    fetch(`${API_BASE}/assinaturas`, { headers }),
-                    fetch(`${API_BASE}/usuarios`, { headers }),
-                  ]);
-                  if (!assinaturasResp.ok) throw new Error('Erro ao buscar assinaturas');
-                  if (!usuariosResp.ok) throw new Error('Erro ao buscar usuários');
-                  const assinaturasData: AssinaturaDoc[] = await assinaturasResp.json();
-                  const usuariosData: UsuarioDoc[] = await usuariosResp.json();
-                  const usuarioPorCpf = new Map<string, UsuarioDoc>();
-                  usuariosData.forEach(u => { if (u.cpf) usuarioPorCpf.set(u.cpf, u); });
-                  const itens: AssinanteItem[] = assinaturasData.map(a => {
-                    const usuario = usuarioPorCpf.get(a.cpfUsuario);
-                    const nome = usuario?.nome || '—';
-                    const email = usuario?.email || '—';
-                    const cpf = a.cpfUsuario;
-                    const plano = a.planoDescricao || a.planoTipo || a.planoId || 'Plano';
-                    const valorMensal = typeof a.planoPreco === 'number' ? a.planoPreco : 0;
-                    const dataAdesaoISO = a.dataInicio || '';
-                    const dataAdesao = dataAdesaoISO ? dataAdesaoISO.split('-').reverse().join('/') : '—';
-                    let status = 'pendente';
-                    if (a.formaPagamento && a.dataInicio) status = 'ativo';
-                    const ultimoPagamento = '—';
-                    return { id: a.id, nome, email, cpf, plano, status, dataAdesao, ultimoPagamento, dependentes: 0, valorMensal };
-                  });
-                  setAssinantes(itens);
-                } catch (e: any) {
-                  setError(e?.message || 'Falha ao carregar assinantes.');
-                } finally { setLoading(false); }
-              })();
-            }}>Tentar novamente</Button>
+            <Button variant="outline" size="sm" className="mt-3" onClick={() => window.location.reload()}>
+              Tentar novamente
+            </Button>
           </CardBody>
         </Card>
       )}
 
-      {/* Lista de Assinantes */}
       <div className="space-y-4">
         {!loading && !error && filteredAssinantes.map((assinante) => (
           <Card key={assinante.id} className="hover:shadow-lg transition-shadow">
@@ -922,8 +841,8 @@ export default function AdminAssinantesPage() {
                       setModalFaturas(null);
                       setDependentes([]);
                       try {
-                        const token = typeof window !== 'undefined' 
-                          ? (localStorage.getItem('token') || localStorage.getItem('auth_token')) 
+                        const token = typeof window !== 'undefined'
+                          ? (localStorage.getItem('token') || localStorage.getItem('auth_token'))
                           : null;
                         const headers: HeadersInit = { 'Content-Type': 'application/json' };
                         if (token) headers['Authorization'] = `Bearer ${token}`;
@@ -934,7 +853,6 @@ export default function AdminAssinantesPage() {
                           const data = await faturasResp.json();
                           setModalFaturas(data.faturas || []);
                         }
-                        // Buscar dependentes
                         buscarDependentes(assinante.cpf);
                       } catch {
                         setModalFaturas([]);
@@ -949,9 +867,9 @@ export default function AdminAssinantesPage() {
                       <Edit className="w-4 h-4 mr-1" />
                       Editar
                     </Button>
-                    <Button 
-                      variant="outline" 
-                      size="sm" 
+                    <Button
+                      variant="outline"
+                      size="sm"
                       onClick={() => gerarNovaSenha(assinante.cpf, assinante.nome, assinante.email)}
                       isLoading={gerandoSenha}
                       disabled={gerandoSenha}
@@ -976,7 +894,7 @@ export default function AdminAssinantesPage() {
             </CardBody>
           </Card>
         ))}
-        {/* Modal de detalhes do assinante */}
+
         <Dialog open={!!modalAssinante} onOpenChange={v => { if (!v) { setModalAssinante(null); setModalFaturas(null); setDependentes([]); } }}>
           <Dialog.Content>
             <div className="mb-4">
@@ -994,16 +912,16 @@ export default function AdminAssinantesPage() {
                   <div><b>Valor mensal:</b> R$ {modalAssinante.valorMensal.toFixed(2).replace('.', ',')}</div>
                 </div>
 
-                {/* Seção de Dependentes/Vidas */}
                 <div className="border-t pt-4">
                   <div className="flex items-center justify-between mb-3">
                     <h3 className="text-md font-semibold">Dependentes/Vidas</h3>
-                    <Button 
-                      variant="primary" 
+                    <Button
+                      variant="primary"
                       size="sm"
                       onClick={() => {
                         setPlanoSelecionadoId(String(modalAssinante.planoId || ''));
                         setModalCadastrarVida({ cpfTitular: modalAssinante.cpf, nomeTitular: modalAssinante.nome });
+                        setModalCadastroError('');
                       }}
                     >
                       <Plus className="w-4 h-4 mr-1" />
@@ -1011,12 +929,10 @@ export default function AdminAssinantesPage() {
                     </Button>
                   </div>
                   {dependentesError && !loadingDependentes && (
-                    <div className="mb-2 text-sm text-red-500">{dependentesError}</div>
+                    <div className="mb-2 text-sm text-red-500 bg-red-50 p-2 rounded">{dependentesError}</div>
                   )}
                   {loadingDependentes ? (
                     <p className="text-sm text-gray-500">Carregando dependentes...</p>
-                  ) : dependentesError ? (
-                    <p className="text-sm text-red-500">{dependentesError}</p>
                   ) : dependentes.length === 0 ? (
                     <p className="text-sm text-gray-500">Nenhum dependente cadastrado.</p>
                   ) : (
@@ -1028,24 +944,27 @@ export default function AdminAssinantesPage() {
                             <div className="text-sm text-gray-600 dark:text-gray-400">
                               CPF: {dep.cpf} {dep.cortesia && <Badge variant="warning" className="ml-2">Cortesia</Badge>}
                             </div>
+                            <div className="text-xs text-gray-400">
+                              Rapidoc UUID: {dep.rapidocUuid || 'Não vinculado'}
+                            </div>
                           </div>
                           <div className="flex gap-2">
-                            <Button 
-                              variant="outline" 
+                            <Button
+                              variant="outline"
                               size="sm"
                               onClick={() => abrirEdicaoDependente(dep)}
                             >
                               <Edit className="w-4 h-4" />
                             </Button>
-                            <Button 
-                              variant="outline" 
+                            <Button
+                              variant="outline"
                               size="sm"
                               onClick={() => dep.isActive !== false ? inativarVida(dep.cpf) : ativarVida(dep.cpf)}
                             >
                               {dep.isActive !== false ? <Ban className="w-4 h-4" /> : <CheckCircle className="w-4 h-4" />}
                             </Button>
-                            <Button 
-                              variant="danger" 
+                            <Button
+                              variant="danger"
                               size="sm"
                               onClick={() => removerDependente(dep.cpf)}
                             >
@@ -1062,202 +981,179 @@ export default function AdminAssinantesPage() {
           </Dialog.Content>
         </Dialog>
 
-        {/* Modal de edição de dependente */}
-        <Dialog open={!!dependenteEmEdicao} onOpenChange={v => { if (!v) fecharEdicaoDependente(); }}>
+        {/* Modal de Cadastro de Vida (Corrigido) */}
+        <Dialog open={!!modalCadastrarVida} onOpenChange={v => { if (!v) { setModalCadastrarVida(null); setPlanoSelecionadoId(''); setModalCadastroError(''); } }}>
           <Dialog.Content>
             <div className="mb-4">
-              <h2 className="text-lg font-semibold">Editar dependente</h2>
-              {dependenteEmEdicao && (
-                <p className="text-sm text-gray-600 dark:text-gray-400">
-                  {dependenteEmEdicao.nome} — CPF {dependenteEmEdicao.cpf}
-                </p>
-              )}
+              <h2 className="text-lg font-semibold">Cadastrar Nova Vida</h2>
+              <p className="text-sm text-gray-600 dark:text-gray-400">
+                Titular: {modalCadastrarVida?.nomeTitular} ({modalCadastrarVida?.cpfTitular})
+              </p>
             </div>
-            {dependenteEmEdicao && (
-              <div className="space-y-6 max-h-[75vh] overflow-y-auto pr-1">
-                <form
-                  onSubmit={salvarDependenteLocal}
-                  className="space-y-4 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900/40 p-4"
-                >
-                  <div className="flex items-center justify-between">
-                    <h3 className="text-sm font-semibold">Atualizar dados locais (Firestore)</h3>
-                    <Badge variant="neutral">Somente banco</Badge>
-                  </div>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div>
-                      <label className="block text-sm font-medium mb-1">Nome</label>
-                      <Input
-                        value={dependenteLocalForm.nome}
-                        onChange={(e) => setDependenteLocalForm({ ...dependenteLocalForm, nome: e.target.value })}
-                        required
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium mb-1">CPF</label>
-                      <Input
-                        value={dependenteLocalForm.cpf}
-                        onChange={(e) => setDependenteLocalForm({ ...dependenteLocalForm, cpf: e.target.value })}
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium mb-1">Data de Nascimento</label>
-                      <Input
-                        type="date"
-                        value={dependenteLocalForm.birthDate}
-                        onChange={(e) => setDependenteLocalForm({ ...dependenteLocalForm, birthDate: e.target.value })}
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium mb-1">Parentesco</label>
-                      <select
-                        className="w-full px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900"
-                        value={dependenteLocalForm.parentesco}
-                        onChange={(e) => setDependenteLocalForm({ ...dependenteLocalForm, parentesco: e.target.value })}
-                      >
-                        <option value="">Selecione...</option>
-                        <option value="Filho(a)">Filho(a)</option>
-                        <option value="Cônjuge">Cônjuge</option>
-                        <option value="Pai/Mãe">Pai/Mãe</option>
-                        <option value="Irmão(ã)">Irmão(ã)</option>
-                        <option value="Outro">Outro</option>
-                      </select>
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium mb-1">Email</label>
-                      <Input
-                        type="email"
-                        value={dependenteLocalForm.email}
-                        onChange={(e) => setDependenteLocalForm({ ...dependenteLocalForm, email: e.target.value })}
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium mb-1">Telefone</label>
-                      <Input
-                        value={dependenteLocalForm.phone}
-                        onChange={(e) => setDependenteLocalForm({ ...dependenteLocalForm, phone: e.target.value })}
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium mb-1">CEP</label>
-                      <Input
-                        value={dependenteLocalForm.zipCode}
-                        onChange={(e) => setDependenteLocalForm({ ...dependenteLocalForm, zipCode: e.target.value })}
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium mb-1">Cidade</label>
-                      <Input
-                        value={dependenteLocalForm.city}
-                        onChange={(e) => setDependenteLocalForm({ ...dependenteLocalForm, city: e.target.value })}
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium mb-1">Estado</label>
-                      <Input
-                        value={dependenteLocalForm.state}
-                        maxLength={2}
-                        onChange={(e) => setDependenteLocalForm({ ...dependenteLocalForm, state: e.target.value })}
-                      />
-                    </div>
-                  </div>
-                  <div className="flex justify-end gap-2 pt-4 border-t border-gray-200 dark:border-gray-700">
-                    <Button variant="outline" type="button" onClick={fecharEdicaoDependente} disabled={salvandoDependenteLocal || salvandoDependenteRapidoc}>
-                      Cancelar
-                    </Button>
-                    <Button variant="primary" type="submit" isLoading={salvandoDependenteLocal} disabled={salvandoDependenteLocal}>
-                      Salvar dados locais
-                    </Button>
-                  </div>
-                </form>
-
-                <form
-                  onSubmit={salvarDependenteRapidoc}
-                  className="space-y-4 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900/40 p-4"
-                >
-                  <div className="flex items-center justify-between">
-                    <h3 className="text-sm font-semibold">Atualizar Rapidoc</h3>
-                    <Badge variant="info">Sincroniza Rapidoc</Badge>
-                  </div>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div>
-                      <label className="block text-sm font-medium mb-1">Service Type (UUID do plano Rapidoc)</label>
-                      <Input
-                        value={dependenteRapidocForm.serviceType}
-                        onChange={(e) => setDependenteRapidocForm({ ...dependenteRapidocForm, serviceType: e.target.value })}
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium mb-1">Payment Type</label>
-                      <select
-                        className="w-full px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900"
-                        value={dependenteRapidocForm.paymentType}
-                        onChange={(e) => setDependenteRapidocForm({ ...dependenteRapidocForm, paymentType: e.target.value })}
-                      >
-                        <option value="">Selecione</option>
-                        <option value="S">S</option>
-                        <option value="A">A</option>
-                      </select>
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium mb-1">Email</label>
-                      <Input
-                        type="email"
-                        value={dependenteRapidocForm.email}
-                        onChange={(e) => setDependenteRapidocForm({ ...dependenteRapidocForm, email: e.target.value })}
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium mb-1">Telefone</label>
-                      <Input
-                        value={dependenteRapidocForm.phone}
-                        onChange={(e) => setDependenteRapidocForm({ ...dependenteRapidocForm, phone: e.target.value })}
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium mb-1">CEP</label>
-                      <Input
-                        value={dependenteRapidocForm.zipCode}
-                        onChange={(e) => setDependenteRapidocForm({ ...dependenteRapidocForm, zipCode: e.target.value })}
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium mb-1">Cidade</label>
-                      <Input
-                        value={dependenteRapidocForm.city}
-                        onChange={(e) => setDependenteRapidocForm({ ...dependenteRapidocForm, city: e.target.value })}
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium mb-1">Estado</label>
-                      <Input
-                        value={dependenteRapidocForm.state}
-                        maxLength={2}
-                        onChange={(e) => setDependenteRapidocForm({ ...dependenteRapidocForm, state: e.target.value })}
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium mb-1">CPF (opcional para sincronizar)</label>
-                      <Input
-                        value={dependenteRapidocForm.cpf}
-                        onChange={(e) => setDependenteRapidocForm({ ...dependenteRapidocForm, cpf: e.target.value })}
-                      />
-                    </div>
-                  </div>
-                  <div className="flex justify-end gap-2 pt-4 border-t border-gray-200 dark:border-gray-700">
-                    <Button variant="outline" type="button" onClick={fecharEdicaoDependente} disabled={salvandoDependenteLocal || salvandoDependenteRapidoc}>
-                      Cancelar
-                    </Button>
-                    <Button variant="primary" type="submit" isLoading={salvandoDependenteRapidoc} disabled={salvandoDependenteRapidoc}>
-                      Salvar Rapidoc
-                    </Button>
-                  </div>
-                </form>
+            
+            {/* Exibição de Erro dentro do Modal */}
+            {modalCadastroError && (
+              <div className="mb-4 p-3 bg-red-100 border border-red-300 text-red-700 rounded-md text-sm">
+                <div className="flex items-center gap-2">
+                   <AlertCircle className="w-4 h-4" />
+                   <strong>Erro:</strong> {modalCadastroError}
+                </div>
               </div>
+            )}
+
+            {modalCadastrarVida && (
+              <form onSubmit={async (e) => {
+                e.preventDefault();
+                setModalCadastroError('');
+                setCadastrandoVida(true); // Loading ON
+
+                const formData = new FormData(e.currentTarget);
+                const cpfDigits = String(formData.get('cpf') || '').replace(/\D/g, '');
+                const planoId = String(formData.get('planoId') || '');
+                const phoneDigits = String(formData.get('phone') || '').replace(/\D/g, '');
+                const holderDigits = String(modalCadastrarVida.cpfTitular || '').replace(/\D/g, '');
+
+                try {
+                  if (!cpfDigits || cpfDigits.length !== 11) throw new Error('CPF deve ter 11 dígitos.');
+                  if (!planoId) throw new Error('Selecione um plano para continuar.');
+                  if (phoneDigits.length !== 11) throw new Error('Telefone deve ter 11 dígitos (DDD + número).');
+                  if (!holderDigits || holderDigits.length !== 11) throw new Error('CPF do titular inválido.');
+
+                  const planoSel = planos.find((p: any) => String(p.id) === planoId);
+                  const serviceTypeAuto = planoSel?.uuidRapidocPlano || '';
+                  const paymentTypeAuto = (planoSel?.paymentType || '').toUpperCase();
+                  
+                  if (!planoSel) throw new Error('Plano selecionado não encontrado.');
+                  if (!serviceTypeAuto) throw new Error('Plano selecionado está sem UUID Rapidoc configurado.');
+
+                  const plansPayload = serviceTypeAuto
+                    ? [{ paymentType: paymentTypeAuto || undefined, plan: { uuid: serviceTypeAuto } }]
+                    : [];
+
+                  const dados: any = {
+                    nome: formData.get('nome'),
+                    cpf: cpfDigits,
+                    birthDate: formData.get('birthDate'),
+                    email: formData.get('email'),
+                    phone: phoneDigits || undefined,
+                    zipCode: formData.get('zipCode'),
+                    address: formData.get('address'),
+                    city: formData.get('city'),
+                    state: formData.get('state'),
+                    holder: holderDigits,
+                    paymentType: paymentTypeAuto || undefined,
+                    serviceType: serviceTypeAuto || undefined,
+                    plans: plansPayload,
+                    cortesia: formData.get('cortesia') === 'on',
+                  };
+
+                  const headers = await buildAuthHeaders();
+                  const resp = await fetch(`${API_BASE}/dependentes`, {
+                    method: 'POST',
+                    headers,
+                    body: JSON.stringify(dados),
+                  });
+
+                  const responseData = await resp.json().catch(() => ({}));
+                  
+                  if (!resp.ok) {
+                    throw new Error(responseData.error || responseData.message || 'Erro ao cadastrar vida');
+                  }
+
+                  // Sucesso
+                  setModalCadastrarVida(null);
+                  setPlanoSelecionadoId('');
+                  if (modalAssinante) {
+                    buscarDependentes(modalAssinante.cpf);
+                  }
+                  alert('Vida cadastrada com sucesso!');
+
+                } catch (e: any) {
+                  setModalCadastroError(e.message || 'Erro desconhecido ao cadastrar.');
+                } finally {
+                  setCadastrandoVida(false); // Loading OFF
+                }
+              }} className="space-y-4">
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium mb-1">Nome *</label>
+                    <Input name="nome" required placeholder="Nome Completo" />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium mb-1">CPF *</label>
+                    <Input name="cpf" required placeholder="000.000.000-00" />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium mb-1">Data de Nascimento *</label>
+                    <Input name="birthDate" type="date" required />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium mb-1">Email *</label>
+                    <Input name="email" type="email" required />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium mb-1">Telefone</label>
+                    <Input name="phone" type="tel" placeholder="(11) 99999-9999" />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium mb-1">CEP</label>
+                    <Input name="zipCode" />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium mb-1">Endereço</label>
+                    <Input name="address" />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium mb-1">Cidade</label>
+                    <Input name="city" />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium mb-1">Estado</label>
+                    <Input name="state" maxLength={2} placeholder="UF" />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium mb-1">Plano</label>
+                    <select
+                      name="planoId"
+                      value={planoSelecionadoId}
+                      onChange={(e) => setPlanoSelecionadoId(e.target.value)}
+                      className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800"
+                      required
+                    >
+                      <option value="">Selecione um plano</option>
+                      {planos.map((plano: any) => (
+                        <option key={plano.id} value={plano.id}>{plano.tipo || plano.descricao} - R$ {plano.preco?.toFixed(2)}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium mb-1">Payment Type</label>
+                    <Input value={planos.find((p: any) => String(p.id) === String(planoSelecionadoId))?.paymentType || ''} readOnly className="bg-gray-100" />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium mb-1">Service Type</label>
+                    <Input value={planos.find((p: any) => String(p.id) === String(planoSelecionadoId))?.uuidRapidocPlano || ''} readOnly className="bg-gray-100" />
+                  </div>
+                </div>
+                <div className="flex items-center gap-2">
+                  <input type="checkbox" name="cortesia" id="cortesia" />
+                  <label htmlFor="cortesia" className="text-sm">
+                    Cortesia (não gera faturas)
+                  </label>
+                </div>
+                <div className="flex justify-end gap-2">
+                  <Button variant="outline" type="button" onClick={() => setModalCadastrarVida(null)} disabled={cadastrandoVida}>
+                    Cancelar
+                  </Button>
+                  <Button variant="primary" type="submit" disabled={cadastrandoVida}>
+                    {cadastrandoVida ? <><Loader2 className="w-4 h-4 animate-spin mr-2"/> Salvando...</> : 'Cadastrar'}
+                  </Button>
+                </div>
+              </form>
             )}
           </Dialog.Content>
         </Dialog>
 
-        {/* Modal de senha gerada */}
         <Dialog open={!!modalSenha} onOpenChange={v => { if (!v) { setModalSenha(null); setMostrarSenha(false); } }}>
           <Dialog.Content>
             <div className="mb-4">
@@ -1271,7 +1167,7 @@ export default function AdminAssinantesPage() {
                 <div className="bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg p-3">
                   <p className="text-sm text-yellow-800 dark:text-yellow-200">
                     <AlertCircle className="w-4 h-4 inline mr-1" />
-                    Esta senha deve ser compartilhada com o cliente de forma segura. Recomenda-se que o cliente altere a senha após o primeiro login.
+                    Esta senha deve ser compartilhada com o cliente.
                   </p>
                 </div>
                 <div className="space-y-2">
@@ -1299,24 +1195,13 @@ export default function AdminAssinantesPage() {
                         {mostrarSenha ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                       </button>
                     </div>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={copiarSenha}
-                      title="Copiar senha"
-                    >
+                    <Button variant="outline" size="sm" onClick={copiarSenha} title="Copiar senha">
                       <Copy className="w-4 h-4" />
                     </Button>
                   </div>
                 </div>
                 <div className="flex justify-end gap-2 pt-2">
-                  <Button
-                    variant="primary"
-                    onClick={() => {
-                      setModalSenha(null);
-                      setMostrarSenha(false);
-                    }}
-                  >
+                  <Button variant="primary" onClick={() => { setModalSenha(null); setMostrarSenha(false); }}>
                     Fechar
                   </Button>
                 </div>
@@ -1325,7 +1210,6 @@ export default function AdminAssinantesPage() {
           </Dialog.Content>
         </Dialog>
 
-        {/* Modal de edição de assinante */}
         <Dialog open={!!modalEditar} onOpenChange={v => { if (!v) setModalEditar(null); }}>
           <Dialog.Content>
             <div className="mb-4">
@@ -1336,9 +1220,7 @@ export default function AdminAssinantesPage() {
                 e.preventDefault();
                 const formData = new FormData(e.currentTarget);
                 const dados: any = {};
-                formData.forEach((value, key) => {
-                  if (value) dados[key] = value;
-                });
+                formData.forEach((value, key) => { if (value) dados[key] = value; });
                 try {
                   const headers = await buildAuthHeaders();
                   const resp = await fetch(`${API_BASE}/usuario/${modalEditar.cpf}`, {
@@ -1346,10 +1228,7 @@ export default function AdminAssinantesPage() {
                     headers,
                     body: JSON.stringify(dados),
                   });
-                  if (!resp.ok) {
-                    const errorData = await resp.json().catch(() => ({ error: 'Erro desconhecido' }));
-                    throw new Error(errorData.error || 'Erro ao atualizar');
-                  }
+                  if (!resp.ok) throw new Error('Erro ao atualizar');
                   setModalEditar(null);
                   window.location.reload();
                 } catch (e: any) {
@@ -1369,189 +1248,106 @@ export default function AdminAssinantesPage() {
                     <label className="block text-sm font-medium mb-1">CPF</label>
                     <Input name="cpf" value={modalEditar.cpf} disabled />
                   </div>
-                  <div>
-                    <label className="block text-sm font-medium mb-1">Telefone</label>
-                    <Input name="telefone" type="tel" />
-                  </div>
                 </div>
                 <div className="flex justify-end gap-2">
-                  <Button variant="outline" type="button" onClick={() => setModalEditar(null)}>
-                    Cancelar
-                  </Button>
-                  <Button variant="primary" type="submit">
-                    Salvar
-                  </Button>
+                  <Button variant="outline" type="button" onClick={() => setModalEditar(null)}>Cancelar</Button>
+                  <Button variant="primary" type="submit">Salvar</Button>
                 </div>
               </form>
             )}
           </Dialog.Content>
         </Dialog>
 
-        {/* Modal de cadastro de vida */}
-        <Dialog open={!!modalCadastrarVida} onOpenChange={v => { if (!v) { setModalCadastrarVida(null); setPlanoSelecionadoId(''); } }}>
+        <Dialog open={!!dependenteEmEdicao} onOpenChange={v => { if (!v) fecharEdicaoDependente(); }}>
           <Dialog.Content>
             <div className="mb-4">
-              <h2 className="text-lg font-semibold">Cadastrar Nova Vida</h2>
-              <p className="text-sm text-gray-600 dark:text-gray-400">
-                Titular: {modalCadastrarVida?.nomeTitular} ({modalCadastrarVida?.cpfTitular})
-              </p>
+              <h2 className="text-lg font-semibold">Editar dependente</h2>
+              {dependenteEmEdicao && (
+                <p className="text-sm text-gray-600 dark:text-gray-400">
+                  {dependenteEmEdicao.nome} — CPF {dependenteEmEdicao.cpf}
+                </p>
+              )}
             </div>
-            {modalCadastrarVida && (
-              <form onSubmit={async (e) => {
-                e.preventDefault();
-                setError('');
-                const formData = new FormData(e.currentTarget);
-                const cpfDigits = String(formData.get('cpf') || '').replace(/\D/g, '');
-                const planoId = String(formData.get('planoId') || '');
-                const phoneDigits = String(formData.get('phone') || '').replace(/\D/g, '');
-                const holderDigits = String(modalCadastrarVida.cpfTitular || '').replace(/\D/g, '');
+            {dependenteEmEdicao && (
+              <div className="space-y-6 max-h-[75vh] overflow-y-auto pr-1">
+                <form
+                  onSubmit={salvarDependenteLocal}
+                  className="space-y-4 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900/40 p-4"
+                >
+                  <div className="flex items-center justify-between">
+                    <h3 className="text-sm font-semibold">Atualizar dados locais</h3>
+                    <Badge variant="neutral">Somente banco</Badge>
+                  </div>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-sm font-medium mb-1">Nome</label>
+                      <Input
+                        value={dependenteLocalForm.nome}
+                        onChange={(e) => setDependenteLocalForm({ ...dependenteLocalForm, nome: e.target.value })}
+                        required
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium mb-1">Data de Nascimento</label>
+                      <Input
+                        type="date"
+                        value={dependenteLocalForm.birthDate}
+                        onChange={(e) => setDependenteLocalForm({ ...dependenteLocalForm, birthDate: e.target.value })}
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium mb-1">Email</label>
+                      <Input
+                        type="email"
+                        value={dependenteLocalForm.email}
+                        onChange={(e) => setDependenteLocalForm({ ...dependenteLocalForm, email: e.target.value })}
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium mb-1">Telefone</label>
+                      <Input
+                        value={dependenteLocalForm.phone}
+                        onChange={(e) => setDependenteLocalForm({ ...dependenteLocalForm, phone: e.target.value })}
+                      />
+                    </div>
+                  </div>
+                  <div className="flex justify-end gap-2 pt-4">
+                    <Button variant="outline" type="button" onClick={fecharEdicaoDependente} disabled={salvandoDependenteLocal}>Cancelar</Button>
+                    <Button variant="primary" type="submit" isLoading={salvandoDependenteLocal} disabled={salvandoDependenteLocal}>Salvar Local</Button>
+                  </div>
+                </form>
 
-                if (!cpfDigits || cpfDigits.length !== 11) {
-                  setError('CPF deve ter 11 dígitos.');
-                  return;
-                }
-                if (!planoId) {
-                  setError('Selecione um plano para continuar.');
-                  return;
-                }
-                if (phoneDigits.length !== 11) {
-                  setError('Telefone deve ter 11 dígitos (DDD + número).');
-                  return;
-                }
-                if (!holderDigits || holderDigits.length !== 11) {
-                  setError('CPF do titular inválido.');
-                  return;
-                }
-
-                const planoSel = planos.find((p: any) => String(p.id) === planoId);
-                const serviceTypeAuto = planoSel?.uuidRapidocPlano || '';
-                const paymentTypeAuto = (planoSel?.paymentType || '').toUpperCase();
-                if (!planoSel) {
-                  setError('Plano selecionado não encontrado.');
-                  return;
-                }
-                if (!serviceTypeAuto) {
-                  setError('Plano selecionado está sem UUID Rapidoc configurado.');
-                  return;
-                }
-                const plansPayload = serviceTypeAuto
-                  ? [{ paymentType: paymentTypeAuto || undefined, plan: { uuid: serviceTypeAuto } }]
-                  : [];
-
-                const dados: any = {
-                  nome: formData.get('nome'),
-                  cpf: cpfDigits,
-                  birthDate: formData.get('birthDate'),
-                  email: formData.get('email'),
-                  phone: phoneDigits || undefined,
-                  zipCode: formData.get('zipCode'),
-                  address: formData.get('address'),
-                  city: formData.get('city'),
-                  state: formData.get('state'),
-                  holder: holderDigits,
-                  paymentType: paymentTypeAuto || undefined,
-                  serviceType: serviceTypeAuto || undefined,
-                  plans: plansPayload,
-                  cortesia: formData.get('cortesia') === 'on',
-                };
-                try {
-                  setError('');
-                  const headers = await buildAuthHeaders();
-                  const resp = await fetch(`${API_BASE}/dependentes`, {
-                    method: 'POST',
-                    headers,
-                    body: JSON.stringify(dados),
-                  });
-                  if (!resp.ok) {
-                    const errorData = await resp.json().catch(() => ({ error: 'Erro desconhecido' }));
-                    throw new Error(errorData.error || 'Erro ao cadastrar vida');
-                  }
-                  setModalCadastrarVida(null);
-                  setPlanoSelecionadoId('');
-                  if (modalAssinante) {
-                    buscarDependentes(modalAssinante.cpf);
-                  }
-                  alert('Vida cadastrada com sucesso!');
-                } catch (e: any) {
-                  setError(e?.message || 'Erro ao cadastrar vida');
-                }
-              }} className="space-y-4">
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-sm font-medium mb-1">Nome *</label>
-                    <Input name="nome" required />
+                <form
+                  onSubmit={salvarDependenteRapidoc}
+                  className="space-y-4 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900/40 p-4"
+                >
+                  <div className="flex items-center justify-between">
+                    <h3 className="text-sm font-semibold">Atualizar Rapidoc</h3>
+                    <Badge variant="info">Sincroniza Rapidoc</Badge>
                   </div>
-                  <div>
-                    <label className="block text-sm font-medium mb-1">CPF *</label>
-                    <Input name="cpf" required />
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-sm font-medium mb-1">Email</label>
+                      <Input
+                        type="email"
+                        value={dependenteRapidocForm.email}
+                        onChange={(e) => setDependenteRapidocForm({ ...dependenteRapidocForm, email: e.target.value })}
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium mb-1">Telefone</label>
+                      <Input
+                        value={dependenteRapidocForm.phone}
+                        onChange={(e) => setDependenteRapidocForm({ ...dependenteRapidocForm, phone: e.target.value })}
+                      />
+                    </div>
                   </div>
-                  <div>
-                    <label className="block text-sm font-medium mb-1">Data de Nascimento *</label>
-                    <Input name="birthDate" type="date" required />
+                  <div className="flex justify-end gap-2 pt-4">
+                    <Button variant="outline" type="button" onClick={fecharEdicaoDependente} disabled={salvandoDependenteRapidoc}>Cancelar</Button>
+                    <Button variant="primary" type="submit" isLoading={salvandoDependenteRapidoc} disabled={salvandoDependenteRapidoc}>Salvar Rapidoc</Button>
                   </div>
-                  <div>
-                    <label className="block text-sm font-medium mb-1">Email *</label>
-                    <Input name="email" type="email" required />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium mb-1">Telefone</label>
-                    <Input name="phone" type="tel" />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium mb-1">CEP</label>
-                    <Input name="zipCode" />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium mb-1">Endereço</label>
-                    <Input name="address" />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium mb-1">Cidade</label>
-                    <Input name="city" />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium mb-1">Estado</label>
-                    <Input name="state" maxLength={2} />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium mb-1">Plano</label>
-                    <select
-                      name="planoId"
-                      value={planoSelecionadoId}
-                      onChange={(e) => setPlanoSelecionadoId(e.target.value)}
-                      className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800"
-                      required
-                    >
-                      <option value="">Selecione um plano</option>
-                      {planos.map((plano: any) => (
-                        <option key={plano.id} value={plano.id}>{plano.tipo || plano.descricao} - R$ {plano.preco?.toFixed(2)}</option>
-                      ))}
-                    </select>
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium mb-1">Payment Type (do plano)</label>
-                    <Input value={planos.find((p: any) => String(p.id) === String(planoSelecionadoId))?.paymentType || ''} readOnly placeholder="Selecione um plano" />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium mb-1">Service Type (UUID Rapidoc do plano)</label>
-                    <Input value={planos.find((p: any) => String(p.id) === String(planoSelecionadoId))?.uuidRapidocPlano || ''} readOnly placeholder="Selecione um plano" />
-                  </div>
-                </div>
-                <div className="flex items-center gap-2">
-                  <input type="checkbox" name="cortesia" id="cortesia" />
-                  <label htmlFor="cortesia" className="text-sm">
-                    Cortesia (não gera faturas)
-                  </label>
-                </div>
-                <div className="flex justify-end gap-2">
-                  <Button variant="outline" type="button" onClick={() => setModalCadastrarVida(null)}>
-                    Cancelar
-                  </Button>
-                  <Button variant="primary" type="submit">
-                    Cadastrar
-                  </Button>
-                </div>
-              </form>
+                </form>
+              </div>
             )}
           </Dialog.Content>
         </Dialog>
