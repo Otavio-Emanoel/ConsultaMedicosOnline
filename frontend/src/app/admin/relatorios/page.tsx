@@ -108,21 +108,6 @@ export default function AdminRelatoriosPage() {
     fetchData();
   }, []);
 
-  function exportarPDF() {
-    const doc = new jsPDF();
-    doc.text('Relatório de Métricas', 10, 10);
-    if (data) {
-      doc.text(`Receita Total: R$ ${data.totalFaturamento.toLocaleString('pt-BR')}`, 10, 20);
-      doc.text(`Total de Assinantes: ${data.totalAssinantes}`, 10, 30);
-      doc.text(`Total de Consultas: ${data.totalConsultas}`, 10, 40);
-      doc.text(`Cancelamentos: ${data.cancelamentos}`, 10, 50);
-      doc.text(`Erros Pendentes: ${data.metricasErros.pendentes}`, 10, 60);
-      doc.text(`Erros Críticos: ${data.metricasErros.criticos}`, 10, 70);
-      doc.text(`Erros Recentes: ${data.metricasErros.recentes}`, 10, 80);
-    }
-    doc.save('relatorio-metricas.pdf');
-  }
-
   if (loading) {
     return <DashboardLayout title="Relatórios"><div className="p-8 text-center">Carregando...</div></DashboardLayout>;
   }
@@ -188,6 +173,19 @@ export default function AdminRelatoriosPage() {
       : [];
   const planosLabels = planosDetalhados.map((p) => p.nome ?? 'Plano');
   const planosData = planosDetalhados.map((p) => Number(p.assinantes ?? 0));
+
+  function exportarPDF() {
+    const doc = new jsPDF();
+    doc.text('Relatório de Métricas', 10, 10);
+    doc.text(`Receita Total: R$ ${totalFaturamento.toLocaleString('pt-BR')}`, 10, 20);
+    doc.text(`Assinantes: ${totalAssinantes}`, 10, 30);
+    doc.text(`Consultas: ${totalConsultas}`, 10, 40);
+    doc.text(`Cancelamentos: ${cancelamentos}`, 10, 50);
+    doc.text(`Erros Pendentes: ${errosPendentes}`, 10, 60);
+    doc.text(`Erros Críticos: ${errosCriticos}`, 10, 70);
+    doc.text(`Erros Recentes: ${errosRecentes}`, 10, 80);
+    doc.save('relatorio-metricas.pdf');
+  }
 
   return (
     <DashboardLayout title="Relatórios">
