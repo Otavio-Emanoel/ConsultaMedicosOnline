@@ -168,19 +168,22 @@ export class DependenteController {
 
   static async editar(req: Request, res: Response) {
     try {
-      const cpfParam = req.params.cpf || req.params.id;
-      if (!cpfParam) return res.status(400).json({ error: 'CPF do dependente não informado.' });
+      const cpfParam = (req.params as any).cpf || (req.params as any).id;
+      if (!cpfParam) {
+        return res.status(400).json({ error: 'CPF do dependente não informado.' });
+      }
 
       const { nome, birthDate, parentesco, holder, email, phone, zipCode, address, city, state, paymentType, serviceType, plans } = req.body;
       
       // Validação básica se veio algo para atualizar
       const hasUpdates = [nome, birthDate, email, phone, zipCode, address, city, state, paymentType, serviceType, plans, parentesco].some(v => v !== undefined && v !== '');
-      if (!hasUpdates) return res.status(400).json({ error: 'Nenhum campo para atualizar.' });
+      if (!hasUpdates) return res.status(400).json({ error: 'Nenhum campo para atualizar informado.' });
 
-      // 1. Busca local
+      // 1. Busca o dependente no Firestore pelo CPF
       const snapshot = await admin.firestore().collection('beneficiarios').where('cpf', '==', cpfParam).limit(1).get();
-      if (snapshot.empty) return res.status(404).json({ error: 'Dependente não encontrado no sistema.' });
-      
+      if (snapshot.empty) {
+        return res.status(404).json({ error: 'Dependente não encontrado no sistema.' });
+      }
       const doc = snapshot.docs[0];
       // @ts-ignore
       const dependente = doc.data();
@@ -189,15 +192,14 @@ export class DependenteController {
       // 2. Se não tem UUID, tenta recuperar do Rapidoc via CPF
       if (!rapidocUuid) {
         try {
-          const { RAPIDOC_BASE_URL, RAPIDOC_TOKEN, RAPIDOC_CLIENT_ID } = process.env;
+          const { RAPIDOC_BASE_URL, RAPIDOC_TOKEN, RAPIDOC_CLIENT_ID } = process.env as Record<string, string | undefined>;
           const resp = await axios.get(`${RAPIDOC_BASE_URL}/tema/api/beneficiaries/${cpfParam}`, {
-             headers: { Authorization: `Bearer ${RAPIDOC_TOKEN}`, clientId: RAPIDOC_CLIENT_ID, 'Content-Type': 'application/vnd.rapidoc.tema-v2+json' }
+             headers: { Authorization: `Bearer ${RAPIDOC_TOKEN}`, clientId: RAPIDOC_CLIENT_ID as string, 'Content-Type': 'application/vnd.rapidoc.tema-v2+json' }
           });
-          // Tenta achar o UUID na resposta (varias estruturas possíveis)
           const data = resp.data;
           rapidocUuid = data?.beneficiary?.uuid || (Array.isArray(data?.beneficiaries) ? data.beneficiaries[0]?.uuid : null) || data?.uuid;
           
-          // @ts-ignore
+      // @ts-ignore
           if (rapidocUuid) await doc.ref.update({ rapidocUuid });
         } catch (e) {
           console.warn('[DependenteController.editar] Não foi possível recuperar UUID externo.');
@@ -208,24 +210,34 @@ export class DependenteController {
       if (rapidocUuid) {
         const rapidocBody: any = { uuid: rapidocUuid };
         
-        // Mapeamento correto de campos
-        if (nome) rapidocBody.name = nome; // Importante: local é 'nome', rapidoc é 'name'
-        if (birthDate) rapidocBody.birthday = birthDate; // Importante: local é 'birthDate', rapidoc é 'birthday'
-        if (email) rapidocBody.email = email;
+        // Mapeamento e lógica para evitar envio duplicado de email
+        if (nome) rapidocBody.name = nome;
+        if (birthDate) rapidocBody.birthday = birthDate;
+        
+        // CORREÇÃO: Só envia o email se ele for diferente do que está no banco
+        // Isso evita o erro "Email address already in use" se o usuário não trocou o email
+        if (email && email.trim() !== (dependente.email || '').trim()) {
+            rapidocBody.email = email.trim();
+        }
+
         if (phone) rapidocBody.phone = phone.replace(/\D/g, '');
         if (zipCode) rapidocBody.zipCode = zipCode;
         if (address) rapidocBody.address = address;
         if (city) rapidocBody.city = city;
         if (state) rapidocBody.state = state;
 
-        // Planos
+        // Lógica de Planos e Pagamento
         if (Array.isArray(plans) && plans.length > 0) {
             rapidocBody.plans = plans;
-        } else if (serviceType) {
-            rapidocBody.plans = [{
-                plan: { uuid: serviceType },
-                paymentType: paymentType || 'S'
-            }];
+        } else if (serviceType && serviceType.trim()) {
+            // Só monta o plano se serviceType for válido
+            const pt = paymentType ? String(paymentType).trim().toUpperCase() : 'S';
+            if (pt === 'S' || pt === 'A') {
+                rapidocBody.plans = [{
+                    plan: { uuid: serviceType.trim() },
+                    paymentType: pt
+                }];
+            }
         }
 
         try {
@@ -233,19 +245,19 @@ export class DependenteController {
            await atualizarBeneficiarioRapidoc(rapidocUuid, rapidocBody);
         } catch (e: any) {
            console.error('[DependenteController.editar] Erro Rapidoc:', e.response?.data || e.message);
-           // Se der erro 422 (validação) ou 400, retornamos para o front saber
+           // Retorna erro se for 422 (validação) ou 400
            if (e.response && (e.response.status === 422 || e.response.status === 400)) {
                return res.status(e.response.status).json({ 
                    error: 'Erro de validação no Rapidoc', 
                    details: e.response.data 
                });
            }
-           // Se for outro erro, logamos mas tentamos seguir com a atualização local se possível
         }
       }
 
-      // 4. Atualiza no Firestore (Protegido contra undefined)
+      // 4. Atualiza no Firestore
       const holderFinal = holder || dependente.holder;
+      
       const updateLocal: any = {
         nome: nome ?? dependente.nome,
         birthDate: birthDate ?? dependente.birthDate,
@@ -256,14 +268,12 @@ export class DependenteController {
         city: city ?? dependente.city ?? null,
         state: state ?? dependente.state ?? null,
         parentesco: parentesco ?? dependente.parentesco ?? null,
-        // Atualiza planos locais
         paymentType: paymentType ?? dependente.paymentType ?? null,
         serviceType: serviceType ?? dependente.serviceType ?? null,
         rapidocUuid: rapidocUuid || dependente.rapidocUuid || null,
         updatedAt: new Date()
       };
 
-      // Limpa chaves undefined
       Object.keys(updateLocal).forEach(key => updateLocal[key] === undefined && delete updateLocal[key]);
 
       // @ts-ignore
