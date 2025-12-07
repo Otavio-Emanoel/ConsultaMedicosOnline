@@ -749,6 +749,43 @@ export class AdminController {
     }
   }
 
+  // Inativar beneficiário no Rapidoc
+  static async inativarBeneficiarioRapidoc(req: Request, res: Response) {
+    try {
+      const { cpf } = req.params as { cpf?: string };
+      if (!cpf) return res.status(400).json({ error: 'CPF é obrigatório.' });
+
+      const { buscarBeneficiarioRapidocPorCpf, inativarBeneficiarioRapidoc } = await import('../services/rapidoc.service.js');
+      const r = await buscarBeneficiarioRapidocPorCpf(cpf);
+      const beneficiario = r?.beneficiary;
+      if (!beneficiario || !beneficiario.uuid) {
+        return res.status(404).json({ error: 'Beneficiário não encontrado no Rapidoc.' });
+      }
+
+      try {
+        const resp = await inativarBeneficiarioRapidoc(beneficiario.uuid);
+        if (!resp || resp.success === false) {
+          return res.status(400).json({ error: resp?.message || 'Falha ao inativar beneficiário no Rapidoc.', detail: resp });
+        }
+
+        // Opcional: refletir inatividade no Firestore
+        try {
+          const db = getFirestore(firebaseApp);
+          const snap = await db.collection('beneficiarios').where('cpf', '==', String(cpf).replace(/\D/g, '')).limit(1).get();
+          if (!snap.empty) {
+            await snap.docs[0]!.ref.set({ isActive: false, updatedAt: new Date().toISOString() }, { merge: true });
+          }
+        } catch {}
+
+        return res.status(200).json({ ok: true, beneficiaryUuid: beneficiario.uuid });
+      } catch (e: any) {
+        return res.status(400).json({ error: 'Erro ao inativar beneficiário no Rapidoc.', detail: e?.response?.data || e?.message });
+      }
+    } catch (error: any) {
+      return res.status(500).json({ error: error?.message || 'Erro ao inativar beneficiário.' });
+    }
+  }
+
   // Cadastrar nova vida (beneficiário) com opção de cortesia
   static async cadastrarVida(req: Request, res: Response) {
     try {

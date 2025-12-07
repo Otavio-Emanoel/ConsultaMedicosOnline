@@ -99,6 +99,9 @@ export default function AdminAssinantesPage() {
   const [dependentes, setDependentes] = useState<any[]>([]);
   const [loadingDependentes, setLoadingDependentes] = useState<boolean>(false);
   const [planos, setPlanos] = useState<any[]>([]);
+  const [showFilters, setShowFilters] = useState(false);
+  const [filtroStatus, setFiltroStatus] = useState<string>('');
+  const [filtroPlano, setFiltroPlano] = useState<string>('');
 
   useEffect(() => {
     const fetchData = async () => {
@@ -314,8 +317,12 @@ export default function AdminAssinantesPage() {
         const errorData = await resp.json().catch(() => ({ error: 'Erro desconhecido' }));
         throw new Error(errorData.error || 'Erro ao ativar vida');
       }
-      // Recarregar dados
-      window.location.reload();
+      // Atualiza estado local: status ativo
+      setAssinantes(prev => prev.map(a => a.cpf === cpf ? { ...a, status: 'ativo' } : a));
+      if (modalAssinante && modalAssinante.cpf === cpf) {
+        setModalAssinante({ ...modalAssinante, status: 'ativo' });
+      }
+      if (modalAssinante) buscarDependentes(modalAssinante.cpf);
     } catch (e: any) {
       setError(e?.message || 'Erro ao ativar vida');
     }
@@ -334,7 +341,7 @@ export default function AdminAssinantesPage() {
         'Authorization': `Bearer ${token}`,
       };
       
-      const resp = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL}/beneficiarios/${cpf}/inativar-rapidoc`, {
+      const resp = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL}/admin/beneficiarios/${cpf}/inativar-rapidoc`, {
         method: 'POST',
         headers,
       });
@@ -342,10 +349,12 @@ export default function AdminAssinantesPage() {
         const errorData = await resp.json().catch(() => ({ error: 'Erro desconhecido' }));
         throw new Error(errorData.error || 'Erro ao inativar vida');
       }
-      // Recarregar dados
-      if (modalAssinante) {
-        buscarDependentes(modalAssinante.cpf);
+      // Atualiza estado local: status suspenso
+      setAssinantes(prev => prev.map(a => a.cpf === cpf ? { ...a, status: 'suspenso' } : a));
+      if (modalAssinante && modalAssinante.cpf === cpf) {
+        setModalAssinante({ ...modalAssinante, status: 'suspenso' });
       }
+      if (modalAssinante) buscarDependentes(modalAssinante.cpf);
     } catch (e: any) {
       setError(e?.message || 'Erro ao inativar vida');
     }
@@ -403,15 +412,19 @@ export default function AdminAssinantesPage() {
   }, []);
 
   const filteredAssinantes = useMemo(() => {
-    return assinantes.map(a => ({
-      ...a,
-      ultimoPagamento: assinantesPagamentos[a.cpf] || '—',
-    })).filter(a =>
-      a.nome.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      a.email.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      a.cpf.includes(searchTerm)
-    );
-  }, [assinantes, assinantesPagamentos, searchTerm]);
+    return assinantes
+      .map(a => ({
+        ...a,
+        ultimoPagamento: assinantesPagamentos[a.cpf] || '—',
+      }))
+      .filter(a =>
+        a.nome.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        a.email.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        a.cpf.includes(searchTerm)
+      )
+      .filter(a => (filtroStatus ? a.status === filtroStatus : true))
+      .filter(a => (filtroPlano ? a.plano === filtroPlano : true));
+  }, [assinantes, assinantesPagamentos, searchTerm, filtroStatus, filtroPlano]);
 
   const getStatusBadge = (status: string) => {
     switch (status) {
@@ -598,10 +611,53 @@ export default function AdminAssinantesPage() {
                 icon={<Search className="w-5 h-5" />}
               />
             </div>
-            <Button variant="outline">
-              <Filter className="w-5 h-5 mr-2" />
-              Filtros
-            </Button>
+            <div className="relative">
+              <Button variant="outline" onClick={() => setShowFilters(v => !v)}>
+                <Filter className="w-5 h-5 mr-2" />
+                Filtros
+              </Button>
+              {showFilters && (
+                <div className="absolute z-20 mt-2 right-0 w-64 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl shadow-lg p-4 space-y-4">
+                  <div>
+                    <p className="text-sm font-semibold text-gray-700 dark:text-gray-200 mb-2">Status</p>
+                    <select
+                      value={filtroStatus}
+                      onChange={(e) => setFiltroStatus(e.target.value)}
+                      className="w-full px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 text-sm"
+                    >
+                      <option value="">Todos</option>
+                      <option value="ativo">Ativo</option>
+                      <option value="pendente">Pendente</option>
+                      <option value="suspenso">Suspenso</option>
+                    </select>
+                  </div>
+                  <div>
+                    <p className="text-sm font-semibold text-gray-700 dark:text-gray-200 mb-2">Plano</p>
+                    <select
+                      value={filtroPlano}
+                      onChange={(e) => setFiltroPlano(e.target.value)}
+                      className="w-full px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 text-sm"
+                    >
+                      <option value="">Todos</option>
+                      {planos.map((plano: any) => {
+                        const label = plano.tipo || plano.descricao || plano.id;
+                        return (
+                          <option key={plano.id} value={label}>{label}</option>
+                        );
+                      })}
+                    </select>
+                  </div>
+                  <div className="flex justify-end gap-2">
+                    <Button variant="outline" size="sm" onClick={() => { setFiltroStatus(''); setFiltroPlano(''); }}>
+                      Limpar
+                    </Button>
+                    <Button variant="primary" size="sm" onClick={() => setShowFilters(false)}>
+                      Aplicar
+                    </Button>
+                  </div>
+                </div>
+              )}
+            </div>
           </div>
         </CardBody>
       </Card>
