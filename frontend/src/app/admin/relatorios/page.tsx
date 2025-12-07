@@ -176,14 +176,102 @@ export default function AdminRelatoriosPage() {
 
   function exportarPDF() {
     const doc = new jsPDF();
-    doc.text('Relatório de Métricas', 10, 10);
-    doc.text(`Receita Total: R$ ${totalFaturamento.toLocaleString('pt-BR')}`, 10, 20);
-    doc.text(`Assinantes: ${totalAssinantes}`, 10, 30);
-    doc.text(`Consultas: ${totalConsultas}`, 10, 40);
-    doc.text(`Cancelamentos: ${cancelamentos}`, 10, 50);
-    doc.text(`Erros Pendentes: ${errosPendentes}`, 10, 60);
-    doc.text(`Erros Críticos: ${errosCriticos}`, 10, 70);
-    doc.text(`Erros Recentes: ${errosRecentes}`, 10, 80);
+    const now = new Date();
+    const dataStr = now.toLocaleString('pt-BR');
+
+    const formatBRL = (v: number) => `R$ ${Number(v || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`;
+
+    // Header
+    doc.setFillColor(37, 99, 235);
+    doc.rect(0, 0, 210, 28, 'F');
+    doc.setTextColor(255, 255, 255);
+    doc.setFontSize(16);
+    doc.text('Relatório de Métricas', 12, 18);
+    doc.setFontSize(10);
+    doc.text(`Gerado em ${dataStr}`, 150, 18, { align: 'left' });
+
+    // Cards resumidos
+    const cardY = 38;
+    const cardW = 46;
+    const cardH = 24;
+    const cards = [
+      { label: 'Receita Total', value: formatBRL(totalFaturamento) },
+      { label: 'Assinantes', value: String(totalAssinantes) },
+      { label: 'Consultas', value: String(totalConsultas) },
+      { label: 'Cancelamentos', value: String(cancelamentos) },
+    ];
+    doc.setTextColor(33, 37, 41);
+    doc.setFontSize(11);
+    cards.forEach((c, i) => {
+      const x = 12 + i * (cardW + 6);
+      doc.setDrawColor(230, 236, 245);
+      doc.setFillColor(247, 250, 255);
+      doc.roundedRect(x, cardY, cardW, cardH, 3, 3, 'DF');
+      doc.setFontSize(9);
+      doc.text(c.label, x + 4, cardY + 8);
+      doc.setFontSize(12);
+      doc.setTextColor(37, 99, 235);
+      doc.text(c.value, x + 4, cardY + 18);
+      doc.setTextColor(33, 37, 41);
+    });
+
+    let y = cardY + cardH + 14;
+
+    // Receita
+    doc.setFontSize(12);
+    doc.text('Receita (mês anterior vs atual)', 12, y);
+    y += 6;
+    doc.setFontSize(10);
+    doc.text(`Mês anterior: ${formatBRL(Number(data.faturamento?.mesAnterior ?? 0))}`, 12, y);
+    doc.text(`Mês atual: ${formatBRL(Number(data.faturamento?.mesAtual ?? 0))}`, 90, y);
+    const variacaoMes = data.faturamento?.variacaoMes;
+    if (typeof variacaoMes === 'number') {
+      doc.text(`Variação: ${variacaoMes.toFixed(2)}%`, 150, y);
+    }
+
+    // Planos
+    y += 10;
+    doc.setFontSize(12);
+    doc.text('Planos (assinantes por plano)', 12, y);
+    y += 6;
+    doc.setFontSize(10);
+    const planosToShow = planosDetalhados.slice(0, 6);
+    if (!planosToShow.length) {
+      doc.text('Sem dados de planos.', 12, y);
+      y += 8;
+    } else {
+      planosToShow.forEach((p) => {
+        doc.text(`${p.nome ?? 'Plano'} — ${p.assinantes ?? 0} assinantes`, 12, y);
+        y += 6;
+      });
+    }
+
+    // Erros
+    y += 4;
+    doc.setFontSize(12);
+    doc.text('Métricas de erros', 12, y);
+    y += 6;
+    doc.setFontSize(10);
+    doc.text(`Pendentes: ${errosPendentes}`, 12, y);
+    doc.text(`Críticos: ${errosCriticos}`, 70, y);
+    doc.text(`Recentes: ${errosRecentes}`, 130, y);
+
+    // Novos assinantes (se houver)
+    y += 10;
+    const novos = Array.isArray(data.novosAssinantes) ? data.novosAssinantes.slice(0, 6) : [];
+    doc.setFontSize(12);
+    doc.text('Novos assinantes (últimos)', 12, y);
+    y += 6;
+    doc.setFontSize(10);
+    if (!novos.length) {
+      doc.text('Sem novos assinantes listados.', 12, y);
+    } else {
+      novos.forEach((n) => {
+        doc.text(`${n.nome ?? '—'} — ${n.plano ?? 'Plano'} — ${n.data ?? ''}`, 12, y);
+        y += 6;
+      });
+    }
+
     doc.save('relatorio-metricas.pdf');
   }
 
