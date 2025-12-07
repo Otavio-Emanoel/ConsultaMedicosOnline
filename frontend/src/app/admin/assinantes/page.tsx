@@ -98,6 +98,7 @@ export default function AdminAssinantesPage() {
   const [modalCadastrarVida, setModalCadastrarVida] = useState<{ cpfTitular: string; nomeTitular: string } | null>(null);
   const [dependentes, setDependentes] = useState<any[]>([]);
   const [loadingDependentes, setLoadingDependentes] = useState<boolean>(false);
+  const [dependentesError, setDependentesError] = useState<string>('');
   const [planos, setPlanos] = useState<any[]>([]);
   const [showFilters, setShowFilters] = useState(false);
   const [filtroStatus, setFiltroStatus] = useState<string>('');
@@ -274,6 +275,7 @@ export default function AdminAssinantesPage() {
 
   const buscarDependentes = async (cpf: string) => {
     setLoadingDependentes(true);
+    setDependentesError('');
     try {
       const token = typeof window !== 'undefined' 
         ? (localStorage.getItem('token') || localStorage.getItem('auth_token')) 
@@ -290,7 +292,7 @@ export default function AdminAssinantesPage() {
       const data = await resp.json();
       setDependentes(data.dependentes || []);
     } catch (e: any) {
-      setError(e?.message || 'Erro ao buscar dependentes');
+      setDependentesError(e?.message || 'Erro ao buscar dependentes');
       setDependentes([]);
     } finally {
       setLoadingDependentes(false);
@@ -855,8 +857,13 @@ export default function AdminAssinantesPage() {
                       Cadastrar Nova Vida
                     </Button>
                   </div>
+                  {dependentesError && !loadingDependentes && (
+                    <div className="mb-2 text-sm text-red-500">{dependentesError}</div>
+                  )}
                   {loadingDependentes ? (
                     <p className="text-sm text-gray-500">Carregando dependentes...</p>
+                  ) : dependentesError ? (
+                    <p className="text-sm text-red-500">{dependentesError}</p>
                   ) : dependentes.length === 0 ? (
                     <p className="text-sm text-gray-500">Nenhum dependente cadastrado.</p>
                   ) : (
