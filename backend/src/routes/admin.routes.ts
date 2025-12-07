@@ -25,6 +25,9 @@ router.post('/admin/gerar-nova-senha', autenticarAdministrador, AdminController.
 // POST /api/admin/beneficiarios/:cpf/ativar-rapidoc - Ativar beneficiário no Rapidoc
 router.post('/admin/beneficiarios/:cpf/ativar-rapidoc', autenticarAdministrador, AdminController.ativarBeneficiarioRapidoc);
 
+// POST /api/admin/beneficiarios/:cpf/inativar-rapidoc - Inativar beneficiário no Rapidoc
+router.post('/admin/beneficiarios/:cpf/inativar-rapidoc', autenticarAdministrador, AdminController.inativarBeneficiarioRapidoc);
+
 // POST /api/admin/assinantes/:cpfTitular/vidas/cadastrar - Cadastrar nova vida com opção de cortesia
 router.post('/admin/assinantes/:cpfTitular/vidas/cadastrar', autenticarAdministrador, AdminController.cadastrarVida);
 

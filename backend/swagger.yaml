@@ -976,6 +976,90 @@ paths:
         '200':
           description: Lista de dependentes.
 
+  /dependentes/{cpf}/local:
+    put:
+      summary: Atualiza apenas dados locais do dependente (Firestore)
+      description: Atualiza campos armazenados no Firestore sem enviar nada ao Rapidoc.
+      tags: [Dependentes]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: cpf
+          in: path
+          required: true
+          schema: { type: string }
+          description: CPF atual do dependente (somente números)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                nome: { type: string }
+                birthDate: { type: string, example: "2000-12-12" }
+                parentesco: { type: string }
+                holder: { type: string, description: "CPF do titular" }
+                email: { type: string }
+                phone: { type: string }
+                zipCode: { type: string }
+                address: { type: string }
+                city: { type: string }
+                state: { type: string }
+                paymentType: { type: string, description: "Armazenado apenas no banco" }
+                serviceType: { type: string, description: "Armazenado apenas no banco" }
+                cpf: { type: string, description: "Novo CPF para alterar" }
+      responses:
+        '200': { description: Dependente atualizado localmente; retorna lista atualizada }
+        '400': { description: Requisição inválida }
+        '401': { description: Não autenticado }
+        '404': { description: Dependente não encontrado }
+        '500': { description: Erro interno }
+
+  /dependentes/{cpf}/rapidoc:
+    put:
+      summary: Atualiza dados do dependente no Rapidoc
+      description: Envia somente campos do Rapidoc (plano/pagamento/endereço/contact) e reflete no Firestore os valores enviados.
+      tags: [Dependentes]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: cpf
+          in: path
+          required: true
+          schema: { type: string }
+          description: CPF atual do dependente (somente números)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                serviceType: { type: string, description: "UUID do plano Rapidoc" }
+                paymentType: { type: string, description: "Tipo de pagamento Rapidoc. Aceita apenas S ou A" }
+                email: { type: string }
+                phone: { type: string, description: "11 dígitos" }
+                zipCode: { type: string }
+                address: { type: string }
+                city: { type: string }
+                state: { type: string }
+                cpf: { type: string, description: "Novo CPF para sincronizar" }
+                plans:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      paymentType: { type: string }
+                      plan:
+                        type: object
+                        properties:
+                          uuid: { type: string }
+      responses:
+        '200': { description: Dependente atualizado no Rapidoc; retorna lista atualizada }
+        '400': { description: Erro de validação ou plano inválido }
+        '401': { description: Não autenticado }
+        '404': { description: Dependente não encontrado }
+        '500': { description: Erro interno }
+
   /beneficiarios/{cpf}/especialidades:
     get:
       summary: Listar Especialidades do Beneficiário

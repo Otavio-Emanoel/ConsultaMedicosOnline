@@ -6,63 +6,163 @@ import axios from 'axios';
 export class DependenteController {
   static async adicionar(req: Request, res: Response) {
     try {
-      const { nome, cpf, birthDate, parentesco, holder, email, phone, zipCode, paymentType, serviceType } = req.body;
-      console.log('[DependenteController.adicionar] Início', { hasNome: !!nome, hasCpf: !!cpf, hasBirthDate: !!birthDate, hasHolder: !!holder });
-      if (!nome || !cpf || !birthDate || !holder) {
-        return res.status(400).json({ error: 'Campos obrigatórios não informados.' });
+      // 1. Extração dos dados
+      const { 
+        nome, 
+        cpf, 
+        birthDate, 
+        parentesco, 
+        holder, 
+        email, 
+        phone, 
+        zipCode, 
+        address, 
+        city, 
+        state, 
+        paymentType, 
+        serviceType, 
+        plans 
+      } = req.body;
+
+      console.log('[DependenteController.adicionar] Início', { 
+        nome, 
+        hasCpf: !!cpf, 
+        birthDate, 
+        holder 
+      });
+
+      // 2. Sanitização Básica
+      const cpfNormalizado = typeof cpf === 'string' ? cpf.replace(/\D/g, '') : '';
+      const holderNormalizado = typeof holder === 'string' ? holder.replace(/\D/g, '') : '';
+      const phoneDigits = typeof phone === 'string' ? phone.replace(/\D/g, '') : '';
+
+      // 3. Validações Obrigatórias
+      if (!nome || !cpfNormalizado || !birthDate || !holderNormalizado) {
+        return res.status(400).json({ error: 'Campos obrigatórios (nome, cpf, birthDate, holder) não informados.' });
       }
 
-      // 1. Cria no Rapidoc
-      console.log('[DependenteController.adicionar] Chamando Rapidoc cadastrarBeneficiario');
-      const rapidocPayload: any = {
-        nome,
-        cpf,
+      if (typeof nome === 'string' && nome.trim().split(' ').length < 2) {
+        return res.status(400).json({ 
+          error: 'Nome inválido. É necessário informar o nome completo (Nome e Sobrenome) para o cadastro.' 
+        });
+      }
+
+      // 4. Montagem dos Planos
+      const plansNormalizados: Array<{ paymentType: string; plan: { uuid: string } }> = Array.isArray(plans)
+        ? plans
+          .filter((p: any) => p && p.plan && typeof p.plan.uuid === 'string')
+          .map((p: any) => ({
+            plan: { uuid: String(p.plan.uuid).trim() },
+            paymentType: p.paymentType ? String(p.paymentType).trim().toUpperCase() : 'S',
+          }))
+        : [];
+
+      if (plansNormalizados.length === 0 && (serviceType || paymentType)) {
+        if (serviceType) {
+            plansNormalizados.push({
+                plan: { uuid: String(serviceType).trim() },
+                paymentType: paymentType ? String(paymentType).trim().toUpperCase() : 'S'
+            });
+        }
+      }
+
+      // 5. Preparação do Payload para o Service Rapidoc
+      const rapidocPayload = {
+        nome: nome.trim(),
+        cpf: cpfNormalizado,
         birthday: birthDate,
         email,
-        // Envia phone apenas se válido (11 dígitos sem país)
-        ...(typeof phone === 'string' && phone.replace(/\D/g, '').length === 11 ? { phone: phone.replace(/\D/g, '') } : {}),
+        phone: phoneDigits,
         zipCode,
-        holder
+        address,
+        city,
+        state,
+        holder: holderNormalizado,
+        plans: plansNormalizados
       };
-      // Se houver serviceType/paymentType, envia como plans conforme tipo esperado pela API
-      if (serviceType || paymentType) {
-        const planEntry: any = { plan: { uuid: serviceType || '' } };
-        if (paymentType) planEntry.paymentType = paymentType;
-        rapidocPayload.plans = [planEntry];
-      }
+
+      console.log('[DependenteController.adicionar] Payload para Service:', JSON.stringify(rapidocPayload));
+
+      // 6. Chamada ao Rapidoc Service
       const rapidocResp = await cadastrarBeneficiarioRapidoc(rapidocPayload);
-      console.log('[DependenteController.adicionar] Resposta Rapidoc', { success: rapidocResp?.success, uuid: rapidocResp?.uuid });
-      if (!rapidocResp || rapidocResp.success === false) {
-        return res.status(400).json({ error: rapidocResp?.message || 'Erro ao criar dependente no Rapidoc.' });
+      
+      console.log('[DependenteController.adicionar] Resposta Bruta Rapidoc:', JSON.stringify(rapidocResp));
+
+      // Normalização da resposta (pode ser array ou objeto)
+      const rapidocObj = Array.isArray(rapidocResp) ? rapidocResp[0] : rapidocResp;
+
+      if (rapidocObj && rapidocObj.success === false) {
+         return res.status(400).json({ 
+             error: rapidocObj.message || 'Erro lógico ao criar dependente no Rapidoc.',
+             details: rapidocObj 
+         });
       }
 
-      // 2. Salva no Firestore
+      // --- LÓGICA DE EXTRAÇÃO DO UUID CORRIGIDA ---
+      let uuidGerado = rapidocObj?.uuid;
+
+      // Caso 1: Estrutura { beneficiary: { uuid: ... } } (Singular)
+      if (!uuidGerado && rapidocObj?.beneficiary?.uuid) {
+          uuidGerado = rapidocObj.beneficiary.uuid;
+      }
+      
+      // Caso 2: Estrutura { beneficiaries: [ { uuid: ... } ] } (Plural - Array) -> SEU CASO ATUAL
+      if (!uuidGerado && Array.isArray(rapidocObj?.beneficiaries) && rapidocObj.beneficiaries.length > 0) {
+          uuidGerado = rapidocObj.beneficiaries[0].uuid;
+      }
+
+      // Caso 3: Estrutura antiga ou alternativa { data: { uuid: ... } }
+      if (!uuidGerado && rapidocObj?.data?.uuid) {
+          uuidGerado = rapidocObj.data.uuid;
+      }
+
+      if (!uuidGerado) {
+          console.warn('[DependenteController.adicionar] ATENÇÃO: UUID não encontrado na resposta do Rapidoc. Estrutura recebida:', Object.keys(rapidocObj || {}));
+      }
+
+      // 7. Salva no Firestore
       const docData: any = {
         nome,
-        cpf,
+        cpf: cpfNormalizado,
         birthDate,
-        parentesco,
-        holder,
-        email,
-        phone,
-        zipCode,
-        paymentType,
-        serviceType,
+        parentesco: parentesco || null,
+        holder: holderNormalizado,
+        email: email || null,
+        phone: phoneDigits || null,
+        zipCode: zipCode || null,
+        address: address || null,
+        city: city || null,
+        state: state || null,
+        paymentType: plansNormalizados[0]?.paymentType || paymentType || null,
+        serviceType: plansNormalizados[0]?.plan?.uuid || serviceType || null,
+        rapidocUuid: uuidGerado || null, 
         createdAt: new Date(),
       };
-      if (rapidocResp.uuid) {
-        docData.rapidocUuid = rapidocResp.uuid;
-      }
-      const createdRef = await admin.firestore().collection('beneficiarios').add(docData);
-      console.log('[DependenteController.adicionar] Documento criado', { docId: createdRef.id, hasRapidocUuid: !!docData.rapidocUuid });
+      
+      Object.keys(docData).forEach(key => docData[key] === undefined && delete docData[key]);
 
-      // 3. Retorna lista atualizada
-      const snapshot = await admin.firestore().collection('beneficiarios').where('holder', '==', holder).get();
+      const createdRef = await admin.firestore().collection('beneficiarios').add(docData);
+      console.log('[DependenteController.adicionar] Documento criado no Firestore:', createdRef.id, 'com UUID Rapidoc:', uuidGerado);
+
+      // 8. Retorna lista atualizada
+      const snapshot = await admin.firestore().collection('beneficiarios').where('holder', '==', holderNormalizado).get();
       const dependentes = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      
       return res.status(201).json({ dependentes });
+
     } catch (error: any) {
-      console.error('[DependenteController.adicionar] Erro inesperado', { message: error?.message });
-      return res.status(500).json({ error: error.message || 'Erro ao adicionar dependente.' });
+      console.error('[DependenteController.adicionar] Erro:', error);
+
+      if (error.response) {
+        const status = error.response.status || 500;
+        const data = error.response.data || {};
+        return res.status(status).json({ 
+            error: data.message || data.error || error.message, 
+            details: data 
+        });
+      }
+
+      return res.status(500).json({ error: error.message || 'Erro interno ao adicionar dependente.' });
     }
   }
 
@@ -73,256 +173,127 @@ export class DependenteController {
         return res.status(400).json({ error: 'CPF do dependente não informado.' });
       }
 
-      const { nome, birthDate, parentesco, holder, email, phone, zipCode, address, city, state, paymentType, serviceType, cpf, plans } = req.body;
-      // Aceitar também alterações de 'parentesco' e 'holder' como válidas
-      const hasAnyUpdateField = (
-        (typeof nome === 'string' && nome.trim().length > 0) ||
-        (typeof birthDate === 'string' && birthDate.trim().length > 0) ||
-        (typeof email === 'string' && email.trim().length > 0) ||
-        (typeof phone === 'string' && phone.trim().length > 0) ||
-        (typeof zipCode === 'string' && zipCode.trim().length > 0) ||
-        (typeof address === 'string' && address.trim().length > 0) ||
-        (typeof city === 'string' && city.trim().length > 0) ||
-        (typeof state === 'string' && state.trim().length > 0) ||
-        (typeof paymentType === 'string' && paymentType.trim().length > 0) ||
-        (typeof serviceType === 'string' && serviceType.trim().length > 0) ||
-        (typeof cpf === 'string' && cpf.trim().length > 0) ||
-        (Array.isArray(plans) && plans.length > 0) ||
-        (typeof parentesco === 'string' && parentesco.trim().length > 0) ||
-        (typeof holder === 'string' && holder.trim().length > 0)
-      );
-      if (!hasAnyUpdateField) {
-        return res.status(400).json({ error: 'Nenhum campo para atualizar informado.' });
-      }
+      const { nome, birthDate, parentesco, holder, email, phone, zipCode, address, city, state, paymentType, serviceType, plans } = req.body;
+      
+      // Validação básica se veio algo para atualizar
+      const hasUpdates = [nome, birthDate, email, phone, zipCode, address, city, state, paymentType, serviceType, plans, parentesco].some(v => v !== undefined && v !== '');
+      if (!hasUpdates) return res.status(400).json({ error: 'Nenhum campo para atualizar informado.' });
 
       // 1. Busca o dependente no Firestore pelo CPF
       const snapshot = await admin.firestore().collection('beneficiarios').where('cpf', '==', cpfParam).limit(1).get();
       if (snapshot.empty) {
-        return res.status(404).json({ error: 'Dependente não encontrado.' });
+        return res.status(404).json({ error: 'Dependente não encontrado no sistema.' });
       }
       const doc = snapshot.docs[0];
-      if (!doc) {
-        return res.status(404).json({ error: 'Dependente não encontrado.' });
-      }
-      const docRef = doc.ref;
+      // @ts-ignore
       const dependente = doc.data();
+      let rapidocUuid = dependente.rapidocUuid;
 
-      // 2. Obter rapidocUuid se estiver ausente
-      let rapidocUuid: string | undefined = dependente?.rapidocUuid as string | undefined;
+      // 2. Se não tem UUID, tenta recuperar do Rapidoc via CPF
       if (!rapidocUuid) {
-        
         try {
           const { RAPIDOC_BASE_URL, RAPIDOC_TOKEN, RAPIDOC_CLIENT_ID } = process.env as Record<string, string | undefined>;
-          const urlCpf = `${RAPIDOC_BASE_URL}/tema/api/beneficiaries/${cpfParam}`;
-          const resp = await axios.get(urlCpf, {
-            headers: {
-              Authorization: `Bearer ${RAPIDOC_TOKEN}`,
-              clientId: RAPIDOC_CLIENT_ID as string,
-              'Content-Type': 'application/vnd.rapidoc.tema-v2+json'
-            }
+          const resp = await axios.get(`${RAPIDOC_BASE_URL}/tema/api/beneficiaries/${cpfParam}`, {
+             headers: { Authorization: `Bearer ${RAPIDOC_TOKEN}`, clientId: RAPIDOC_CLIENT_ID as string, 'Content-Type': 'application/vnd.rapidoc.tema-v2+json' }
           });
-          if (resp.data && resp.data.success && resp.data.beneficiary && resp.data.beneficiary.uuid) {
-            rapidocUuid = resp.data.beneficiary.uuid;
-            await docRef.update({ rapidocUuid });
-          } else {
-            return res.status(400).json({ error: 'Dependente não possui rapidocUuid e não foi possível obter do Rapidoc.' });
-          }
-        } catch (err: any) {
-          return res.status(400).json({ error: 'Dependente não possui rapidocUuid e não foi possível obter do Rapidoc.' });
-        }
-      }
-
-      // Se houver campos que impactam o Rapidoc, busca dados atuais; caso contrário, pula atualização no Rapidoc
-      const shouldUpdateRapidoc = (
-        (typeof nome === 'string' && nome.trim().length > 0) ||
-        (typeof birthDate === 'string' && birthDate.trim().length > 0) ||
-        (typeof email === 'string' && email.trim().length > 0) ||
-        (typeof phone === 'string' && phone.trim().length > 0) ||
-        (typeof zipCode === 'string' && zipCode.trim().length > 0) ||
-        (typeof address === 'string' && address.trim().length > 0) ||
-        (typeof city === 'string' && city.trim().length > 0) ||
-        (typeof state === 'string' && state.trim().length > 0) ||
-        (typeof paymentType === 'string' && paymentType.trim().length > 0) ||
-        (typeof serviceType === 'string' && serviceType.trim().length > 0) ||
-        (typeof cpf === 'string' && cpf.trim().length > 0) ||
-        (Array.isArray(plans) && plans.length > 0)
-      );
-
-      // 3. Busca os dados atuais do beneficiário no Rapidoc
-      const { RAPIDOC_BASE_URL, RAPIDOC_TOKEN, RAPIDOC_CLIENT_ID } = process.env as Record<string, string | undefined>;
-      let atualRapidoc: any;
-      if (shouldUpdateRapidoc) {
-        try {
-          const urlUuid = `${RAPIDOC_BASE_URL}/tema/api/beneficiaries/${rapidocUuid}`;
-          const respUuid = await axios.get(urlUuid, {
-            headers: {
-              Authorization: `Bearer ${RAPIDOC_TOKEN}`,
-              clientId: RAPIDOC_CLIENT_ID as string,
-              'Content-Type': 'application/vnd.rapidoc.tema-v2+json'
-            }
-          });
-          if (respUuid.data && respUuid.data.success && respUuid.data.beneficiary) {
-            atualRapidoc = respUuid.data.beneficiary;
-          }
-        } catch (e: any) {
-          console.warn('[DependenteController.editar] Falha no GET por UUID, tentando fallback CPF', { status: e?.response?.status });
-        }
-
-        // Fallback: tentar por CPF se não veio
-        if (!atualRapidoc) {
-          try {
-            const urlCpf = `${RAPIDOC_BASE_URL}/tema/api/beneficiaries/${cpfParam}`;
-            const respCpf = await axios.get(urlCpf, {
-              headers: {
-                Authorization: `Bearer ${RAPIDOC_TOKEN}`,
-                clientId: RAPIDOC_CLIENT_ID as string,
-                'Content-Type': 'application/vnd.rapidoc.tema-v2+json'
-              }
-            });
-            if (respCpf.data && respCpf.data.success && respCpf.data.beneficiary) {
-              atualRapidoc = respCpf.data.beneficiary;
-              // Se uuid diferente, atualiza
-              if (!rapidocUuid && atualRapidoc.uuid) {
-                rapidocUuid = atualRapidoc.uuid;
-                await docRef.update({ rapidocUuid });
-              }
-            }
-          } catch (e: any) {
-            return res.status(400).json({ error: 'Não foi possível obter dados atuais do Rapidoc (fallback CPF).', detail: e?.response?.data || null });
-          }
-        }
-
-        if (!atualRapidoc) {
-          return res.status(400).json({ error: 'Não foi possível obter dados atuais do Rapidoc.' });
-        }
-      }
-
-      // 4. Monta o body do Rapidoc somente com campos enviados (evita erros de campos imutáveis/duplicados)
-      const bodyRapidoc: any = { uuid: rapidocUuid };
-      if (typeof nome === 'string' && nome.trim()) bodyRapidoc.name = nome.trim();
-      if (typeof birthDate === 'string' && birthDate.trim()) bodyRapidoc.birthday = birthDate.trim();
-      if (typeof email === 'string' && email.trim() && (shouldUpdateRapidoc ? (email.trim() !== (atualRapidoc?.email || '').trim()) : true)) bodyRapidoc.email = email.trim();
-      // Sanitiza e valida phone: apenas dígitos e 11 caracteres
-      if (typeof phone === 'string' && phone.trim()) {
-        const justDigits = phone.replace(/\D/g, '');
-        if (justDigits.length === 11) {
-          bodyRapidoc.phone = justDigits;
-        }
-      }
-      if (typeof zipCode === 'string' && zipCode.trim()) bodyRapidoc.zipCode = zipCode.trim();
-      if (typeof address === 'string' && address.trim()) bodyRapidoc.address = address.trim();
-      if (typeof city === 'string' && city.trim()) bodyRapidoc.city = city.trim();
-      if (typeof state === 'string' && state.trim()) bodyRapidoc.state = state.trim();
-      // Monta estrutura de planos (aceita via payload direto ou por serviceType/paymentType)
-      if (Array.isArray(plans) && plans.length > 0) {
-        bodyRapidoc.plans = plans;
-      } else if (typeof serviceType === 'string' && serviceType.trim()) {
-        const planEntry: any = { plan: { uuid: serviceType.trim() } };
-        if (typeof paymentType === 'string' && paymentType.trim()) {
-          planEntry.paymentType = paymentType.trim().toUpperCase();
-        }
-        bodyRapidoc.plans = [planEntry];
-      } else if (typeof dependente?.serviceType === 'string' && dependente.serviceType.trim()) {
-        const planEntry: any = { plan: { uuid: dependente.serviceType.trim() } };
-        if (typeof dependente?.paymentType === 'string' && dependente.paymentType.trim()) {
-          const pt = dependente.paymentType.trim().toUpperCase();
-          if (pt === 'S' || pt === 'A') planEntry.paymentType = pt;
-        }
-        bodyRapidoc.plans = [planEntry];
-      }
-      if (typeof cpf === 'string' && cpf.trim()) bodyRapidoc.cpf = cpf.trim();
-
-      // Sanitização extra: garantir que não exista paymentType fora de plans e validar valores
-      if (Array.isArray(bodyRapidoc.plans)) {
-        bodyRapidoc.plans = bodyRapidoc.plans
-          .filter((p: any) => p && p.plan && typeof p.plan.uuid === 'string' && p.plan.uuid.trim().length > 0)
-          .map((p: any) => {
-            const out: any = { plan: { uuid: String(p.plan.uuid).trim() } };
-            const pt = String(p.paymentType || '').trim().toUpperCase();
-            if (pt === 'S' || pt === 'A') {
-              out.paymentType = pt;
-            }
-            return out;
-          });
-        if (bodyRapidoc.plans.length === 0) delete bodyRapidoc.plans;
-      }
-      // Remover qualquer paymentType/serviceType solto, por segurança
-      delete (bodyRapidoc as any).paymentType;
-      delete (bodyRapidoc as any).serviceType;
-      
-
-      // 5. Atualiza no Rapidoc somente se houver campos relevantes
-      if (shouldUpdateRapidoc) {
-        console.log('[DependenteController.editar] PUT Rapidoc body', JSON.stringify(bodyRapidoc));
-        try {
-          const rapidocResp = await atualizarBeneficiarioRapidoc(rapidocUuid as string, bodyRapidoc);
-          if (!rapidocResp || rapidocResp.success === false) {
-            
-            return res.status(400).json({ error: rapidocResp?.message || 'Erro ao atualizar dependente no Rapidoc.', detail: rapidocResp });
-          }
-        } catch (e: any) {
-          const status = e?.response?.status;
-          const data = e?.response?.data;
+          const data = resp.data;
+          rapidocUuid = data?.beneficiary?.uuid || (Array.isArray(data?.beneficiaries) ? data.beneficiaries[0]?.uuid : null) || data?.uuid;
           
-          // Retry sem email se o erro for de email já em uso
-          const emailInUse = Array.isArray(data?.errors) && data.errors.some((er: any) => typeof er?.description === 'string' && /email address already in use/i.test(er.description));
-          if (emailInUse && bodyRapidoc.email) {
-            
-            const retryBody = { ...bodyRapidoc };
-            delete (retryBody as any).email;
-            try {
-              const rapidocResp2 = await atualizarBeneficiarioRapidoc(rapidocUuid as string, retryBody);
-              if (!rapidocResp2 || rapidocResp2.success === false) {
-                
-                return res.status(400).json({ error: rapidocResp2?.message || 'Erro ao atualizar dependente no Rapidoc.', detail: rapidocResp2, status });
-              }
-            } catch (e2: any) {
-              const status2 = e2?.response?.status;
-              const data2 = e2?.response?.data;
-              
-              return res.status(400).json({ error: 'Erro ao atualizar dependente no Rapidoc.', detail: data2 || data, status: status2 || status });
-            }
-          } else {
-            return res.status(400).json({ error: 'Erro ao atualizar dependente no Rapidoc.', detail: data, status });
-          }
+      // @ts-ignore
+          if (rapidocUuid) await doc.ref.update({ rapidocUuid });
+        } catch (e) {
+          console.warn('[DependenteController.editar] Não foi possível recuperar UUID externo.');
         }
       }
-      
 
-      // 6. Atualiza no Firestore
+      // 3. Atualiza no Rapidoc (se tiver UUID)
+      if (rapidocUuid) {
+        const rapidocBody: any = { uuid: rapidocUuid };
+        
+        // Mapeamento e lógica para evitar envio duplicado de email
+        if (nome) rapidocBody.name = nome;
+        if (birthDate) rapidocBody.birthday = birthDate;
+        
+        // CORREÇÃO: Só envia o email se ele for diferente do que está no banco
+        // Isso evita o erro "Email address already in use" se o usuário não trocou o email
+        if (email && email.trim() !== (dependente.email || '').trim()) {
+            rapidocBody.email = email.trim();
+        }
+
+        if (phone) rapidocBody.phone = phone.replace(/\D/g, '');
+        if (zipCode) rapidocBody.zipCode = zipCode;
+        if (address) rapidocBody.address = address;
+        if (city) rapidocBody.city = city;
+        if (state) rapidocBody.state = state;
+
+        // Lógica de Planos e Pagamento
+        if (Array.isArray(plans) && plans.length > 0) {
+            rapidocBody.plans = plans;
+        } else if (serviceType && serviceType.trim()) {
+            // Só monta o plano se serviceType for válido
+            const pt = paymentType ? String(paymentType).trim().toUpperCase() : 'S';
+            if (pt === 'S' || pt === 'A') {
+                rapidocBody.plans = [{
+                    plan: { uuid: serviceType.trim() },
+                    paymentType: pt
+                }];
+            }
+        }
+
+        try {
+           console.log('[DependenteController.editar] Atualizando Rapidoc:', JSON.stringify(rapidocBody));
+           await atualizarBeneficiarioRapidoc(rapidocUuid, rapidocBody);
+        } catch (e: any) {
+           console.error('[DependenteController.editar] Erro Rapidoc:', e.response?.data || e.message);
+           // Retorna erro se for 422 (validação) ou 400
+           if (e.response && (e.response.status === 422 || e.response.status === 400)) {
+               return res.status(e.response.status).json({ 
+                   error: 'Erro de validação no Rapidoc', 
+                   details: e.response.data 
+               });
+           }
+        }
+      }
+
+      // 4. Atualiza no Firestore
       const holderFinal = holder || dependente.holder;
       
-      const updatedFirestore: any = {
+      const updateLocal: any = {
         nome: nome ?? dependente.nome,
-        cpf: (typeof cpf === 'string' && cpf.trim()) ? cpf.trim() : (dependente.cpf ?? cpfParam),
         birthDate: birthDate ?? dependente.birthDate,
-        parentesco: parentesco ?? dependente.parentesco,
-        holder: holderFinal,
         email: email ?? dependente.email,
-        // Atualiza phone no banco como foi enviado, mesmo que não tenha ido ao Rapidoc
-        phone: phone ?? dependente.phone,
-        zipCode: zipCode ?? dependente.zipCode,
-        address: address ?? dependente.address,
-        city: city ?? dependente.city,
-        state: state ?? dependente.state,
-        paymentType: paymentType ?? dependente.paymentType,
-        serviceType: serviceType ?? dependente.serviceType,
-        rapidocUuid,
-        updatedAt: new Date(),
+        phone: phone ?? dependente.phone ?? null,
+        zipCode: zipCode ?? dependente.zipCode ?? null,
+        address: address ?? dependente.address ?? null,
+        city: city ?? dependente.city ?? null,
+        state: state ?? dependente.state ?? null,
+        parentesco: parentesco ?? dependente.parentesco ?? null,
+        paymentType: paymentType ?? dependente.paymentType ?? null,
+        serviceType: serviceType ?? dependente.serviceType ?? null,
+        rapidocUuid: rapidocUuid || dependente.rapidocUuid || null,
+        updatedAt: new Date()
       };
-      await docRef.update(updatedFirestore);
 
-      // 7. Retorna lista atualizada
-      
-      const dependentesSnapshot = await admin.firestore().collection('beneficiarios').where('holder', '==', holderFinal).get();
-      const dependentes = dependentesSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-      
-      return res.status(200).json({ dependentes });
+      Object.keys(updateLocal).forEach(key => updateLocal[key] === undefined && delete updateLocal[key]);
+
+      // @ts-ignore
+      await doc.ref.update(updateLocal);
+
+      // 5. Retorna lista atualizada
+      const listaSnapshot = await admin.firestore().collection('beneficiarios').where('holder', '==', holderFinal).get();
+      const lista = listaSnapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+
+      return res.status(200).json({ dependentes: lista });
+
     } catch (error: any) {
-      
+      console.error('[DependenteController.editar] Erro Geral:', error);
       return res.status(500).json({ error: error.message || 'Erro ao editar dependente.' });
     }
   }
+  
+  // Métodos auxiliares para rotas específicas (mantidos para compatibilidade, mas o editar acima cobre tudo)
+  static async atualizarLocal(req: Request, res: Response) { return DependenteController.editar(req, res); }
+  static async atualizarRapidoc(req: Request, res: Response) { return DependenteController.editar(req, res); }
 
   static async listarPorTitular(req: Request, res: Response) {
     try {

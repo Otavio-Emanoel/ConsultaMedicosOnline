@@ -694,7 +694,6 @@ export default function MeusDadosPage() {
                     value={rapidocData.paymentType}
                     onChange={(e) => setRapidocData({ ...rapidocData, paymentType: e.target.value })}
                     disabled
-                    helperText="Este campo é gerenciado pelo Rapidoc."
                   />
                   <Input
                     label="Service/Plan UUID"
@@ -702,7 +701,6 @@ export default function MeusDadosPage() {
                     value={rapidocData.serviceType}
                     onChange={(e) => setRapidocData({ ...rapidocData, serviceType: e.target.value })}
                     disabled
-                    helperText="Gerenciado pelo Rapidoc/assinatura."
                   />
                 </div>
               </div>
