@@ -22,18 +22,56 @@ import dynamic from 'next/dynamic';
 const Chart = dynamic(() => import('react-apexcharts'), { ssr: false });
 
 type DashboardData = {
-  totalFaturamento: number;
-  totalAssinantes: number;
-  totalConsultas: number;
-  cancelamentos: number;
-  novosAssinantes: { mes: string; total: number }[];
-  receitaMensal: { mes: string; valor: number }[];
-  planos: { nome: string; total: number }[];
-  metricasErros: {
-    pendentes: number;
-    criticos: number;
-    recentes: number;
+  // Formato retornado pelo backend /admin/dashboard
+  totais?: {
+    usuarios?: number;
+    usuariosMesAtual?: number;
+    usuariosMesAnterior?: number;
+    variacaoUsuarios?: number | null;
+    assinaturas?: number;
+    assinaturasAtivas?: number;
+    assinaturasCanceladas?: number;
+    assinaturasPendentes?: number;
   };
+  faturamento?: {
+    mesAtual?: number;
+    ultimos30Dias?: number;
+    pendencias?: number;
+    mesAnterior?: number;
+    variacaoMes?: number | null;
+  };
+  planos?: {
+    numeroPlanos?: number;
+    mediaValorPlanos?: number;
+    detalhados?: Array<{
+      id: string;
+      nome: string;
+      valor: number;
+      assinantes: number;
+      valorTotal: number;
+    }>;
+  };
+  novosAssinantes?: Array<{ nome?: string; plano?: string; data?: string; status?: string }>;
+  logs?: {
+    errosPendentes?: number;
+    errosCriticos?: number;
+    errosRecentes?: number;
+    ultimosErros?: any[];
+  };
+
+  // Fallbacks caso a API ainda retorne o formato antigo
+  totalFaturamento?: number;
+  totalAssinantes?: number;
+  totalConsultas?: number;
+  cancelamentos?: number;
+  metricasErros?: {
+    pendentes?: number;
+    criticos?: number;
+    recentes?: number;
+  };
+  receitaMensal?: { mes: string; valor: number }[];
+  planosAntigo?: { nome: string; total: number }[];
+  novosAssinantesAntigo?: { mes: string; total: number }[];
 };
 
 export default function AdminRelatoriosPage() {
@@ -70,21 +108,6 @@ export default function AdminRelatoriosPage() {
     fetchData();
   }, []);
 
-  function exportarPDF() {
-    const doc = new jsPDF();
-    doc.text('Relatório de Métricas', 10, 10);
-    if (data) {
-      doc.text(`Receita Total: R$ ${data.totalFaturamento.toLocaleString('pt-BR')}`, 10, 20);
-      doc.text(`Total de Assinantes: ${data.totalAssinantes}`, 10, 30);
-      doc.text(`Total de Consultas: ${data.totalConsultas}`, 10, 40);
-      doc.text(`Cancelamentos: ${data.cancelamentos}`, 10, 50);
-      doc.text(`Erros Pendentes: ${data.metricasErros.pendentes}`, 10, 60);
-      doc.text(`Erros Críticos: ${data.metricasErros.criticos}`, 10, 70);
-      doc.text(`Erros Recentes: ${data.metricasErros.recentes}`, 10, 80);
-    }
-    doc.save('relatorio-metricas.pdf');
-  }
-
   if (loading) {
     return <DashboardLayout title="Relatórios"><div className="p-8 text-center">Carregando...</div></DashboardLayout>;
   }
@@ -95,15 +118,162 @@ export default function AdminRelatoriosPage() {
     return <DashboardLayout title="Relatórios"><div className="p-8 text-center">Sem dados</div></DashboardLayout>;
   }
 
-  // Gráficos
-  // Garantir arrays válidos para os gráficos
-  const meses = Array.isArray(data.novosAssinantes) ? data.novosAssinantes.map((item) => item?.mes ?? '') : [];
-  const assinantesPorMes = Array.isArray(data.novosAssinantes) ? data.novosAssinantes.map((item) => Number(item?.total ?? 0)) : [];
-  const receitaPorMes = Array.isArray(data.receitaMensal) ? data.receitaMensal.map((item) => Number(item?.valor ?? 0)) : [];
-  const receitaMeses = Array.isArray(data.receitaMensal) ? data.receitaMensal.map((item) => item?.mes ?? '') : [];
-  const planosArr = Array.isArray(data.planos) ? data.planos : (data.planos ? Object.values(data.planos) : []);
-  const planosLabels = Array.isArray(planosArr) ? planosArr.map((p: any) => p?.nome ?? '') : [];
-  const planosData = Array.isArray(planosArr) ? planosArr.map((p: any) => Number(p?.total ?? 0)) : [];
+  // Normalizações dos dados para exibição
+  const totalFaturamento = Number(
+    data.faturamento?.mesAtual ?? data.totalFaturamento ?? 0
+  );
+  const totalAssinantes = Number(
+    data.totais?.assinaturas ?? data.totalAssinantes ?? 0
+  );
+  const totalConsultas = Number(
+    // Backend não retorna consultas; usamos usuários como aproximação
+    data.totais?.usuarios ?? data.totalConsultas ?? 0
+  );
+  const cancelamentos = Number(
+    data.totais?.assinaturasCanceladas ?? data.cancelamentos ?? 0
+  );
+
+  const errosPendentes = Number(
+    data.logs?.errosPendentes ?? data.metricasErros?.pendentes ?? 0
+  );
+  const errosCriticos = Number(
+    data.logs?.errosCriticos ?? data.metricasErros?.criticos ?? 0
+  );
+  const errosRecentes = Number(
+    data.logs?.errosRecentes ?? data.metricasErros?.recentes ?? 0
+  );
+
+  // Gráfico de assinantes: usa meses anterior e atual se disponíveis; caso contrário, usa formato antigo
+  const assinantesCategorias =
+    typeof data.totais?.usuariosMesAtual === 'number' && typeof data.totais?.usuariosMesAnterior === 'number'
+      ? ['Mês anterior', 'Mês atual']
+      : Array.isArray(data.novosAssinantesAntigo)
+        ? data.novosAssinantesAntigo.map((item) => item?.mes ?? '')
+        : [];
+
+  const assinantesSeries =
+    typeof data.totais?.usuariosMesAtual === 'number' && typeof data.totais?.usuariosMesAnterior === 'number'
+      ? [Number(data.totais.usuariosMesAnterior ?? 0), Number(data.totais.usuariosMesAtual ?? 0)]
+      : Array.isArray(data.novosAssinantesAntigo)
+        ? data.novosAssinantesAntigo.map((item) => Number(item?.total ?? 0))
+        : [];
+
+  // Gráfico de receita: usa mês anterior vs mês atual
+  const receitaCategorias = ['Mês anterior', 'Mês atual'];
+  const receitaSeries = [
+    Number(data.faturamento?.mesAnterior ?? 0),
+    Number(data.faturamento?.mesAtual ?? 0),
+  ];
+
+  // Gráfico de planos: usa planos detalhados (assinantes por plano)
+  const planosDetalhados = Array.isArray(data.planos?.detalhados)
+    ? data.planos?.detalhados
+    : Array.isArray(data.planosAntigo)
+      ? data.planosAntigo.map((p) => ({ id: p.nome, nome: p.nome, assinantes: p.total, valor: 0, valorTotal: 0 }))
+      : [];
+  const planosLabels = planosDetalhados.map((p) => p.nome ?? 'Plano');
+  const planosData = planosDetalhados.map((p) => Number(p.assinantes ?? 0));
+
+  function exportarPDF() {
+    const doc = new jsPDF();
+    const now = new Date();
+    const dataStr = now.toLocaleString('pt-BR');
+
+    const formatBRL = (v: number) => `R$ ${Number(v || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`;
+
+    // Header
+    doc.setFillColor(37, 99, 235);
+    doc.rect(0, 0, 210, 28, 'F');
+    doc.setTextColor(255, 255, 255);
+    doc.setFontSize(16);
+    doc.text('Relatório de Métricas', 12, 18);
+    doc.setFontSize(10);
+    doc.text(`Gerado em ${dataStr}`, 150, 18, { align: 'left' });
+
+    // Cards resumidos
+    const cardY = 38;
+    const cardW = 46;
+    const cardH = 24;
+    const cards = [
+      { label: 'Receita Total', value: formatBRL(totalFaturamento) },
+      { label: 'Assinantes', value: String(totalAssinantes) },
+      { label: 'Consultas', value: String(totalConsultas) },
+      { label: 'Cancelamentos', value: String(cancelamentos) },
+    ];
+    doc.setTextColor(33, 37, 41);
+    doc.setFontSize(11);
+    cards.forEach((c, i) => {
+      const x = 12 + i * (cardW + 6);
+      doc.setDrawColor(230, 236, 245);
+      doc.setFillColor(247, 250, 255);
+      doc.roundedRect(x, cardY, cardW, cardH, 3, 3, 'DF');
+      doc.setFontSize(9);
+      doc.text(c.label, x + 4, cardY + 8);
+      doc.setFontSize(12);
+      doc.setTextColor(37, 99, 235);
+      doc.text(c.value, x + 4, cardY + 18);
+      doc.setTextColor(33, 37, 41);
+    });
+
+    let y = cardY + cardH + 14;
+
+    // Receita
+    doc.setFontSize(12);
+    doc.text('Receita (mês anterior vs atual)', 12, y);
+    y += 6;
+    doc.setFontSize(10);
+    doc.text(`Mês anterior: ${formatBRL(Number(data.faturamento?.mesAnterior ?? 0))}`, 12, y);
+    doc.text(`Mês atual: ${formatBRL(Number(data.faturamento?.mesAtual ?? 0))}`, 90, y);
+    const variacaoMes = data.faturamento?.variacaoMes;
+    if (typeof variacaoMes === 'number') {
+      doc.text(`Variação: ${variacaoMes.toFixed(2)}%`, 150, y);
+    }
+
+    // Planos
+    y += 10;
+    doc.setFontSize(12);
+    doc.text('Planos (assinantes por plano)', 12, y);
+    y += 6;
+    doc.setFontSize(10);
+    const planosToShow = planosDetalhados.slice(0, 6);
+    if (!planosToShow.length) {
+      doc.text('Sem dados de planos.', 12, y);
+      y += 8;
+    } else {
+      planosToShow.forEach((p) => {
+        doc.text(`${p.nome ?? 'Plano'} — ${p.assinantes ?? 0} assinantes`, 12, y);
+        y += 6;
+      });
+    }
+
+    // Erros
+    y += 4;
+    doc.setFontSize(12);
+    doc.text('Métricas de erros', 12, y);
+    y += 6;
+    doc.setFontSize(10);
+    doc.text(`Pendentes: ${errosPendentes}`, 12, y);
+    doc.text(`Críticos: ${errosCriticos}`, 70, y);
+    doc.text(`Recentes: ${errosRecentes}`, 130, y);
+
+    // Novos assinantes (se houver)
+    y += 10;
+    const novos = Array.isArray(data.novosAssinantes) ? data.novosAssinantes.slice(0, 6) : [];
+    doc.setFontSize(12);
+    doc.text('Novos assinantes (últimos)', 12, y);
+    y += 6;
+    doc.setFontSize(10);
+    if (!novos.length) {
+      doc.text('Sem novos assinantes listados.', 12, y);
+    } else {
+      novos.forEach((n) => {
+        doc.text(`${n.nome ?? '—'} — ${n.plano ?? 'Plano'} — ${n.data ?? ''}`, 12, y);
+        y += 6;
+      });
+    }
+
+    doc.save('relatorio-metricas.pdf');
+  }
 
   return (
     <DashboardLayout title="Relatórios">
@@ -130,7 +300,7 @@ export default function AdminRelatoriosPage() {
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm text-gray-600 dark:text-gray-400 mb-1">Receita Total</p>
-                <p className="text-2xl font-bold text-gray-900 dark:text-white">R$ {(data.totalFaturamento ?? 0).toLocaleString('pt-BR')}</p>
+                <p className="text-2xl font-bold text-gray-900 dark:text-white">R$ {totalFaturamento.toLocaleString('pt-BR')}</p>
               </div>
               <DollarSign className="w-10 h-10 text-success opacity-20" />
             </div>
@@ -141,7 +311,7 @@ export default function AdminRelatoriosPage() {
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm text-gray-600 dark:text-gray-400 mb-1">Assinantes</p>
-                <p className="text-2xl font-bold text-gray-900 dark:text-white">{data.totalAssinantes}</p>
+                <p className="text-2xl font-bold text-gray-900 dark:text-white">{totalAssinantes}</p>
               </div>
               <Users className="w-10 h-10 text-primary opacity-20" />
             </div>
@@ -152,7 +322,7 @@ export default function AdminRelatoriosPage() {
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm text-gray-600 dark:text-gray-400 mb-1">Consultas</p>
-                <p className="text-2xl font-bold text-gray-900 dark:text-white">{data.totalConsultas}</p>
+                <p className="text-2xl font-bold text-gray-900 dark:text-white">{totalConsultas}</p>
               </div>
               <Activity className="w-10 h-10 text-purple-600 opacity-20" />
             </div>
@@ -163,7 +333,7 @@ export default function AdminRelatoriosPage() {
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm text-gray-600 dark:text-gray-400 mb-1">Cancelamentos</p>
-                <p className="text-2xl font-bold text-gray-900 dark:text-white">{data.cancelamentos}</p>
+                <p className="text-2xl font-bold text-gray-900 dark:text-white">{cancelamentos}</p>
               </div>
               <TrendingUp className="w-10 h-10 text-danger opacity-20" />
             </div>
@@ -181,10 +351,10 @@ export default function AdminRelatoriosPage() {
               height={300}
               options={{
                 chart: { id: 'assinantes-bar' },
-                xaxis: { categories: meses.length === assinantesPorMes.length ? meses : assinantesPorMes.map((_, i) => `Mês ${i + 1}`) },
+                xaxis: { categories: assinantesCategorias.length ? assinantesCategorias : ['Sem dados'] },
                 colors: ['#2563eb'],
               }}
-              series={[{ name: 'Novos Assinantes', data: assinantesPorMes.length ? assinantesPorMes : [0] }]}
+              series={[{ name: 'Novos Assinantes', data: assinantesSeries.length ? assinantesSeries : [0] }]}
             />
           </CardBody>
         </Card>
@@ -211,10 +381,10 @@ export default function AdminRelatoriosPage() {
               height={300}
               options={{
                 chart: { id: 'receita-line' },
-                xaxis: { categories: receitaMeses.length === receitaPorMes.length ? receitaMeses : receitaPorMes.map((_, i) => `Mês ${i + 1}`) },
+                xaxis: { categories: receitaCategorias },
                 colors: ['#10b981'],
               }}
-              series={[{ name: 'Receita', data: receitaPorMes.length ? receitaPorMes : [0] }]}
+              series={[{ name: 'Receita', data: receitaSeries.length ? receitaSeries : [0] }]}
             />
           </CardBody>
         </Card>
@@ -230,9 +400,9 @@ export default function AdminRelatoriosPage() {
                 colors: ['#f59e42', '#f43f5e', '#2563eb'],
               }}
               series={[
-                Number(data.metricasErros?.pendentes ?? 0),
-                Number(data.metricasErros?.criticos ?? 0),
-                Number(data.metricasErros?.recentes ?? 0),
+                errosPendentes,
+                errosCriticos,
+                errosRecentes,
               ]}
             />
           </CardBody>
