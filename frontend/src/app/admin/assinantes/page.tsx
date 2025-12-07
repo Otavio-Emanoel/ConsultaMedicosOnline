@@ -29,6 +29,7 @@ import {
 import { useState, useEffect, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import { Dialog } from '@/components/ui/Dialog';
+import { auth } from '@/lib/firebase';
 
 // Corrigido: definição da interface AssinanteItem estava fora do lugar e sem o "interface"
 interface AssinanteItem {
@@ -103,6 +104,31 @@ export default function AdminAssinantesPage() {
   const [showFilters, setShowFilters] = useState(false);
   const [filtroStatus, setFiltroStatus] = useState<string>('');
   const [filtroPlano, setFiltroPlano] = useState<string>('');
+
+  const getAuthToken = async () => {
+    try {
+      if (auth.currentUser) {
+        return await auth.currentUser.getIdToken(true);
+      }
+    } catch {
+      // ignore and fallback to storage
+    }
+    if (typeof window !== 'undefined') {
+      return localStorage.getItem('auth_token') || localStorage.getItem('token');
+    }
+    return null;
+  };
+
+  const buildAuthHeaders = async () => {
+    const token = await getAuthToken();
+    if (!token) {
+      throw new Error('Token de autenticação não encontrado. Faça login novamente.');
+    }
+    return {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${token}`,
+    } as HeadersInit;
+  };
 
   useEffect(() => {
     const fetchData = async () => {
@@ -193,19 +219,7 @@ export default function AdminAssinantesPage() {
     setLoadingBeneficiarios(true);
     setError('');
     try {
-      // Tenta buscar o token com ambos os nomes possíveis
-      const token = typeof window !== 'undefined' 
-        ? (localStorage.getItem('token') || localStorage.getItem('auth_token')) 
-        : null;
-      
-      if (!token) {
-        throw new Error('Token de autenticação não encontrado. Faça login novamente.');
-      }
-
-      const headers: HeadersInit = {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${token}`,
-      };
+      const headers = await buildAuthHeaders();
 
       const resp = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL}/admin/beneficiarios-sem-conta`, { headers });
       
@@ -227,18 +241,7 @@ export default function AdminAssinantesPage() {
   const gerarNovaSenha = async (cpf: string, nome: string, email: string) => {
     setGerandoSenha(true);
     try {
-      const token = typeof window !== 'undefined' 
-        ? (localStorage.getItem('token') || localStorage.getItem('auth_token')) 
-        : null;
-
-      if (!token) {
-        throw new Error('Token de autenticação não encontrado.');
-      }
-
-      const headers: HeadersInit = {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${token}`,
-      };
+      const headers = await buildAuthHeaders();
 
       const resp = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL}/admin/gerar-nova-senha`, {
         method: 'POST',
@@ -277,18 +280,12 @@ export default function AdminAssinantesPage() {
     setLoadingDependentes(true);
     setDependentesError('');
     try {
-      const token = typeof window !== 'undefined' 
-        ? (localStorage.getItem('token') || localStorage.getItem('auth_token')) 
-        : null;
-      if (!token) throw new Error('Token não encontrado');
-      
-      const headers: HeadersInit = {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${token}`,
-      };
-      
+      const headers = await buildAuthHeaders();
       const resp = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL}/dependentes/${cpf}`, { headers });
-      if (!resp.ok) throw new Error('Erro ao buscar dependentes');
+      if (!resp.ok) {
+        const errorData = await resp.json().catch(() => ({}));
+        throw new Error(errorData.error || `Erro ao buscar dependentes (${resp.status})`);
+      }
       const data = await resp.json();
       setDependentes(data.dependentes || []);
     } catch (e: any) {
@@ -301,15 +298,7 @@ export default function AdminAssinantesPage() {
 
   const ativarVida = async (cpf: string) => {
     try {
-      const token = typeof window !== 'undefined' 
-        ? (localStorage.getItem('token') || localStorage.getItem('auth_token')) 
-        : null;
-      if (!token) throw new Error('Token não encontrado');
-      
-      const headers: HeadersInit = {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${token}`,
-      };
+      const headers = await buildAuthHeaders();
       
       const resp = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL}/admin/beneficiarios/${cpf}/ativar-rapidoc`, {
         method: 'POST',
@@ -333,15 +322,7 @@ export default function AdminAssinantesPage() {
   const inativarVida = async (cpf: string) => {
     if (!confirm('Tem certeza que deseja inativar esta vida?')) return;
     try {
-      const token = typeof window !== 'undefined' 
-        ? (localStorage.getItem('token') || localStorage.getItem('auth_token')) 
-        : null;
-      if (!token) throw new Error('Token não encontrado');
-      
-      const headers: HeadersInit = {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${token}`,
-      };
+      const headers = await buildAuthHeaders();
       
       const resp = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL}/admin/beneficiarios/${cpf}/inativar-rapidoc`, {
         method: 'POST',
@@ -365,15 +346,7 @@ export default function AdminAssinantesPage() {
   const removerDependente = async (cpf: string) => {
     if (!confirm('Tem certeza que deseja remover este dependente? Esta ação não pode ser desfeita.')) return;
     try {
-      const token = typeof window !== 'undefined' 
-        ? (localStorage.getItem('token') || localStorage.getItem('auth_token')) 
-        : null;
-      if (!token) throw new Error('Token não encontrado');
-      
-      const headers: HeadersInit = {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${token}`,
-      };
+      const headers = await buildAuthHeaders();
       
       const resp = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL}/beneficiarios/${cpf}`, {
         method: 'DELETE',
@@ -394,12 +367,7 @@ export default function AdminAssinantesPage() {
 
   const buscarPlanos = async () => {
     try {
-      const token = typeof window !== 'undefined' 
-        ? (localStorage.getItem('token') || localStorage.getItem('auth_token')) 
-        : null;
-      const headers: HeadersInit = { 'Content-Type': 'application/json' };
-      if (token) headers['Authorization'] = `Bearer ${token}`;
-      
+      const headers = await buildAuthHeaders().catch(() => ({ 'Content-Type': 'application/json' } as HeadersInit));
       const resp = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL}/planos`, { headers });
       if (!resp.ok) throw new Error('Erro ao buscar planos');
       const data = await resp.json();
@@ -995,16 +963,7 @@ export default function AdminAssinantesPage() {
                   if (value) dados[key] = value;
                 });
                 try {
-                  const token = typeof window !== 'undefined' 
-                    ? (localStorage.getItem('token') || localStorage.getItem('auth_token')) 
-                    : null;
-                  if (!token) throw new Error('Token não encontrado');
-                  
-                  const headers: HeadersInit = {
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${token}`,
-                  };
-                  
+                  const headers = await buildAuthHeaders();
                   const resp = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL}/usuario/${modalEditar.cpf}`, {
                     method: 'PATCH',
                     headers,
@@ -1080,16 +1039,7 @@ export default function AdminAssinantesPage() {
                   cortesia: formData.get('cortesia') === 'on',
                 };
                 try {
-                  const token = typeof window !== 'undefined' 
-                    ? (localStorage.getItem('token') || localStorage.getItem('auth_token')) 
-                    : null;
-                  if (!token) throw new Error('Token não encontrado');
-                  
-                  const headers: HeadersInit = {
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${token}`,
-                  };
-                  
+                  const headers = await buildAuthHeaders();
                   const resp = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL}/admin/assinantes/${modalCadastrarVida.cpfTitular}/vidas/cadastrar`, {
                     method: 'POST',
                     headers,
