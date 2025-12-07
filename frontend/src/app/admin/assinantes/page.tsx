@@ -990,13 +990,13 @@ export default function AdminAssinantesPage() {
                 Titular: {modalCadastrarVida?.nomeTitular} ({modalCadastrarVida?.cpfTitular})
               </p>
             </div>
-            
+
             {/* Exibição de Erro dentro do Modal */}
             {modalCadastroError && (
               <div className="mb-4 p-3 bg-red-100 border border-red-300 text-red-700 rounded-md text-sm">
                 <div className="flex items-center gap-2">
-                   <AlertCircle className="w-4 h-4" />
-                   <strong>Erro:</strong> {modalCadastroError}
+                  <AlertCircle className="w-4 h-4" />
+                  <strong>Erro:</strong> {modalCadastroError}
                 </div>
               </div>
             )}
@@ -1022,7 +1022,7 @@ export default function AdminAssinantesPage() {
                   const planoSel = planos.find((p: any) => String(p.id) === planoId);
                   const serviceTypeAuto = planoSel?.uuidRapidocPlano || '';
                   const paymentTypeAuto = (planoSel?.paymentType || '').toUpperCase();
-                  
+
                   if (!planoSel) throw new Error('Plano selecionado não encontrado.');
                   if (!serviceTypeAuto) throw new Error('Plano selecionado está sem UUID Rapidoc configurado.');
 
@@ -1055,7 +1055,7 @@ export default function AdminAssinantesPage() {
                   });
 
                   const responseData = await resp.json().catch(() => ({}));
-                  
+
                   if (!resp.ok) {
                     throw new Error(responseData.error || responseData.message || 'Erro ao cadastrar vida');
                   }
@@ -1146,7 +1146,7 @@ export default function AdminAssinantesPage() {
                     Cancelar
                   </Button>
                   <Button variant="primary" type="submit" disabled={cadastrandoVida}>
-                    {cadastrandoVida ? <><Loader2 className="w-4 h-4 animate-spin mr-2"/> Salvando...</> : 'Cadastrar'}
+                    {cadastrandoVida ? <><Loader2 className="w-4 h-4 animate-spin mr-2" /> Salvando...</> : 'Cadastrar'}
                   </Button>
                 </div>
               </form>
@@ -1235,27 +1235,27 @@ export default function AdminAssinantesPage() {
                   if (!dependenteEmEdicao) return;
                   setSalvandoDependenteLocal(true); // Usando este state para loading geral
                   setDependentesError('');
-                  
+
                   try {
                     const headers = await buildAuthHeaders();
-                    
+
                     // Monta payload unificado
                     const body = {
-                        nome: dependenteLocalForm.nome,
-                        birthDate: dependenteLocalForm.birthDate,
-                        parentesco: dependenteLocalForm.parentesco,
-                        email: dependenteLocalForm.email || dependenteRapidocForm.email,
-                        phone: dependenteLocalForm.phone || dependenteRapidocForm.phone,
-                        zipCode: dependenteLocalForm.zipCode || dependenteRapidocForm.zipCode,
-                        address: dependenteLocalForm.address || dependenteRapidocForm.address,
-                        city: dependenteLocalForm.city || dependenteRapidocForm.city,
-                        state: dependenteLocalForm.state || dependenteRapidocForm.state,
-                        
-                        // Campos de Rapidoc
-                        serviceType: dependenteRapidocForm.serviceType,
-                        paymentType: dependenteRapidocForm.paymentType,
-                        
-                        holder: modalAssinante?.cpf || dependenteEmEdicao.holder
+                      nome: dependenteLocalForm.nome,
+                      birthDate: dependenteLocalForm.birthDate,
+                      parentesco: dependenteLocalForm.parentesco,
+                      email: dependenteLocalForm.email || dependenteRapidocForm.email,
+                      phone: dependenteLocalForm.phone || dependenteRapidocForm.phone,
+                      zipCode: dependenteLocalForm.zipCode || dependenteRapidocForm.zipCode,
+                      address: dependenteLocalForm.address || dependenteRapidocForm.address,
+                      city: dependenteLocalForm.city || dependenteRapidocForm.city,
+                      state: dependenteLocalForm.state || dependenteRapidocForm.state,
+
+                      // Campos de Rapidoc
+                      serviceType: dependenteRapidocForm.serviceType,
+                      paymentType: dependenteRapidocForm.paymentType,
+
+                      holder: modalAssinante?.cpf || dependenteEmEdicao.holder
                     };
 
                     // Chama endpoint principal de edição (PUT /api/dependentes/:cpf)
@@ -1267,9 +1267,9 @@ export default function AdminAssinantesPage() {
                     });
 
                     const data = await resp.json();
-                    
+
                     if (!resp.ok) {
-                       throw new Error(data.error || data.message || 'Erro ao atualizar dependente');
+                      throw new Error(data.error || data.message || 'Erro ao atualizar dependente');
                     }
 
                     // Sucesso
@@ -1285,11 +1285,11 @@ export default function AdminAssinantesPage() {
                 }}
                 className="space-y-4 max-h-[75vh] overflow-y-auto pr-1"
               >
-                
+
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   {/* Dados Pessoais */}
                   <div className="col-span-1 md:col-span-2">
-                     <h3 className="text-sm font-semibold mb-2 text-gray-700 dark:text-gray-300 border-b pb-1">Dados Pessoais</h3>
+                    <h3 className="text-sm font-semibold mb-2 text-gray-700 dark:text-gray-300 border-b pb-1">Dados Pessoais</h3>
                   </div>
 
                   <div>
@@ -1330,7 +1330,7 @@ export default function AdminAssinantesPage() {
 
                   {/* Contato e Endereço */}
                   <div className="col-span-1 md:col-span-2 mt-2">
-                     <h3 className="text-sm font-semibold mb-2 text-gray-700 dark:text-gray-300 border-b pb-1">Contato e Endereço</h3>
+                    <h3 className="text-sm font-semibold mb-2 text-gray-700 dark:text-gray-300 border-b pb-1">Contato e Endereço</h3>
                   </div>
 
                   <div>
@@ -1370,12 +1370,12 @@ export default function AdminAssinantesPage() {
                       onChange={(e) => setDependenteLocalForm({ ...dependenteLocalForm, state: e.target.value })}
                     />
                   </div>
-                  
+
                   {/* Plano Rapidoc */}
                   <div className="col-span-1 md:col-span-2 mt-2">
-                     <h3 className="text-sm font-semibold mb-2 text-gray-700 dark:text-gray-300 border-b pb-1">Plano e Rapidoc</h3>
+                    <h3 className="text-sm font-semibold mb-2 text-gray-700 dark:text-gray-300 border-b pb-1">Plano e Rapidoc</h3>
                   </div>
-                  
+
                   <div>
                     <label className="block text-sm font-medium mb-1">Service Type (UUID Plano)</label>
                     <Input
@@ -1421,86 +1421,211 @@ export default function AdminAssinantesPage() {
                 </p>
               )}
             </div>
-            {dependenteEmEdicao && (
-              <div className="space-y-6 max-h-[75vh] overflow-y-auto pr-1">
-                <form
-                  onSubmit={salvarDependenteLocal}
-                  className="space-y-4 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900/40 p-4"
-                >
-                  <div className="flex items-center justify-between">
-                    <h3 className="text-sm font-semibold">Atualizar dados locais</h3>
-                    <Badge variant="neutral">Somente banco</Badge>
-                  </div>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div>
-                      <label className="block text-sm font-medium mb-1">Nome</label>
-                      <Input
-                        value={dependenteLocalForm.nome}
-                        onChange={(e) => setDependenteLocalForm({ ...dependenteLocalForm, nome: e.target.value })}
-                        required
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium mb-1">Data de Nascimento</label>
-                      <Input
-                        type="date"
-                        value={dependenteLocalForm.birthDate}
-                        onChange={(e) => setDependenteLocalForm({ ...dependenteLocalForm, birthDate: e.target.value })}
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium mb-1">Email</label>
-                      <Input
-                        type="email"
-                        value={dependenteLocalForm.email}
-                        onChange={(e) => setDependenteLocalForm({ ...dependenteLocalForm, email: e.target.value })}
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium mb-1">Telefone</label>
-                      <Input
-                        value={dependenteLocalForm.phone}
-                        onChange={(e) => setDependenteLocalForm({ ...dependenteLocalForm, phone: e.target.value })}
-                      />
-                    </div>
-                  </div>
-                  <div className="flex justify-end gap-2 pt-4">
-                    <Button variant="outline" type="button" onClick={fecharEdicaoDependente} disabled={salvandoDependenteLocal}>Cancelar</Button>
-                    <Button variant="primary" type="submit" isLoading={salvandoDependenteLocal} disabled={salvandoDependenteLocal}>Salvar Local</Button>
-                  </div>
-                </form>
 
-                <form
-                  onSubmit={salvarDependenteRapidoc}
-                  className="space-y-4 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900/40 p-4"
-                >
-                  <div className="flex items-center justify-between">
-                    <h3 className="text-sm font-semibold">Atualizar Rapidoc</h3>
-                    <Badge variant="info">Sincroniza Rapidoc</Badge>
+            {/* Exibe erro se houver */}
+            {dependentesError && (
+              <div className="mb-4 p-3 bg-red-100 border border-red-300 text-red-700 rounded-md text-sm">
+                <div className="flex items-start gap-2">
+                  <AlertCircle className="w-5 h-5 flex-shrink-0 mt-0.5" />
+                  <div>
+                    <strong>Erro:</strong> {dependentesError}
                   </div>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div>
-                      <label className="block text-sm font-medium mb-1">Email</label>
-                      <Input
-                        type="email"
-                        value={dependenteRapidocForm.email}
-                        onChange={(e) => setDependenteRapidocForm({ ...dependenteRapidocForm, email: e.target.value })}
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium mb-1">Telefone</label>
-                      <Input
-                        value={dependenteRapidocForm.phone}
-                        onChange={(e) => setDependenteRapidocForm({ ...dependenteRapidocForm, phone: e.target.value })}
-                      />
-                    </div>
-                  </div>
-                  <div className="flex justify-end gap-2 pt-4">
-                    <Button variant="outline" type="button" onClick={fecharEdicaoDependente} disabled={salvandoDependenteRapidoc}>Cancelar</Button>
-                    <Button variant="primary" type="submit" isLoading={salvandoDependenteRapidoc} disabled={salvandoDependenteRapidoc}>Salvar Rapidoc</Button>
-                  </div>
-                </form>
+                </div>
               </div>
+            )}
+
+            {dependenteEmEdicao && (
+              <form
+                onSubmit={async (e) => {
+                  e.preventDefault();
+                  if (!dependenteEmEdicao) return;
+                  setSalvandoDependenteLocal(true); // Loading
+                  setDependentesError('');
+
+                  try {
+                    const headers = await buildAuthHeaders();
+
+                    // Lógica para obter o email correto
+                    const emailAtual = dependenteLocalForm.email || dependenteRapidocForm.email;
+
+                    // Monta payload
+                    const body: any = {
+                      nome: dependenteLocalForm.nome,
+                      birthDate: dependenteLocalForm.birthDate,
+                      parentesco: dependenteLocalForm.parentesco,
+                      phone: dependenteLocalForm.phone || dependenteRapidocForm.phone,
+                      zipCode: dependenteLocalForm.zipCode || dependenteRapidocForm.zipCode,
+                      address: dependenteLocalForm.address || dependenteRapidocForm.address,
+                      city: dependenteLocalForm.city || dependenteRapidocForm.city,
+                      state: dependenteLocalForm.state || dependenteRapidocForm.state,
+
+                      // Campos de Rapidoc
+                      serviceType: dependenteRapidocForm.serviceType,
+                      paymentType: dependenteRapidocForm.paymentType || 'S', // Default 'S' se vazio
+
+                      holder: modalAssinante?.cpf || dependenteEmEdicao.holder
+                    };
+
+                    // TRUQUE DO EMAIL: Só envia se for diferente do original para não dar erro "in use"
+                    if (emailAtual && emailAtual.trim() !== (dependenteEmEdicao.email || '').trim()) {
+                      body.email = emailAtual;
+                    }
+
+                    // Remove campos vazios se necessário, mas o backend já trata
+
+                    const resp = await fetch(`${API_BASE}/dependentes/${dependenteEmEdicao.cpf}`, {
+                      method: 'PUT',
+                      headers,
+                      body: JSON.stringify(body),
+                    });
+
+                    const data = await resp.json();
+
+                    if (!resp.ok) {
+                      // Extrai detalhes do erro se disponível
+                      let errorMsg = data.error || data.message || 'Erro ao atualizar dependente';
+                      if (data.details && Array.isArray(data.details.errors)) {
+                        const det = data.details.errors.map((d: any) => d.description).join(', ');
+                        if (det) errorMsg += `: ${det}`;
+                      }
+                      throw new Error(errorMsg);
+                    }
+
+                    // Sucesso
+                    setDependentes(data.dependentes || []);
+                    alert('Dependente atualizado com sucesso!');
+                    fecharEdicaoDependente();
+
+                  } catch (err: any) {
+                    setDependentesError(err.message || 'Erro desconhecido');
+                  } finally {
+                    setSalvandoDependenteLocal(false);
+                  }
+                }}
+                className="space-y-4 max-h-[75vh] overflow-y-auto pr-1"
+              >
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {/* Dados Pessoais */}
+                  <div className="col-span-1 md:col-span-2 border-b pb-2 mb-2">
+                    <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-300">Dados Pessoais</h3>
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium mb-1">Nome</label>
+                    <Input
+                      value={dependenteLocalForm.nome}
+                      onChange={(e) => setDependenteLocalForm({ ...dependenteLocalForm, nome: e.target.value })}
+                      required
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium mb-1">CPF (Leitura)</label>
+                    <Input value={dependenteLocalForm.cpf} disabled className="bg-gray-100 dark:bg-gray-800" />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium mb-1">Data de Nascimento</label>
+                    <Input
+                      type="date"
+                      value={dependenteLocalForm.birthDate}
+                      onChange={(e) => setDependenteLocalForm({ ...dependenteLocalForm, birthDate: e.target.value })}
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium mb-1">Parentesco</label>
+                    <select
+                      className="w-full px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900"
+                      value={dependenteLocalForm.parentesco}
+                      onChange={(e) => setDependenteLocalForm({ ...dependenteLocalForm, parentesco: e.target.value })}
+                    >
+                      <option value="">Selecione...</option>
+                      <option value="Filho(a)">Filho(a)</option>
+                      <option value="Cônjuge">Cônjuge</option>
+                      <option value="Pai/Mãe">Pai/Mãe</option>
+                      <option value="Irmão(ã)">Irmão(ã)</option>
+                      <option value="Outro">Outro</option>
+                    </select>
+                  </div>
+
+                  {/* Contato e Endereço */}
+                  <div className="col-span-1 md:col-span-2 border-b pb-2 mb-2 mt-2">
+                    <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-300">Contato e Endereço</h3>
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium mb-1">Email</label>
+                    <Input
+                      type="email"
+                      value={dependenteLocalForm.email}
+                      onChange={(e) => setDependenteLocalForm({ ...dependenteLocalForm, email: e.target.value })}
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium mb-1">Telefone</label>
+                    <Input
+                      value={dependenteLocalForm.phone}
+                      onChange={(e) => setDependenteLocalForm({ ...dependenteLocalForm, phone: e.target.value })}
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium mb-1">CEP</label>
+                    <Input
+                      value={dependenteLocalForm.zipCode}
+                      onChange={(e) => setDependenteLocalForm({ ...dependenteLocalForm, zipCode: e.target.value })}
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium mb-1">Cidade</label>
+                    <Input
+                      value={dependenteLocalForm.city}
+                      onChange={(e) => setDependenteLocalForm({ ...dependenteLocalForm, city: e.target.value })}
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium mb-1">Estado</label>
+                    <Input
+                      value={dependenteLocalForm.state}
+                      maxLength={2}
+                      onChange={(e) => setDependenteLocalForm({ ...dependenteLocalForm, state: e.target.value })}
+                    />
+                  </div>
+
+                  {/* Plano Rapidoc */}
+                  <div className="col-span-1 md:col-span-2 border-b pb-2 mb-2 mt-2">
+                    <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-300">Configuração Rapidoc</h3>
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium mb-1">Service Type (UUID Plano)</label>
+                    <Input
+                      value={dependenteRapidocForm.serviceType}
+                      onChange={(e) => setDependenteRapidocForm({ ...dependenteRapidocForm, serviceType: e.target.value })}
+                      placeholder="UUID do plano"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium mb-1">Payment Type</label>
+                    <select
+                      className="w-full px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900"
+                      value={dependenteRapidocForm.paymentType}
+                      onChange={(e) => setDependenteRapidocForm({ ...dependenteRapidocForm, paymentType: e.target.value })}
+                    >
+                      <option value="">Selecione</option>
+                      <option value="S">S (Assinatura)</option>
+                      <option value="A">A (Avulso)</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div className="flex justify-end gap-2 pt-4 border-t border-gray-200 dark:border-gray-700 mt-4">
+                  <Button variant="outline" type="button" onClick={fecharEdicaoDependente} disabled={salvandoDependenteLocal}>
+                    Cancelar
+                  </Button>
+                  <Button variant="primary" type="submit" isLoading={salvandoDependenteLocal} disabled={salvandoDependenteLocal}>
+                    {salvandoDependenteLocal ? 'Salvando...' : 'Salvar Alterações'}
+                  </Button>
+                </div>
+              </form>
             )}
           </Dialog.Content>
         </Dialog>
