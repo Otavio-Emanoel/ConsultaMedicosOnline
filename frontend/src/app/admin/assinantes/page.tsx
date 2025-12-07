@@ -26,7 +26,7 @@ import {
   Trash2,
   Plus,
 } from 'lucide-react';
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, FormEvent } from 'react';
 import { useRouter } from 'next/navigation';
 import { Dialog } from '@/components/ui/Dialog';
 import { auth } from '@/lib/firebase';
@@ -38,6 +38,7 @@ interface AssinanteItem {
   email: string;
   cpf: string;
   plano: string;
+  planoId?: string; // Adicionado para corresponder ao uso no código
   status: string;
   dataAdesao: string;
   ultimoPagamento: string;
@@ -59,6 +60,9 @@ interface AssinaturaDoc {
 }
 
 interface UsuarioDoc {
+  planoId?: string;
+  planoRapidocUuid?: string;
+  paymentType?: string;
   cpf: string;
   nome?: string;
   email?: string;
@@ -71,6 +75,7 @@ interface BeneficiarioSemConta {
   email: string;
   temUsuarioFirestore: boolean;
   temUsuarioAuth: boolean;
+  uuidRapidocPlano?: string;
   temAssinaturaAsaas: boolean;
 }
 
@@ -79,8 +84,19 @@ function formatarDataBR(dataISO: string | null | undefined) {
   return dataISO.split('-').reverse().join('/');
 }
 
+const toDateInputValue = (value?: string | null) => {
+  if (!value) return '';
+  if (value.includes('T')) return value.split('T')[0];
+  if (/^\d{2}\/\d{2}\/\d{4}$/.test(value)) {
+    const [d, m, y] = value.split('/');
+    return `${y}-${m}-${d}`;
+  }
+  return value;
+};
+
 export default function AdminAssinantesPage() {
   const router = useRouter();
+  const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL;
   const [searchTerm, setSearchTerm] = useState('');
   const [assinantes, setAssinantes] = useState<AssinanteItem[]>([]);
   const [assinantesPagamentos, setAssinantesPagamentos] = useState<Record<string, string>>({});
@@ -101,9 +117,36 @@ export default function AdminAssinantesPage() {
   const [loadingDependentes, setLoadingDependentes] = useState<boolean>(false);
   const [dependentesError, setDependentesError] = useState<string>('');
   const [planos, setPlanos] = useState<any[]>([]);
+  const [planoSelecionadoId, setPlanoSelecionadoId] = useState<string>('');
   const [showFilters, setShowFilters] = useState(false);
   const [filtroStatus, setFiltroStatus] = useState<string>('');
   const [filtroPlano, setFiltroPlano] = useState<string>('');
+  const [dependenteEmEdicao, setDependenteEmEdicao] = useState<any | null>(null);
+  const [dependenteLocalForm, setDependenteLocalForm] = useState({
+    nome: '',
+    cpf: '',
+    birthDate: '',
+    parentesco: '',
+    email: '',
+    phone: '',
+    zipCode: '',
+    address: '',
+    city: '',
+    state: '',
+  });
+  const [dependenteRapidocForm, setDependenteRapidocForm] = useState({
+    serviceType: '',
+    paymentType: '',
+    email: '',
+    phone: '',
+    zipCode: '',
+    address: '',
+    city: '',
+    state: '',
+    cpf: '',
+  });
+  const [salvandoDependenteLocal, setSalvandoDependenteLocal] = useState(false);
+  const [salvandoDependenteRapidoc, setSalvandoDependenteRapidoc] = useState(false);
 
   const getAuthToken = async () => {
     try {
@@ -145,8 +188,8 @@ export default function AdminAssinantesPage() {
         if (token) headers['Authorization'] = `Bearer ${token}`;
 
         const [assinaturasResp, usuariosResp] = await Promise.all([
-          fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL}/assinaturas`, { headers }),
-          fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL}/usuarios`, { headers }),
+          fetch(`${API_BASE}/assinaturas`, { headers }),
+          fetch(`${API_BASE}/usuarios`, { headers }),
         ]);
         if (!assinaturasResp.ok) throw new Error('Erro ao buscar assinaturas');
         if (!usuariosResp.ok) throw new Error('Erro ao buscar usuários');
@@ -181,6 +224,9 @@ export default function AdminAssinantesPage() {
             ultimoPagamento,
             dependentes: 0,
             valorMensal,
+            planoId: a.planoId,
+            planoRapidocUuid: (a as any).uuidRapidocPlano || (a as any).planoUuidRapidoc,
+            paymentType: (a as any).paymentType,
           };
         });
         setAssinantes(itens);
@@ -189,7 +235,7 @@ export default function AdminAssinantesPage() {
         const pagamentos: Record<string, string> = {};
         await Promise.all(itens.map(async (a) => {
           try {
-            const resp = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/faturas?cpf=${a.cpf}`, { headers });
+            const resp = await fetch(`${API_BASE}/faturas?cpf=${a.cpf}`, { headers });
             if (!resp.ok) throw new Error('Erro ao buscar faturas');
             const data = await resp.json();
             const faturas = data.faturas || [];
@@ -221,7 +267,7 @@ export default function AdminAssinantesPage() {
     try {
       const headers = await buildAuthHeaders();
 
-      const resp = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL}/admin/beneficiarios-sem-conta`, { headers });
+      const resp = await fetch(`${API_BASE}/admin/beneficiarios-sem-conta`, { headers });
       
       if (!resp.ok) {
         const errorData = await resp.json().catch(() => ({ error: 'Erro desconhecido' }));
@@ -243,7 +289,7 @@ export default function AdminAssinantesPage() {
     try {
       const headers = await buildAuthHeaders();
 
-      const resp = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL}/admin/gerar-nova-senha`, {
+      const resp = await fetch(`${API_BASE}/admin/gerar-nova-senha`, {
         method: 'POST',
         headers,
         body: JSON.stringify({ cpf }),
@@ -281,7 +327,7 @@ export default function AdminAssinantesPage() {
     setDependentesError('');
     try {
       const headers = await buildAuthHeaders();
-      const resp = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL}/dependentes/${cpf}`, { headers });
+      const resp = await fetch(`${API_BASE}/dependentes/${cpf}`, { headers });
       if (!resp.ok) {
         const errorData = await resp.json().catch(() => ({}));
         throw new Error(errorData.error || `Erro ao buscar dependentes (${resp.status})`);
@@ -300,7 +346,7 @@ export default function AdminAssinantesPage() {
     try {
       const headers = await buildAuthHeaders();
       
-      const resp = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL}/admin/beneficiarios/${cpf}/ativar-rapidoc`, {
+      const resp = await fetch(`${API_BASE}/admin/beneficiarios/${cpf}/ativar-rapidoc`, {
         method: 'POST',
         headers,
       });
@@ -324,7 +370,7 @@ export default function AdminAssinantesPage() {
     try {
       const headers = await buildAuthHeaders();
       
-      const resp = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL}/admin/beneficiarios/${cpf}/inativar-rapidoc`, {
+      const resp = await fetch(`${API_BASE}/admin/beneficiarios/${cpf}/inativar-rapidoc`, {
         method: 'POST',
         headers,
       });
@@ -348,7 +394,7 @@ export default function AdminAssinantesPage() {
     try {
       const headers = await buildAuthHeaders();
       
-      const resp = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL}/beneficiarios/${cpf}`, {
+      const resp = await fetch(`${API_BASE}/beneficiarios/${cpf}`, {
         method: 'DELETE',
         headers,
       });
@@ -368,7 +414,7 @@ export default function AdminAssinantesPage() {
   const buscarPlanos = async () => {
     try {
       const headers = await buildAuthHeaders().catch(() => ({ 'Content-Type': 'application/json' } as HeadersInit));
-      const resp = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL}/planos`, { headers });
+      const resp = await fetch(`${API_BASE}/planos`, { headers });
       if (!resp.ok) throw new Error('Erro ao buscar planos');
       const data = await resp.json();
       setPlanos(data || []);
@@ -377,9 +423,145 @@ export default function AdminAssinantesPage() {
     }
   };
 
+  const abrirEdicaoDependente = (dep: any) => {
+    setDependenteEmEdicao(dep);
+    setDependenteLocalForm({
+      nome: dep.nome || '',
+      cpf: dep.cpf || '',
+      birthDate: toDateInputValue(dep.birthDate),
+      parentesco: dep.parentesco || '',
+      email: dep.email || '',
+      phone: dep.phone || '',
+      zipCode: dep.zipCode || '',
+      address: dep.address || '',
+      city: dep.city || '',
+      state: dep.state || '',
+    });
+    setDependenteRapidocForm({
+      serviceType: dep.serviceType || '',
+      paymentType: dep.paymentType || '',
+      email: dep.email || '',
+      phone: dep.phone || '',
+      zipCode: dep.zipCode || '',
+      address: dep.address || '',
+      city: dep.city || '',
+      state: dep.state || '',
+      cpf: dep.cpf || '',
+    });
+  };
+
+  const fecharEdicaoDependente = () => {
+    setDependenteEmEdicao(null);
+    setSalvandoDependenteLocal(false);
+    setSalvandoDependenteRapidoc(false);
+    setDependenteLocalForm({
+      nome: '',
+      cpf: '',
+      birthDate: '',
+      parentesco: '',
+      email: '',
+      phone: '',
+      zipCode: '',
+      address: '',
+      city: '',
+      state: '',
+    });
+    setDependenteRapidocForm({
+      serviceType: '',
+      paymentType: '',
+      email: '',
+      phone: '',
+      zipCode: '',
+      address: '',
+      city: '',
+      state: '',
+      cpf: '',
+    });
+  };
+
+  const salvarDependenteLocal = async (e: FormEvent) => {
+    e.preventDefault();
+    if (!dependenteEmEdicao) return;
+    setSalvandoDependenteLocal(true);
+    setDependentesError('');
+    try {
+      const headers = await buildAuthHeaders();
+      const body: any = {};
+      ['nome', 'birthDate', 'parentesco', 'email', 'phone', 'zipCode', 'address', 'city', 'state'].forEach((key) => {
+        const val = (dependenteLocalForm as any)[key];
+        if (val) body[key] = val;
+      });
+      if (dependenteLocalForm.cpf && dependenteLocalForm.cpf !== dependenteEmEdicao.cpf) {
+        body.cpf = dependenteLocalForm.cpf;
+      }
+      body.holder = modalAssinante?.cpf || dependenteEmEdicao.holder;
+
+      const resp = await fetch(`${API_BASE}/dependentes/${dependenteEmEdicao.cpf}/local`, {
+        method: 'PUT',
+        headers,
+        body: JSON.stringify(body),
+      });
+      if (!resp.ok) {
+        const errorData = await resp.json().catch(() => ({}));
+        throw new Error(errorData.error || `Erro ao atualizar dependente local (${resp.status})`);
+      }
+      const data = await resp.json();
+      setDependentes(data.dependentes || []);
+      if (data.warning) {
+        alert(data.warning);
+      }
+      fecharEdicaoDependente();
+    } catch (e: any) {
+      setDependentesError(e?.message || 'Erro ao atualizar dependente (local)');
+    } finally {
+      setSalvandoDependenteLocal(false);
+    }
+  };
+
+  const salvarDependenteRapidoc = async (e: FormEvent) => {
+    e.preventDefault();
+    if (!dependenteEmEdicao) return;
+    setSalvandoDependenteRapidoc(true);
+    setDependentesError('');
+    try {
+      const headers = await buildAuthHeaders();
+      const body: any = {};
+      ['serviceType', 'paymentType', 'email', 'phone', 'zipCode', 'address', 'city', 'state'].forEach((key) => {
+        const val = (dependenteRapidocForm as any)[key];
+        if (val) body[key] = val;
+      });
+      if (dependenteRapidocForm.cpf && dependenteRapidocForm.cpf !== dependenteEmEdicao.cpf) {
+        body.cpf = dependenteRapidocForm.cpf;
+      }
+
+      const resp = await fetch(`${API_BASE}/dependentes/${dependenteEmEdicao.cpf}/rapidoc`, {
+        method: 'PUT',
+        headers,
+        body: JSON.stringify(body),
+      });
+      if (!resp.ok) {
+        const errorData = await resp.json().catch(() => ({}));
+        throw new Error(errorData.error || `Erro ao atualizar dependente no Rapidoc (${resp.status})`);
+      }
+      const data = await resp.json();
+      setDependentes(data.dependentes || []);
+      fecharEdicaoDependente();
+    } catch (e: any) {
+      setDependentesError(e?.message || 'Erro ao atualizar dependente no Rapidoc');
+    } finally {
+      setSalvandoDependenteRapidoc(false);
+    }
+  };
+
   useEffect(() => {
     buscarPlanos();
   }, []);
+
+  useEffect(() => {
+    if (modalCadastrarVida && modalAssinante?.planoId) {
+      setPlanoSelecionadoId(String(modalAssinante.planoId));
+    }
+  }, [modalCadastrarVida, modalAssinante]);
 
   const filteredAssinantes = useMemo(() => {
     return assinantes
@@ -656,8 +838,8 @@ export default function AdminAssinantesPage() {
                   };
                   if (token) headers['Authorization'] = `Bearer ${token}`;
                   const [assinaturasResp, usuariosResp] = await Promise.all([
-                    fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL}/assinaturas`, { headers }),
-                    fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL}/usuarios`, { headers }),
+                    fetch(`${API_BASE}/assinaturas`, { headers }),
+                    fetch(`${API_BASE}/usuarios`, { headers }),
                   ]);
                   if (!assinaturasResp.ok) throw new Error('Erro ao buscar assinaturas');
                   if (!usuariosResp.ok) throw new Error('Erro ao buscar usuários');
@@ -746,7 +928,7 @@ export default function AdminAssinantesPage() {
                         const headers: HeadersInit = { 'Content-Type': 'application/json' };
                         if (token) headers['Authorization'] = `Bearer ${token}`;
                         const [faturasResp] = await Promise.all([
-                          fetch(`${process.env.NEXT_PUBLIC_API_URL}/faturas?cpf=${assinante.cpf}`, { headers }),
+                          fetch(`${API_BASE}/faturas?cpf=${assinante.cpf}`, { headers }),
                         ]);
                         if (faturasResp.ok) {
                           const data = await faturasResp.json();
@@ -819,7 +1001,10 @@ export default function AdminAssinantesPage() {
                     <Button 
                       variant="primary" 
                       size="sm"
-                      onClick={() => setModalCadastrarVida({ cpfTitular: modalAssinante.cpf, nomeTitular: modalAssinante.nome })}
+                      onClick={() => {
+                        setPlanoSelecionadoId(String(modalAssinante.planoId || ''));
+                        setModalCadastrarVida({ cpfTitular: modalAssinante.cpf, nomeTitular: modalAssinante.nome });
+                      }}
                     >
                       <Plus className="w-4 h-4 mr-1" />
                       Cadastrar Nova Vida
@@ -848,10 +1033,7 @@ export default function AdminAssinantesPage() {
                             <Button 
                               variant="outline" 
                               size="sm"
-                              onClick={() => {
-                                // TODO: Implementar edição de dependente
-                                alert('Edição de dependente será implementada');
-                              }}
+                              onClick={() => abrirEdicaoDependente(dep)}
                             >
                               <Edit className="w-4 h-4" />
                             </Button>
@@ -875,6 +1057,201 @@ export default function AdminAssinantesPage() {
                     </div>
                   )}
                 </div>
+              </div>
+            )}
+          </Dialog.Content>
+        </Dialog>
+
+        {/* Modal de edição de dependente */}
+        <Dialog open={!!dependenteEmEdicao} onOpenChange={v => { if (!v) fecharEdicaoDependente(); }}>
+          <Dialog.Content>
+            <div className="mb-4">
+              <h2 className="text-lg font-semibold">Editar dependente</h2>
+              {dependenteEmEdicao && (
+                <p className="text-sm text-gray-600 dark:text-gray-400">
+                  {dependenteEmEdicao.nome} — CPF {dependenteEmEdicao.cpf}
+                </p>
+              )}
+            </div>
+            {dependenteEmEdicao && (
+              <div className="space-y-6 max-h-[75vh] overflow-y-auto pr-1">
+                <form
+                  onSubmit={salvarDependenteLocal}
+                  className="space-y-4 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900/40 p-4"
+                >
+                  <div className="flex items-center justify-between">
+                    <h3 className="text-sm font-semibold">Atualizar dados locais (Firestore)</h3>
+                    <Badge variant="neutral">Somente banco</Badge>
+                  </div>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-sm font-medium mb-1">Nome</label>
+                      <Input
+                        value={dependenteLocalForm.nome}
+                        onChange={(e) => setDependenteLocalForm({ ...dependenteLocalForm, nome: e.target.value })}
+                        required
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium mb-1">CPF</label>
+                      <Input
+                        value={dependenteLocalForm.cpf}
+                        onChange={(e) => setDependenteLocalForm({ ...dependenteLocalForm, cpf: e.target.value })}
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium mb-1">Data de Nascimento</label>
+                      <Input
+                        type="date"
+                        value={dependenteLocalForm.birthDate}
+                        onChange={(e) => setDependenteLocalForm({ ...dependenteLocalForm, birthDate: e.target.value })}
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium mb-1">Parentesco</label>
+                      <select
+                        className="w-full px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900"
+                        value={dependenteLocalForm.parentesco}
+                        onChange={(e) => setDependenteLocalForm({ ...dependenteLocalForm, parentesco: e.target.value })}
+                      >
+                        <option value="">Selecione...</option>
+                        <option value="Filho(a)">Filho(a)</option>
+                        <option value="Cônjuge">Cônjuge</option>
+                        <option value="Pai/Mãe">Pai/Mãe</option>
+                        <option value="Irmão(ã)">Irmão(ã)</option>
+                        <option value="Outro">Outro</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium mb-1">Email</label>
+                      <Input
+                        type="email"
+                        value={dependenteLocalForm.email}
+                        onChange={(e) => setDependenteLocalForm({ ...dependenteLocalForm, email: e.target.value })}
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium mb-1">Telefone</label>
+                      <Input
+                        value={dependenteLocalForm.phone}
+                        onChange={(e) => setDependenteLocalForm({ ...dependenteLocalForm, phone: e.target.value })}
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium mb-1">CEP</label>
+                      <Input
+                        value={dependenteLocalForm.zipCode}
+                        onChange={(e) => setDependenteLocalForm({ ...dependenteLocalForm, zipCode: e.target.value })}
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium mb-1">Cidade</label>
+                      <Input
+                        value={dependenteLocalForm.city}
+                        onChange={(e) => setDependenteLocalForm({ ...dependenteLocalForm, city: e.target.value })}
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium mb-1">Estado</label>
+                      <Input
+                        value={dependenteLocalForm.state}
+                        maxLength={2}
+                        onChange={(e) => setDependenteLocalForm({ ...dependenteLocalForm, state: e.target.value })}
+                      />
+                    </div>
+                  </div>
+                  <div className="flex justify-end gap-2 pt-4 border-t border-gray-200 dark:border-gray-700">
+                    <Button variant="outline" type="button" onClick={fecharEdicaoDependente} disabled={salvandoDependenteLocal || salvandoDependenteRapidoc}>
+                      Cancelar
+                    </Button>
+                    <Button variant="primary" type="submit" isLoading={salvandoDependenteLocal} disabled={salvandoDependenteLocal}>
+                      Salvar dados locais
+                    </Button>
+                  </div>
+                </form>
+
+                <form
+                  onSubmit={salvarDependenteRapidoc}
+                  className="space-y-4 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900/40 p-4"
+                >
+                  <div className="flex items-center justify-between">
+                    <h3 className="text-sm font-semibold">Atualizar Rapidoc</h3>
+                    <Badge variant="info">Sincroniza Rapidoc</Badge>
+                  </div>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-sm font-medium mb-1">Service Type (UUID do plano Rapidoc)</label>
+                      <Input
+                        value={dependenteRapidocForm.serviceType}
+                        onChange={(e) => setDependenteRapidocForm({ ...dependenteRapidocForm, serviceType: e.target.value })}
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium mb-1">Payment Type</label>
+                      <select
+                        className="w-full px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900"
+                        value={dependenteRapidocForm.paymentType}
+                        onChange={(e) => setDependenteRapidocForm({ ...dependenteRapidocForm, paymentType: e.target.value })}
+                      >
+                        <option value="">Selecione</option>
+                        <option value="S">S</option>
+                        <option value="A">A</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium mb-1">Email</label>
+                      <Input
+                        type="email"
+                        value={dependenteRapidocForm.email}
+                        onChange={(e) => setDependenteRapidocForm({ ...dependenteRapidocForm, email: e.target.value })}
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium mb-1">Telefone</label>
+                      <Input
+                        value={dependenteRapidocForm.phone}
+                        onChange={(e) => setDependenteRapidocForm({ ...dependenteRapidocForm, phone: e.target.value })}
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium mb-1">CEP</label>
+                      <Input
+                        value={dependenteRapidocForm.zipCode}
+                        onChange={(e) => setDependenteRapidocForm({ ...dependenteRapidocForm, zipCode: e.target.value })}
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium mb-1">Cidade</label>
+                      <Input
+                        value={dependenteRapidocForm.city}
+                        onChange={(e) => setDependenteRapidocForm({ ...dependenteRapidocForm, city: e.target.value })}
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium mb-1">Estado</label>
+                      <Input
+                        value={dependenteRapidocForm.state}
+                        maxLength={2}
+                        onChange={(e) => setDependenteRapidocForm({ ...dependenteRapidocForm, state: e.target.value })}
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium mb-1">CPF (opcional para sincronizar)</label>
+                      <Input
+                        value={dependenteRapidocForm.cpf}
+                        onChange={(e) => setDependenteRapidocForm({ ...dependenteRapidocForm, cpf: e.target.value })}
+                      />
+                    </div>
+                  </div>
+                  <div className="flex justify-end gap-2 pt-4 border-t border-gray-200 dark:border-gray-700">
+                    <Button variant="outline" type="button" onClick={fecharEdicaoDependente} disabled={salvandoDependenteLocal || salvandoDependenteRapidoc}>
+                      Cancelar
+                    </Button>
+                    <Button variant="primary" type="submit" isLoading={salvandoDependenteRapidoc} disabled={salvandoDependenteRapidoc}>
+                      Salvar Rapidoc
+                    </Button>
+                  </div>
+                </form>
               </div>
             )}
           </Dialog.Content>
@@ -964,7 +1341,7 @@ export default function AdminAssinantesPage() {
                 });
                 try {
                   const headers = await buildAuthHeaders();
-                  const resp = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL}/usuario/${modalEditar.cpf}`, {
+                  const resp = await fetch(`${API_BASE}/usuario/${modalEditar.cpf}`, {
                     method: 'PATCH',
                     headers,
                     body: JSON.stringify(dados),
@@ -1011,7 +1388,7 @@ export default function AdminAssinantesPage() {
         </Dialog>
 
         {/* Modal de cadastro de vida */}
-        <Dialog open={!!modalCadastrarVida} onOpenChange={v => { if (!v) setModalCadastrarVida(null); }}>
+        <Dialog open={!!modalCadastrarVida} onOpenChange={v => { if (!v) { setModalCadastrarVida(null); setPlanoSelecionadoId(''); } }}>
           <Dialog.Content>
             <div className="mb-4">
               <h2 className="text-lg font-semibold">Cadastrar Nova Vida</h2>
@@ -1022,25 +1399,65 @@ export default function AdminAssinantesPage() {
             {modalCadastrarVida && (
               <form onSubmit={async (e) => {
                 e.preventDefault();
+                setError('');
                 const formData = new FormData(e.currentTarget);
+                const cpfDigits = String(formData.get('cpf') || '').replace(/\D/g, '');
+                const planoId = String(formData.get('planoId') || '');
+                const phoneDigits = String(formData.get('phone') || '').replace(/\D/g, '');
+                const holderDigits = String(modalCadastrarVida.cpfTitular || '').replace(/\D/g, '');
+
+                if (!cpfDigits || cpfDigits.length !== 11) {
+                  setError('CPF deve ter 11 dígitos.');
+                  return;
+                }
+                if (!planoId) {
+                  setError('Selecione um plano para continuar.');
+                  return;
+                }
+                if (phoneDigits.length !== 11) {
+                  setError('Telefone deve ter 11 dígitos (DDD + número).');
+                  return;
+                }
+                if (!holderDigits || holderDigits.length !== 11) {
+                  setError('CPF do titular inválido.');
+                  return;
+                }
+
+                const planoSel = planos.find((p: any) => String(p.id) === planoId);
+                const serviceTypeAuto = planoSel?.uuidRapidocPlano || '';
+                const paymentTypeAuto = (planoSel?.paymentType || '').toUpperCase();
+                if (!planoSel) {
+                  setError('Plano selecionado não encontrado.');
+                  return;
+                }
+                if (!serviceTypeAuto) {
+                  setError('Plano selecionado está sem UUID Rapidoc configurado.');
+                  return;
+                }
+                const plansPayload = serviceTypeAuto
+                  ? [{ paymentType: paymentTypeAuto || undefined, plan: { uuid: serviceTypeAuto } }]
+                  : [];
+
                 const dados: any = {
                   nome: formData.get('nome'),
-                  cpf: formData.get('cpf'),
+                  cpf: cpfDigits,
                   birthDate: formData.get('birthDate'),
                   email: formData.get('email'),
-                  phone: formData.get('phone'),
+                  phone: phoneDigits || undefined,
                   zipCode: formData.get('zipCode'),
-                  endereco: formData.get('endereco'),
-                  cidade: formData.get('cidade'),
-                  estado: formData.get('estado'),
-                  planoId: formData.get('planoId'),
-                  paymentType: formData.get('paymentType'),
-                  serviceType: formData.get('serviceType'),
+                  address: formData.get('address'),
+                  city: formData.get('city'),
+                  state: formData.get('state'),
+                  holder: holderDigits,
+                  paymentType: paymentTypeAuto || undefined,
+                  serviceType: serviceTypeAuto || undefined,
+                  plans: plansPayload,
                   cortesia: formData.get('cortesia') === 'on',
                 };
                 try {
+                  setError('');
                   const headers = await buildAuthHeaders();
-                  const resp = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL}/admin/assinantes/${modalCadastrarVida.cpfTitular}/vidas/cadastrar`, {
+                  const resp = await fetch(`${API_BASE}/dependentes`, {
                     method: 'POST',
                     headers,
                     body: JSON.stringify(dados),
@@ -1050,6 +1467,7 @@ export default function AdminAssinantesPage() {
                     throw new Error(errorData.error || 'Erro ao cadastrar vida');
                   }
                   setModalCadastrarVida(null);
+                  setPlanoSelecionadoId('');
                   if (modalAssinante) {
                     buscarDependentes(modalAssinante.cpf);
                   }
@@ -1085,19 +1503,25 @@ export default function AdminAssinantesPage() {
                   </div>
                   <div>
                     <label className="block text-sm font-medium mb-1">Endereço</label>
-                    <Input name="endereco" />
+                    <Input name="address" />
                   </div>
                   <div>
                     <label className="block text-sm font-medium mb-1">Cidade</label>
-                    <Input name="cidade" />
+                    <Input name="city" />
                   </div>
                   <div>
                     <label className="block text-sm font-medium mb-1">Estado</label>
-                    <Input name="estado" maxLength={2} />
+                    <Input name="state" maxLength={2} />
                   </div>
                   <div>
                     <label className="block text-sm font-medium mb-1">Plano</label>
-                    <select name="planoId" className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800">
+                    <select
+                      name="planoId"
+                      value={planoSelecionadoId}
+                      onChange={(e) => setPlanoSelecionadoId(e.target.value)}
+                      className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800"
+                      required
+                    >
                       <option value="">Selecione um plano</option>
                       {planos.map((plano: any) => (
                         <option key={plano.id} value={plano.id}>{plano.tipo || plano.descricao} - R$ {plano.preco?.toFixed(2)}</option>
@@ -1105,17 +1529,12 @@ export default function AdminAssinantesPage() {
                     </select>
                   </div>
                   <div>
-                    <label className="block text-sm font-medium mb-1">Payment Type</label>
-                    <select name="paymentType" className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800">
-                      <option value="">Selecione</option>
-                      <option value="S">S</option>
-                      <option value="A">A</option>
-                      <option value="L">L</option>
-                    </select>
+                    <label className="block text-sm font-medium mb-1">Payment Type (do plano)</label>
+                    <Input value={planos.find((p: any) => String(p.id) === String(planoSelecionadoId))?.paymentType || ''} readOnly placeholder="Selecione um plano" />
                   </div>
                   <div>
-                    <label className="block text-sm font-medium mb-1">Service Type</label>
-                    <Input name="serviceType" placeholder="UUID do plano Rapidoc" />
+                    <label className="block text-sm font-medium mb-1">Service Type (UUID Rapidoc do plano)</label>
+                    <Input value={planos.find((p: any) => String(p.id) === String(planoSelecionadoId))?.uuidRapidocPlano || ''} readOnly placeholder="Selecione um plano" />
                   </div>
                 </div>
                 <div className="flex items-center gap-2">

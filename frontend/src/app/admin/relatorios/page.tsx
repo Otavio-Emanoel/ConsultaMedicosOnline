@@ -175,6 +175,10 @@ export default function AdminRelatoriosPage() {
   const planosData = planosDetalhados.map((p) => Number(p.assinantes ?? 0));
 
   function exportarPDF() {
+    if (!data) {
+      // Opcional: mostrar alerta ou retornar silenciosamente
+      return;
+    }
     const doc = new jsPDF();
     const now = new Date();
     const dataStr = now.toLocaleString('pt-BR');
