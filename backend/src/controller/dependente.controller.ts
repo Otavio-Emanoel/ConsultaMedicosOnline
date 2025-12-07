@@ -86,24 +86,46 @@ export class DependenteController {
       // 6. Chamada ao Rapidoc Service
       const rapidocResp = await cadastrarBeneficiarioRapidoc(rapidocPayload);
       
-      console.log('[DependenteController.adicionar] Sucesso Rapidoc:', rapidocResp);
+      console.log('[DependenteController.adicionar] Resposta Bruta Rapidoc:', JSON.stringify(rapidocResp));
 
-      if (rapidocResp && rapidocResp.success === false) {
+      // Normalização da resposta (pode ser array ou objeto)
+      const rapidocObj = Array.isArray(rapidocResp) ? rapidocResp[0] : rapidocResp;
+
+      if (rapidocObj && rapidocObj.success === false) {
          return res.status(400).json({ 
-             error: rapidocResp.message || 'Erro lógico ao criar dependente no Rapidoc.',
-             details: rapidocResp 
+             error: rapidocObj.message || 'Erro lógico ao criar dependente no Rapidoc.',
+             details: rapidocObj 
          });
       }
 
-      const uuidGerado = rapidocResp.uuid || (rapidocResp.beneficiary && rapidocResp.beneficiary.uuid);
+      // --- LÓGICA DE EXTRAÇÃO DO UUID CORRIGIDA ---
+      let uuidGerado = rapidocObj?.uuid;
 
-      // 7. Salva no Firestore (CORREÇÃO DE UNDEFINED AQUI)
-      // Usamos || null para garantir que nunca passamos undefined para o Firestore
+      // Caso 1: Estrutura { beneficiary: { uuid: ... } } (Singular)
+      if (!uuidGerado && rapidocObj?.beneficiary?.uuid) {
+          uuidGerado = rapidocObj.beneficiary.uuid;
+      }
+      
+      // Caso 2: Estrutura { beneficiaries: [ { uuid: ... } ] } (Plural - Array) -> SEU CASO ATUAL
+      if (!uuidGerado && Array.isArray(rapidocObj?.beneficiaries) && rapidocObj.beneficiaries.length > 0) {
+          uuidGerado = rapidocObj.beneficiaries[0].uuid;
+      }
+
+      // Caso 3: Estrutura antiga ou alternativa { data: { uuid: ... } }
+      if (!uuidGerado && rapidocObj?.data?.uuid) {
+          uuidGerado = rapidocObj.data.uuid;
+      }
+
+      if (!uuidGerado) {
+          console.warn('[DependenteController.adicionar] ATENÇÃO: UUID não encontrado na resposta do Rapidoc. Estrutura recebida:', Object.keys(rapidocObj || {}));
+      }
+
+      // 7. Salva no Firestore
       const docData: any = {
         nome,
         cpf: cpfNormalizado,
         birthDate,
-        parentesco: parentesco || null, // <--- CORRIGIDO
+        parentesco: parentesco || null,
         holder: holderNormalizado,
         email: email || null,
         phone: phoneDigits || null,
@@ -113,12 +135,14 @@ export class DependenteController {
         state: state || null,
         paymentType: plansNormalizados[0]?.paymentType || paymentType || null,
         serviceType: plansNormalizados[0]?.plan?.uuid || serviceType || null,
-        rapidocUuid: uuidGerado || null,
+        rapidocUuid: uuidGerado || null, 
         createdAt: new Date(),
       };
+      
+      Object.keys(docData).forEach(key => docData[key] === undefined && delete docData[key]);
 
       const createdRef = await admin.firestore().collection('beneficiarios').add(docData);
-      console.log('[DependenteController.adicionar] Documento criado no Firestore:', createdRef.id);
+      console.log('[DependenteController.adicionar] Documento criado no Firestore:', createdRef.id, 'com UUID Rapidoc:', uuidGerado);
 
       // 8. Retorna lista atualizada
       const snapshot = await admin.firestore().collection('beneficiarios').where('holder', '==', holderNormalizado).get();
@@ -262,7 +286,7 @@ export class DependenteController {
         nome: nome ?? dependente.nome,
         cpf: (typeof cpf === 'string' && cpf.trim()) ? cpf.trim() : (dependente.cpf ?? cpfParam),
         birthDate: birthDate ?? dependente.birthDate,
-        parentesco: parentesco ?? dependente.parentesco ?? null, // Proteção contra undefined
+        parentesco: parentesco ?? dependente.parentesco ?? null,
         holder: holderFinal,
         email: email ?? dependente.email,
         phone: phone ?? dependente.phone ?? null,
@@ -276,7 +300,6 @@ export class DependenteController {
         updatedAt: new Date(),
       };
       
-      // Limpeza final de campos undefined (caso o banco antigo não tenha e o req não mande)
       Object.keys(updatedFirestore).forEach(key => updatedFirestore[key] === undefined && delete updatedFirestore[key]);
 
       await docRef.update(updatedFirestore);
@@ -292,7 +315,7 @@ export class DependenteController {
     }
   }
 
-  // Métodos auxiliares para rotas específicas
+  // Métodos auxiliares
   static async atualizarLocal(req: Request, res: Response) {
       return res.status(501).json({error: 'Método não implementado nesta versão.'});
   }
