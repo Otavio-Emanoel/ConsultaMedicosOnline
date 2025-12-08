@@ -452,21 +452,22 @@ export async function listarAgendamentosRapidoc(params: Record<string, any>) {
 }
 // Inativa beneficiário no Rapidoc tentando chaves isActive/active
 export async function inativarBeneficiarioRapidoc(uuid: string) {
-  if (!RAPIDOC_BASE_URL || !RAPIDOC_TOKEN || !RAPIDOC_CLIENT_ID) throw new Error('Configuração Rapidoc ausente');
-  // De acordo com a documentação, a operação correta é DELETE
-  const url = `${RAPIDOC_BASE_URL}/tema/api/beneficiaries/${uuid}`;
-  const headers = {
-    Authorization: `Bearer ${RAPIDOC_TOKEN}`,
-    clientId: RAPIDOC_CLIENT_ID
-  } as const;
-  const resp = await rapidocAxios.delete(url, { headers });
-  cache.delete(`rapidoc:beneficiary:uuid:${uuid}`);
-  for (const key of cache.keys()) {
-    if (key.startsWith('rapidoc:beneficiary:cpf:')) {
-      cache.delete(key);
-    }
+  if (!RAPIDOC_BASE_URL || !RAPIDOC_TOKEN || !RAPIDOC_CLIENT_ID) throw new Error('Config Rapidoc ausente');
+
+  try {
+    // A rota para REMOVER é DELETE /beneficiaries/{uuid}
+    const resp = await rapidocAxios.delete(`${RAPIDOC_BASE_URL}/tema/api/beneficiaries/${uuid}`, {
+      headers: {
+        Authorization: `Bearer ${RAPIDOC_TOKEN}`,
+        clientId: RAPIDOC_CLIENT_ID,
+        'Content-Type': 'application/vnd.rapidoc.tema-v2+json' // Importante para v2
+      }
+    });
+    return resp.data;
+  } catch (error: any) {
+    console.error('Erro ao deletar beneficiario Rapidoc:', error.response?.data || error.message);
+    throw error; // Repassa erro para o controller tratar
   }
-  return resp.data;
 }
 
 // Remover beneficiário (DELETE) por UUID — alias semântica
