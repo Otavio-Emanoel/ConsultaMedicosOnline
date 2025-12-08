@@ -360,69 +360,94 @@ export class SubscriptionController {
 
     /**
      * Cancela o plano do usuário logado
-     * Requisitos:
-     * 1. Usuário deve ter pago os períodos necessários conforme a periodicidade do plano
-     *    (Mensal: 1 período, Bimestral: 2 períodos, Trimestral: 3 períodos, etc.)
-     * 2. Inativa beneficiário no Rapidoc
-     * 3. Cancela assinatura no Asaas
-     * 4. Marca assinatura como cancelada no Firestore
+     * Requisitos ATUALIZADOS:
+     * 1. Usuário deve ter pago os períodos necessários
+     * 2. NÃO deve possuir dependentes ativos (Verificação nova)
+     * 3. Inativa beneficiário no Rapidoc
+     * 4. Cancela assinatura no Asaas
+     * 5. Marca assinatura como cancelada no Firestore
      */
-    static async cancelarPlanoUsuario(req: Request, res: Response) {
+   static async cancelarPlanoUsuario(req: Request, res: Response) {
         try {
             // 1. Obter CPF do usuário logado
             const uid = req.user?.uid || req.user?.sub;
-            if (!uid) {
-                return res.status(401).json({ error: 'Usuário não autenticado.' });
-            }
+            if (!uid) return res.status(401).json({ error: 'Usuário não autenticado.' });
 
             const { getFirestore } = await import('firebase-admin/firestore');
             const { firebaseApp } = await import('../config/firebase.js');
             const db = getFirestore(firebaseApp);
             
-            // Buscar CPF do usuário no Firestore
+            // Buscar CPF
             const usuarioRef = db.collection('usuarios').doc(uid);
             const usuarioDoc = await usuarioRef.get();
-            let cpf: string | undefined;
+            let cpf: string | undefined = usuarioDoc.exists ? usuarioDoc.data()?.cpf : undefined;
             
-            if (usuarioDoc.exists) {
-                const usuarioData = usuarioDoc.data();
-                cpf = usuarioData?.cpf;
-            }
+            // Fallback para UID se não achar no documento
+            if (!cpf) cpf = (req.user as any)?.cpf || uid;
             
-            // Fallback: usar UID como CPF (caso o UID seja o CPF)
-            if (!cpf) {
-                cpf = (req.user as any)?.cpf || uid;
-            }
-            
-            if (!cpf) {
-                return res.status(400).json({ error: 'CPF do usuário não encontrado.' });
-            }
+            if (!cpf) return res.status(400).json({ error: 'CPF do usuário não encontrado.' });
 
-            // 2. Buscar assinatura ativa do usuário
-            const assinaturasSnap = await db.collection('assinaturas')
-                .where('cpfUsuario', '==', cpf)
-                .where('status', '==', 'ATIVA')
+            // Normalização do CPF para busca
+            const cpfClean = String(cpf).replace(/\D/g, '');
+            const cpfFormatted = cpfClean.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/, '$1.$2.$3-$4');
+
+            console.log(`[cancelarPlanoUsuario] Buscando assinaturas para CPF: ${cpfClean} ou ${cpfFormatted}`);
+
+            // 2. Buscar assinatura (Tenta formatos diferentes)
+            const assinaturasRef = db.collection('assinaturas');
+            const assinaturasSnap = await assinaturasRef
+                .where('cpfUsuario', 'in', [cpfClean, cpfFormatted])
                 .get();
             
             if (assinaturasSnap.empty) {
-                return res.status(404).json({ error: 'Nenhuma assinatura ativa encontrada para este usuário.' });
-            }
-            
-            const assinaturaDoc = assinaturasSnap.docs[0];
-            if (!assinaturaDoc) {
-                return res.status(404).json({ error: 'Nenhuma assinatura ativa encontrada para este usuário.' });
-            }
-            const assinaturaData = assinaturaDoc.data();
-            const assinaturaId = assinaturaData?.idAssinatura || assinaturaDoc.id;
-            
-            if (!assinaturaId) {
-                return res.status(400).json({ error: 'ID da assinatura não encontrado.' });
+                console.warn(`[cancelarPlanoUsuario] Nenhuma assinatura encontrada no banco para os CPFs informados.`);
+                return res.status(404).json({ error: 'Nenhuma assinatura encontrada para este usuário.' });
             }
 
-            // 3. Obter periodicidade do plano para determinar quantos períodos são necessários
-            let periodicidade: string | null | undefined = assinaturaData?.planoPeriodicidade;
+            // Debug: Ver o que foi encontrado
+            console.log(`[cancelarPlanoUsuario] Encontradas ${assinaturasSnap.size} assinaturas no total. Verificando status...`);
+
+            // Filtra manualmente para aceitar variações de status ativo
+            const assinaturaDoc = assinaturasSnap.docs.find(doc => {
+                const data = doc.data();
+                const s = String(data.status || '').toUpperCase().trim();
+                console.log(` -> Assinatura ${doc.id}: Status="${s}"`); // Log de debug
+                return s === 'ATIVA' || s === 'ACTIVE';
+            });
             
-            // Se não estiver na assinatura, buscar do plano vinculado
+            if (!assinaturaDoc) {
+                console.warn(`[cancelarPlanoUsuario] Existem assinaturas, mas nenhuma está com status ATIVA ou ACTIVE.`);
+                return res.status(404).json({ error: 'Nenhuma assinatura ativa encontrada para este usuário.' });
+            }
+
+            const assinaturaData = assinaturaDoc.data();
+            const assinaturaId = assinaturaData?.idAssinatura || assinaturaDoc.id;
+            console.log(`[cancelarPlanoUsuario] Assinatura alvo selecionada: ${assinaturaId}`);
+
+            // === VERIFICAÇÃO DE DEPENDENTES ===
+            // Verifica se existem dependentes vinculados a este titular (usando CPF limpo e formatado por segurança)
+            const dependentesSnapshot = await db.collection('beneficiarios')
+                .where('holder', 'in', [cpfClean, cpfFormatted])
+                .get();
+
+            // Filtra para garantir que não estamos contando o próprio titular
+            // (Às vezes o titular tem um registro na tabela de beneficiários com seu próprio CPF)
+            const dependentesReais = dependentesSnapshot.docs.filter(doc => {
+                const d = doc.data();
+                const dCpf = String(d.cpf || '').replace(/\D/g, '');
+                return dCpf !== cpfClean; 
+            });
+
+            if (dependentesReais.length > 0) {
+                console.warn(`[cancelarPlanoUsuario] Cancelamento bloqueado: ${dependentesReais.length} dependentes encontrados.`);
+                return res.status(400).json({ 
+                    error: 'Você possui dependentes cadastrados. É necessário removê-los antes de cancelar o plano.',
+                    dependentesCount: dependentesReais.length
+                });
+            }
+
+            // 3. Obter periodicidade
+            let periodicidade: string | null | undefined = assinaturaData?.planoPeriodicidade;
             if (!periodicidade && assinaturaData?.planoId) {
                 try {
                     const planoRef = db.collection('planos').doc(assinaturaData.planoId);
@@ -432,77 +457,65 @@ export class SubscriptionController {
                         periodicidade = planoData?.periodicidade;
                     }
                 } catch (planoError) {
-                    console.warn('[cancelarPlanoUsuario] Não foi possível buscar periodicidade do plano:', planoError);
+                    console.warn('[cancelarPlanoUsuario] Aviso: Não foi possível buscar periodicidade:', planoError);
                 }
             }
 
-            // 4. Verificar se pagou os períodos necessários conforme a periodicidade
+            // 4. Verificar pagamentos mínimos
             const { verificarTresPrimeirosMesesPagos, obterPeriodosNecessariosParaCancelamento } = await import('../services/asaas.service.js');
             const periodosNecessarios = obterPeriodosNecessariosParaCancelamento(periodicidade);
             const verificacao = await verificarTresPrimeirosMesesPagos(assinaturaId, periodosNecessarios);
             
             if (!verificacao.pagos) {
                 return res.status(403).json({ 
-                    error: verificacao.mensagem || `É necessário ter pago os ${periodosNecessarios} primeiro${periodosNecessarios > 1 ? 's' : ''} período${periodosNecessarios > 1 ? 's' : ''} para cancelar o plano.`,
+                    error: verificacao.mensagem || `É necessário ter pago os ${periodosNecessarios} primeiro(s) período(s) para cancelar.`,
                     pagamentosPagos: verificacao.pagamentosPagos,
                     periodosNecessarios: verificacao.periodosNecessarios
                 });
             }
 
-            // 5. Buscar beneficiário no Rapidoc e inativar
+            // 5. Inativar titular no Rapidoc
             const { buscarBeneficiarioRapidocPorCpf, inativarBeneficiarioRapidoc } = await import('../services/rapidoc.service.js');
             try {
-                const beneficiarioResp = await buscarBeneficiarioRapidocPorCpf(cpf);
+                const beneficiarioResp = await buscarBeneficiarioRapidocPorCpf(cpfClean);
                 const beneficiario = beneficiarioResp?.beneficiary;
-                
                 if (beneficiario && beneficiario.uuid) {
-                    try {
-                        await inativarBeneficiarioRapidoc(beneficiario.uuid);
-                        console.log(`[cancelarPlanoUsuario] Beneficiário ${beneficiario.uuid} inativado no Rapidoc`);
-                    } catch (rapidocError: any) {
-                        console.error('[cancelarPlanoUsuario] Erro ao inativar no Rapidoc:', rapidocError);
-                        // Continua mesmo se falhar no Rapidoc
-                    }
+                    console.log(`[cancelarPlanoUsuario] Inativando titular no Rapidoc: ${beneficiario.uuid}`);
+                    await inativarBeneficiarioRapidoc(beneficiario.uuid);
                 }
             } catch (rapidocError: any) {
-                console.error('[cancelarPlanoUsuario] Erro ao buscar beneficiário no Rapidoc:', rapidocError);
-                // Continua mesmo se não encontrar no Rapidoc
+                console.error('[cancelarPlanoUsuario] Erro ao inativar no Rapidoc (prosseguindo):', rapidocError?.message);
             }
 
-            // 6. Cancelar assinatura no Asaas
+            // 6. Cancelar no Asaas
             const { cancelarAssinaturaAsaas } = await import('../services/asaas.service.js');
             try {
-                const respAsaas = await cancelarAssinaturaAsaas(assinaturaId);
-                const ok = respAsaas.status === 200 || respAsaas.status === 204;
-                if (!ok) {
-                    console.error('[cancelarPlanoUsuario] Falha ao cancelar no Asaas:', respAsaas);
-                }
+                console.log(`[cancelarPlanoUsuario] Cancelando assinatura no Asaas: ${assinaturaId}`);
+                await cancelarAssinaturaAsaas(assinaturaId);
             } catch (asaasError: any) {
                 console.error('[cancelarPlanoUsuario] Erro ao cancelar no Asaas:', asaasError);
-                // Continua mesmo se falhar no Asaas
+                // Opcional: retornar erro se falhar no Asaas é crítico, mas geralmente queremos marcar como cancelado no banco local de qualquer forma
             }
 
-            // 7. Marcar assinatura como cancelada no Firestore
-            if (assinaturaDoc) {
-                await assinaturaDoc.ref.update({
-                    status: 'CANCELADA',
-                    dataCancelamento: new Date().toISOString(),
-                    motivoCancelamento: req.body.reasons || [],
-                    comentariosCancelamento: req.body.comments || ''
-                });
-            }
+            // 7. Atualizar Firestore
+            await assinaturaDoc.ref.update({
+                status: 'CANCELADA',
+                dataCancelamento: new Date().toISOString(),
+                motivoCancelamento: req.body.reasons || [],
+                comentariosCancelamento: req.body.comments || ''
+            });
 
+            console.log('[cancelarPlanoUsuario] Sucesso total.');
             return res.status(200).json({ 
                 success: true,
                 message: 'Plano cancelado com sucesso.',
                 assinaturaId,
                 dataCancelamento: new Date().toISOString()
             });
+
         } catch (error: any) {
-            console.error('[cancelarPlanoUsuario] Erro:', error);
-            return res.status(500).json({ 
-                error: error?.message || 'Erro ao cancelar plano.' 
-            });
+            console.error('[cancelarPlanoUsuario] Erro Crítico:', error);
+            return res.status(500).json({ error: error?.message || 'Erro interno ao cancelar plano.' });
         }
     }
 

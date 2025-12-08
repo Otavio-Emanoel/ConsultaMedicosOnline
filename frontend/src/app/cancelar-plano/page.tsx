@@ -9,6 +9,8 @@ import {
   XCircle,
   CheckCircle,
   Loader2,
+  Users,
+  Trash2
 } from 'lucide-react';
 import { auth } from '@/lib/firebase';
 
@@ -27,87 +29,121 @@ const CANCELLATION_REASONS = [
 interface PlanoInfo {
   nome: string;
   valor: number;
-  dependentes: number;
+}
+
+interface Dependente {
+  id: string; // ID do Firestore ou UUID
+  nome: string;
+  cpf: string;
+  parentesco?: string;
 }
 
 export default function CancelarPlanoPage() {
   const [step, setStep] = useState<CancellationStep>('initial');
   const [selectedReasons, setSelectedReasons] = useState<string[]>([]);
   const [additionalComments, setAdditionalComments] = useState('');
-  const [selectedOffer, setSelectedOffer] = useState<number | null>(null);
+  
+  // Estados de dados
   const [cancelError, setCancelError] = useState<string>('');
   const [loadingCancel, setLoadingCancel] = useState(false);
-  const [loadingPlano, setLoadingPlano] = useState(true);
+  const [loadingData, setLoadingData] = useState(true);
   const [planoInfo, setPlanoInfo] = useState<PlanoInfo | null>(null);
+  const [dependentes, setDependentes] = useState<Dependente[]>([]);
   const [error, setError] = useState<string>('');
-  const [loading, setLoading] = useState(false);
   const [dataCancelamento, setDataCancelamento] = useState<string | null>(null);
+  const [loadingRemoverDep, setLoadingRemoverDep] = useState<string | null>(null); // ID do dependente sendo removido
 
-  // Carregar informações do plano
+  // Verificar pendências de pagamento
+  const [pagamentoEmDia, setPagamentoEmDia] = useState<boolean>(true);
+
+  // Carregar informações iniciais
   useEffect(() => {
-    const carregarPlano = async () => {
+    const carregarDados = async () => {
       try {
-        setLoadingPlano(true);
+        setLoadingData(true);
         const apiBase = process.env.NEXT_PUBLIC_API_BASE_URL;
         const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
         
         if (!token) {
           setError('Usuário não autenticado');
-          setLoadingPlano(false);
+          setLoadingData(false);
           return;
         }
 
-        const response = await fetch(`${apiBase}/dashboard`, {
+        // 1. Buscar Dashboard (Plano e Usuário)
+        const dashboardResp = await fetch(`${apiBase}/dashboard`, {
           headers: { Authorization: `Bearer ${token}` }
         });
 
-        if (!response.ok) {
-          throw new Error('Erro ao carregar informações do plano');
-        }
-
-        const data = await response.json();
+        if (!dashboardResp.ok) throw new Error('Erro ao carregar dados do usuário');
+        const dashboardData = await dashboardResp.json();
         
-        // Buscar informações do plano a partir dos dados do dashboard
-        const assinatura = data.assinaturas?.[0] || data.usuario;
-        const beneficiarios = data.beneficiarios || [];
+        // Define info do plano
+        const assinatura = dashboardData.assinaturas?.[0] || dashboardData.usuario;
         
         if (assinatura?.planoId) {
-          // Buscar detalhes do plano
-          const planosResponse = await fetch(`${apiBase}/planos`);
-          if (planosResponse.ok) {
-            const planos = await planosResponse.json();
-            const plano = Array.isArray(planos) 
-              ? planos.find((p: any) => p.id === assinatura.planoId)
-              : null;
-            
-            if (plano) {
-              setPlanoInfo({
-                nome: plano.tipo || plano.nome || 'Plano',
-                valor: plano.preco || plano.valor || 0,
-                dependentes: beneficiarios.length || 0
-              });
-            }
-          }
+           // Tenta buscar nome do plano se tiver ID
+           try {
+             const planosResp = await fetch(`${apiBase}/planos`);
+             if (planosResp.ok) {
+                const planos = await planosResp.json();
+                const planoDetalhe = Array.isArray(planos) ? planos.find((p: any) => p.id === assinatura.planoId) : null;
+                setPlanoInfo({
+                    nome: planoDetalhe?.tipo || planoDetalhe?.nome || 'Plano',
+                    valor: planoDetalhe?.preco || 0
+                });
+             }
+           } catch {
+             setPlanoInfo({ nome: 'Plano Ativo', valor: 0 });
+           }
         } else if (assinatura?.plano) {
-          // Se o plano já vem nos dados da assinatura
-          setPlanoInfo({
-            nome: assinatura.plano.tipo || assinatura.plano.nome || 'Plano',
-            valor: assinatura.plano.preco || assinatura.plano.valor || 0,
-            dependentes: beneficiarios.length || 0
-          });
+            setPlanoInfo({
+                nome: assinatura.plano.tipo || 'Plano',
+                valor: assinatura.plano.preco || 0
+            });
         }
+
+        // 2. Buscar Dependentes (via endpoint específico ou dashboard)
+        // Se o dashboard já retornar, usamos. Se não, buscamos pelo endpoint de dependentes.
+        const userCpf = dashboardData.usuario?.cpf;
+        if (userCpf) {
+            const depsResp = await fetch(`${apiBase}/dependentes/${userCpf}`, {
+                headers: { Authorization: `Bearer ${token}` }
+            });
+            if (depsResp.ok) {
+                const depsData = await depsResp.json();
+                // Filtra para não mostrar o próprio titular se ele vier na lista
+                const listaFiltrada = (depsData.dependentes || []).filter((d: any) => d.cpf !== userCpf);
+                setDependentes(listaFiltrada);
+            }
+        }
+
+        // 3. Verificar Faturas (Pagamento em dia)
+        const faturasResp = await fetch(`${apiBase}/faturas`, {
+            headers: { Authorization: `Bearer ${token}` }
+        });
+        if (faturasResp.ok) {
+            const faturasData = await faturasResp.json();
+            const faturas = faturasData?.faturas || [];
+            // Verifica se tem alguma fatura vencida (OVERDUE)
+            const temPendente = faturas.some((f: any) => f.status === 'OVERDUE');
+            if (temPendente) {
+                setPagamentoEmDia(false);
+                setError('Você possui faturas em atraso. Regularize para cancelar.');
+            }
+        }
+
       } catch (err: any) {
-        console.error('Erro ao carregar plano:', err);
-        setError(err.message || 'Erro ao carregar informações do plano');
+        console.error('Erro inicial:', err);
+        setError(err.message || 'Erro ao carregar informações.');
       } finally {
-        setLoadingPlano(false);
+        setLoadingData(false);
       }
     };
 
-    carregarPlano();
+    carregarDados();
   }, []);
 
-  // Corrigido: handleReasonToggle estava com escopo e lógica quebrados
   const handleReasonToggle = (reason: string) => {
     if (selectedReasons.includes(reason)) {
       setSelectedReasons(selectedReasons.filter(r => r !== reason));
@@ -116,54 +152,54 @@ export default function CancelarPlanoPage() {
     }
   };
 
-  // Corrigido: handleConfirmCancellation duplicado e escopo errado
+  const handleRemoveDependente = async (depCpf: string, depId: string) => {
+    if (!confirm('Tem certeza que deseja remover este dependente? Esta ação é irreversível.')) return;
+
+    setLoadingRemoverDep(depId);
+    setError('');
+    
+    try {
+        const apiBase = process.env.NEXT_PUBLIC_API_BASE_URL;
+        const token = localStorage.getItem('token');
+        
+        // Usar o endpoint de delete criado anteriormente ou genérico
+        const resp = await fetch(`${apiBase}/beneficiarios/${depCpf}`, {
+            method: 'DELETE',
+            headers: { Authorization: `Bearer ${token}` }
+        });
+
+        if (!resp.ok) {
+            const err = await resp.json();
+            throw new Error(err.error || 'Erro ao remover dependente');
+        }
+
+        // Atualizar lista localmente
+        setDependentes(prev => prev.filter(d => d.cpf !== depCpf));
+
+    } catch (e: any) {
+        setError(e.message);
+    } finally {
+        setLoadingRemoverDep(null);
+    }
+  };
+
   const handleConfirmCancellation = async () => {
-    console.log('[CancelarPlano] Iniciando cancelamento...');
     setCancelError('');
     setError('');
     setLoadingCancel(true);
-    setLoading(true);
     try {
       const apiBase = process.env.NEXT_PUBLIC_API_BASE_URL;
-      const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
-      if (!token) {
-        console.error('[CancelarPlano] Token não encontrado');
-        throw new Error('Usuário não autenticado');
+      const token = localStorage.getItem('token');
+      
+      // Validação final de dependentes (redundância de segurança)
+      if (dependentes.length > 0) {
+        throw new Error('Ainda existem dependentes ativos. Remova-os antes de cancelar.');
+      }
+
+      if (!pagamentoEmDia) {
+        throw new Error('Pagamento em atraso. Regularize sua situação.');
       }
       
-      console.log('[CancelarPlano] Verificando faturas...');
-      // Verifica pagamento em dia
-      const resp = await fetch(`${apiBase}/faturas`, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
-      
-      if (!resp.ok) {
-        const errorData = await resp.json().catch(() => ({}));
-        console.error('[CancelarPlano] Erro ao consultar faturas:', errorData);
-        throw new Error(errorData.error || 'Erro ao consultar faturas');
-      }
-      
-      const data = await resp.json();
-      console.log('[CancelarPlano] Dados das faturas:', data);
-      const faturas = data?.faturas || [];
-      const emDia = Array.isArray(faturas)
-        ? faturas.some((f: any) => f.status === 'RECEIVED' || f.status === 'PAID')
-        : false;
-      
-      console.log('[CancelarPlano] Pagamento em dia:', emDia);
-      
-      if (!emDia) {
-        console.warn('[CancelarPlano] Pagamento não está em dia');
-        const mensagemErro = 'Não é possível cancelar: pagamento não está em dia. Regularize sua situação para prosseguir.';
-        setCancelError(mensagemErro);
-        setError(mensagemErro);
-        setLoadingCancel(false);
-        setLoading(false);
-        return;
-      }
-      
-      console.log('[CancelarPlano] Chamando API de cancelamento...');
-      // Chamada à API de cancelamento
       const cancelResponse = await fetch(`${apiBase}/subscription/cancelar-plano`, {
         method: 'POST',
         headers: { 
@@ -176,41 +212,30 @@ export default function CancelarPlanoPage() {
         })
       });
       
-      console.log('[CancelarPlano] Resposta do cancelamento:', cancelResponse.status, cancelResponse.statusText);
-      
       if (!cancelResponse.ok) {
         const errorData = await cancelResponse.json().catch(() => ({}));
-        console.error('[CancelarPlano] Erro na resposta:', errorData);
         throw new Error(errorData.error || 'Erro ao cancelar plano');
       }
       
       const result = await cancelResponse.json();
-      console.log('[CancelarPlano] Cancelamento bem-sucedido:', result);
       setDataCancelamento(result.dataCancelamento || new Date().toISOString());
       setStep('confirmation');
     } catch (e: any) {
-      console.error('[CancelarPlano] Erro ao cancelar plano:', e);
-      console.error('[CancelarPlano] Stack:', e.stack);
-      const errorMessage = e.message || 'Erro ao cancelar plano';
-      setCancelError(errorMessage);
-      setError(errorMessage);
+      setCancelError(e.message || 'Erro ao cancelar plano');
+      // Se o erro for de dependentes vindo do backend, força recarregar a lista
+      if (e.message?.includes('dependentes')) {
+         // Opcional: recarregar lista aqui
+      }
     } finally {
-      console.log('[CancelarPlano] Finalizando (loading: false)');
       setLoadingCancel(false);
-      setLoading(false);
     }
-  };
-
-  const handleAcceptOffer = () => {
-    // Aqui faria a chamada à API para aceitar oferta
-    // Exemplo: setStep('confirmation');
-    setStep('confirmation');
   };
 
   return (
     <DashboardLayout title="Cancelar Plano">
       <div className="max-w-4xl mx-auto">
-        {/* Initial Warning */}
+        
+        {/* Step 1: Info e Verificações (Initial) */}
         {step === 'initial' && (
           <>
             <Card className="mb-6 border-2 border-yellow-400 dark:border-yellow-600">
@@ -221,24 +246,20 @@ export default function CancelarPlanoPage() {
                   </div>
                   <div className="flex-1">
                     <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-2">
-                      Antes de cancelar, considere:
+                      Atenção ao cancelar
                     </h3>
                     <ul className="space-y-2 text-sm text-gray-600 dark:text-gray-400">
                       <li className="flex items-start">
                         <CheckCircle className="w-4 h-4 text-success mr-2 flex-shrink-0 mt-0.5" />
-                        Você perderá acesso imediato a consultas com especialistas
+                        Acesso imediato a consultas será interrompido.
                       </li>
                       <li className="flex items-start">
                         <CheckCircle className="w-4 h-4 text-success mr-2 flex-shrink-0 mt-0.5" />
-                        Seu histórico médico ficará inacessível
+                        Histórico médico pode ficar inacessível.
                       </li>
                       <li className="flex items-start">
                         <CheckCircle className="w-4 h-4 text-success mr-2 flex-shrink-0 mt-0.5" />
-                        Dependentes cadastrados serão removidos
-                      </li>
-                      <li className="flex items-start">
-                        <CheckCircle className="w-4 h-4 text-success mr-2 flex-shrink-0 mt-0.5" />
-                        Consultas agendadas serão canceladas automaticamente
+                        Consultas agendadas serão canceladas.
                       </li>
                     </ul>
                   </div>
@@ -247,204 +268,187 @@ export default function CancelarPlanoPage() {
             </Card>
 
             <Card>
-              <CardHeader>Seu Plano Atual</CardHeader>
+              <CardHeader>Informações do Plano</CardHeader>
               <CardBody>
-                {loadingPlano ? (
+                {loadingData ? (
                   <div className="text-center py-8">
                     <Loader2 className="w-8 h-8 animate-spin mx-auto text-primary mb-4" />
-                    <p className="text-gray-600 dark:text-gray-400">Carregando informações do plano...</p>
-                  </div>
-                ) : planoInfo ? (
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
-                    <div className="text-center p-4 bg-gray-50 dark:bg-gray-800/50 rounded-xl">
-                      <p className="text-sm text-gray-600 dark:text-gray-400 mb-1">
-                        Plano
-                      </p>
-                      <p className="text-lg font-semibold text-gray-900 dark:text-white">
-                        {planoInfo.nome}
-                      </p>
-                    </div>
-                    <div className="text-center p-4 bg-gray-50 dark:bg-gray-800/50 rounded-xl">
-                      <p className="text-sm text-gray-600 dark:text-gray-400 mb-1">
-                        Valor Mensal
-                      </p>
-                      <p className="text-lg font-semibold text-gray-900 dark:text-white">
-                        R$ {planoInfo.valor.toFixed(2).replace('.', ',')}
-                      </p>
-                    </div>
-                    <div className="text-center p-4 bg-gray-50 dark:bg-gray-800/50 rounded-xl">
-                      <p className="text-sm text-gray-600 dark:text-gray-400 mb-1">
-                        Dependentes
-                      </p>
-                      <p className="text-lg font-semibold text-gray-900 dark:text-white">
-                        {planoInfo.dependentes} {planoInfo.dependentes === 1 ? 'ativo' : 'ativos'}
-                      </p>
-                    </div>
+                    <p>Verificando dados...</p>
                   </div>
                 ) : (
-                  <div className="text-center py-8">
-                    <p className="text-gray-600 dark:text-gray-400">Não foi possível carregar as informações do plano.</p>
-                  </div>
-                )}
+                  <>
+                    {/* Resumo do Plano */}
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
+                        <div className="p-4 bg-gray-50 dark:bg-gray-800/50 rounded-xl">
+                            <p className="text-sm text-gray-500">Plano Atual</p>
+                            <p className="text-lg font-bold">{planoInfo?.nome || '—'}</p>
+                        </div>
+                        <div className="p-4 bg-gray-50 dark:bg-gray-800/50 rounded-xl">
+                            <p className="text-sm text-gray-500">Valor Mensal</p>
+                            <p className="text-lg font-bold">R$ {planoInfo?.valor.toFixed(2).replace('.', ',')}</p>
+                        </div>
+                    </div>
 
-                <div className="flex items-center justify-between pt-6 border-t border-gray-200 dark:border-gray-700">
-                  <Button variant="outline" onClick={() => window.history.back()}>
-                    Voltar ao Dashboard
-                  </Button>
-                  <Button variant="danger" onClick={() => setStep('reasons')}>
-                    <XCircle className="w-5 h-5 mr-2" />
-                    Continuar com Cancelamento
-                  </Button>
-                </div>
+                    {/* BLOQUEIO: Dependentes Ativos */}
+                    {dependentes.length > 0 && (
+                        <div className="mb-6 p-4 border border-red-200 bg-red-50 dark:bg-red-900/10 dark:border-red-800 rounded-xl">
+                            <div className="flex items-center gap-2 mb-3 text-red-700 dark:text-red-400">
+                                <Users className="w-5 h-5" />
+                                <h3 className="font-semibold">Dependentes Ativos Encontrados</h3>
+                            </div>
+                            <p className="text-sm text-gray-600 dark:text-gray-300 mb-4">
+                                Para cancelar seu plano, você deve primeiro remover todos os dependentes vinculados à sua conta.
+                            </p>
+                            
+                            <div className="space-y-2">
+                                {dependentes.map(dep => (
+                                    <div key={dep.id || dep.cpf} className="flex items-center justify-between p-3 bg-white dark:bg-gray-800 rounded-lg shadow-sm">
+                                        <div>
+                                            <p className="font-medium text-gray-900 dark:text-white">{dep.nome}</p>
+                                            <p className="text-xs text-gray-500">CPF: {dep.cpf}</p>
+                                        </div>
+                                        <Button 
+                                            variant="danger" 
+                                            size="sm"
+                                            disabled={loadingRemoverDep === (dep.id || dep.cpf)}
+                                            onClick={() => handleRemoveDependente(dep.cpf, dep.id || dep.cpf)}
+                                        >
+                                            {loadingRemoverDep === (dep.id || dep.cpf) ? (
+                                                <Loader2 className="w-4 h-4 animate-spin" />
+                                            ) : (
+                                                <>
+                                                    <Trash2 className="w-4 h-4 mr-1" /> Remover
+                                                </>
+                                            )}
+                                        </Button>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    )}
+
+                    {/* BLOQUEIO: Pagamento Atrasado */}
+                    {!pagamentoEmDia && (
+                        <div className="mb-6 p-4 border border-red-200 bg-red-50 dark:bg-red-900/10 rounded-xl flex items-center gap-3">
+                            <XCircle className="w-6 h-6 text-red-600" />
+                            <div>
+                                <h4 className="font-semibold text-red-700 dark:text-red-400">Pagamento Pendente</h4>
+                                <p className="text-sm text-red-600 dark:text-red-300">
+                                    Identificamos faturas em atraso. Regularize o pagamento para prosseguir com o cancelamento.
+                                </p>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Erros Gerais */}
+                    {error && (
+                        <div className="mb-4 text-center text-red-600 bg-red-100 p-2 rounded">
+                            {error}
+                        </div>
+                    )}
+
+                    <div className="flex items-center justify-between pt-6 border-t border-gray-200 dark:border-gray-700">
+                      <Button variant="outline" onClick={() => window.history.back()}>
+                        Voltar
+                      </Button>
+                      
+                      {/* Botão habilitado apenas se sem dependentes e sem dívidas */}
+                      <Button 
+                        variant="danger" 
+                        onClick={() => setStep('reasons')}
+                        disabled={dependentes.length > 0 || !pagamentoEmDia}
+                        title={dependentes.length > 0 ? "Remova os dependentes primeiro" : ""}
+                      >
+                        Continuar Cancelamento
+                      </Button>
+                    </div>
+                  </>
+                )}
               </CardBody>
             </Card>
           </>
         )}
 
-        {/* Cancellation Reasons */}
+        {/* Step 2: Motivos (Reasons) */}
         {step === 'reasons' && (
           <Card>
             <CardHeader>Por que você quer cancelar?</CardHeader>
             <CardBody>
-              <p className="text-gray-600 dark:text-gray-400 mb-4">
-                Selecione um ou mais motivos (opcional)
-              </p>
-
               <div className="space-y-3 mb-6">
                 {CANCELLATION_REASONS.map((reason) => (
-                  <label
-                    key={reason}
-                    className="flex items-center p-4 bg-gray-50 dark:bg-gray-800/50 rounded-xl cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-700/50 transition-colors"
-                  >
+                  <label key={reason} className="flex items-center p-4 bg-gray-50 dark:bg-gray-800/50 rounded-xl cursor-pointer hover:bg-gray-100 transition-colors">
                     <input
                       type="checkbox"
                       checked={selectedReasons.includes(reason)}
                       onChange={() => handleReasonToggle(reason)}
-                      className="w-5 h-5 text-primary focus:ring-primary rounded"
+                      className="w-5 h-5 text-primary rounded"
                     />
-                    <span className="ml-3 text-gray-900 dark:text-white">
-                      {reason}
-                    </span>
+                    <span className="ml-3 text-gray-900 dark:text-white">{reason}</span>
                   </label>
                 ))}
               </div>
 
-              <div className="mb-6">
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                  Comentários Adicionais (opcional)
-                </label>
-                <textarea
-                  value={additionalComments}
-                  onChange={(e) => setAdditionalComments(e.target.value)}
-                  rows={4}
-                  className="w-full px-4 py-3 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-xl focus:ring-2 focus:ring-primary focus:border-transparent resize-none"
-                  placeholder="Conte-nos mais sobre sua decisão..."
-                />
-              </div>
+              <textarea
+                value={additionalComments}
+                onChange={(e) => setAdditionalComments(e.target.value)}
+                rows={4}
+                className="w-full px-4 py-3 bg-white dark:bg-gray-800 border rounded-xl"
+                placeholder="Comentários adicionais..."
+              />
 
-              {(error || cancelError) && (
-                <div className="mb-4 p-4 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-xl">
-                  <div className="flex items-start space-x-2">
-                    <AlertCircle className="w-5 h-5 text-red-600 dark:text-red-400 flex-shrink-0 mt-0.5" />
-                    <p className="text-sm text-red-800 dark:text-red-300">{error || cancelError}</p>
-                  </div>
-                </div>
-              )}
-
-              <div className="flex items-center justify-between pt-6 border-t border-gray-200 dark:border-gray-700">
-                <Button variant="outline" onClick={() => setStep('initial')}>
-                  Voltar
-                </Button>
-                <Button 
-                  type="button"
-                  variant="danger" 
-                  onClick={(e) => {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    console.log('[CancelarPlano] Botão clicado');
-                    handleConfirmCancellation();
-                  }}
-                  disabled={loading}
-                >
-                  {loading ? (
-                    <>
-                      <Loader2 className="w-5 h-5 mr-2 animate-spin" />
-                      Cancelando...
-                    </>
-                  ) : (
-                    <>
-                      <XCircle className="w-5 h-5 mr-2" />
-                      Confirmar Cancelamento
-                    </>
-                  )}
-                </Button>
+              <div className="flex items-center justify-between pt-6 mt-4 border-t border-gray-200 dark:border-gray-700">
+                <Button variant="outline" onClick={() => setStep('initial')}>Voltar</Button>
+                <Button variant="danger" onClick={() => setStep('retention')}>Próximo</Button>
               </div>
             </CardBody>
           </Card>
         )}
 
-        {/* Retention Offers */}
+        {/* Step 3: Retenção (Retention - Confirmação Final) */}
         {step === 'retention' && (
           <Card>
+            <CardHeader>Tem certeza?</CardHeader>
             <CardBody>
-              <div className="flex items-center justify-between">
-                <div>
-                  <Button
-                    variant="outline"
-                    onClick={() => setStep('reasons')}
-                  >
-                    Voltar
-                  </Button>
-                </div>
-                <div className="flex items-center space-x-3">
-                  <Button variant="danger" onClick={handleConfirmCancellation} disabled={loadingCancel}>
-                    {loadingCancel ? 'Cancelando...' : 'Cancelar Mesmo Assim'}
-                  </Button>
-                </div>
-              </div>
+              <p className="mb-6 text-gray-600 dark:text-gray-300">
+                Ao confirmar, seu plano será cancelado imediatamente e não haverá mais cobranças futuras. 
+                Seus dados serão mantidos por um período conforme nossa política de privacidade.
+              </p>
+
               {(error || cancelError) && (
-                <div className="mt-4 p-4 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-xl">
-                  <div className="flex items-start space-x-2">
-                    <AlertCircle className="w-5 h-5 text-red-600 dark:text-red-400 flex-shrink-0 mt-0.5" />
-                    <p className="text-sm text-red-800 dark:text-red-300">{error || cancelError}</p>
-                  </div>
+                <div className="mb-4 p-4 bg-red-50 text-red-700 border border-red-200 rounded-xl flex items-center gap-2">
+                    <AlertCircle className="w-5 h-5" />
+                    {error || cancelError}
                 </div>
               )}
+
+              <div className="flex items-center justify-between">
+                <Button variant="outline" onClick={() => setStep('reasons')}>Voltar</Button>
+                <Button 
+                    variant="danger" 
+                    onClick={handleConfirmCancellation} 
+                    disabled={loadingCancel}
+                >
+                    {loadingCancel ? <><Loader2 className="w-4 h-4 animate-spin mr-2"/> Cancelando...</> : 'Confirmar Cancelamento'}
+                </Button>
+              </div>
             </CardBody>
           </Card>
         )}
 
-        {/* Confirmation */}
+        {/* Step 4: Sucesso (Confirmation) */}
         {step === 'confirmation' && (
           <Card>
             <CardBody>
               <div className="text-center py-12">
-                <div className="w-20 h-20 bg-red-100 dark:bg-red-900/30 rounded-full flex items-center justify-center mx-auto mb-6">
-                  <XCircle className="w-10 h-10 text-danger" />
+                <div className="w-20 h-20 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-6">
+                  <XCircle className="w-10 h-10 text-red-600" />
                 </div>
-                <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-3">
-                  Plano Cancelado
-                </h2>
-                <p className="text-gray-600 dark:text-gray-400 mb-2">
-                  Seu plano foi cancelado com sucesso.
+                <h2 className="text-2xl font-bold mb-3">Plano Cancelado</h2>
+                <p className="text-gray-600 mb-8">
+                  Seu plano foi cancelado em <strong>{dataCancelamento ? new Date(dataCancelamento).toLocaleDateString('pt-BR') : 'hoje'}</strong>.
                 </p>
-                {dataCancelamento && (
-                  <p className="text-sm text-gray-500 mb-8">
-                    Seu plano foi cancelado em{' '}
-                    <strong>{new Date(dataCancelamento).toLocaleDateString('pt-BR')}</strong>
-                  </p>
-                )}
-
-                <div className="bg-blue-50 dark:bg-blue-900/20 p-6 rounded-xl mb-8">
-                  <p className="text-sm text-blue-800 dark:text-blue-300">
-                    <strong>Sentiremos sua falta!</strong> Você pode reativar
-                    sua assinatura a qualquer momento. Seus dados ficarão
-                    salvos por 90 dias.
-                  </p>
-                </div>
-
                 <Button variant="primary" onClick={() => window.location.href = '/'}>
-                  Ir para Página Inicial
+                  Ir para Início
                 </Button>
               </div>
             </CardBody>

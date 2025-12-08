@@ -171,11 +171,38 @@ export class BeneficiarioController {
     try {
       const { cpf } = req.params as { cpf?: string };
       if (!cpf) return res.status(400).json({ error: 'CPF é obrigatório.' });
+      
       const cleanCpf = String(cpf).replace(/\D/g, '');
       const db = admin.firestore();
+      
+      // 1. Busca o beneficiário no banco para pegar o UUID
       const snap = await db.collection('beneficiarios').where('cpf', '==', cleanCpf).limit(1).get();
       if (snap.empty) return res.status(404).json({ error: 'Beneficiário não encontrado no banco.' });
-      await snap.docs[0]!.ref.delete();
+      
+      const doc = snap.docs[0];
+      // @ts-ignore
+      const data = doc.data();
+      const rapidocUuid = data.rapidocUuid;
+
+      // 2. Remove/Inativa no Rapidoc se tiver UUID
+      if (rapidocUuid) {
+        try {
+          console.log(`[removerBeneficiarioPorCpf] Removendo do Rapidoc UUID: ${rapidocUuid}`);
+          // Nota: A função inativarBeneficiarioRapidoc tipicamente faz um DELETE na API
+          await inativarBeneficiarioRapidoc(rapidocUuid);
+        } catch (rapidocError: any) {
+          console.error('[removerBeneficiarioPorCpf] Erro ao remover do Rapidoc:', rapidocError?.response?.data || rapidocError.message);
+          // Prossegue para garantir que o usuário consiga remover do sistema local
+          // mesmo que a API externa falhe ou já tenha removido.
+        }
+      } else {
+        console.warn(`[removerBeneficiarioPorCpf] Beneficiário ${cleanCpf} não tinha rapidocUuid salvo. Removendo apenas localmente.`);
+      }
+
+      // 3. Remove do Firestore
+      // @ts-ignore
+      await doc.ref.delete();
+      
       return res.status(200).json({ ok: true, removedCpf: cleanCpf });
     } catch (error: any) {
       return res.status(500).json({ error: error?.message || 'Erro ao remover beneficiário por CPF.' });
