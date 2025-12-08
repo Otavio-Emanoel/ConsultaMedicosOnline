@@ -171,14 +171,53 @@ export class BeneficiarioController {
     try {
       const { cpf } = req.params as { cpf?: string };
       if (!cpf) return res.status(400).json({ error: 'CPF é obrigatório.' });
+      
       const cleanCpf = String(cpf).replace(/\D/g, '');
       const db = admin.firestore();
+      
+      // 1. Busca o beneficiário no banco local para pegar o UUID
       const snap = await db.collection('beneficiarios').where('cpf', '==', cleanCpf).limit(1).get();
-      if (snap.empty) return res.status(404).json({ error: 'Beneficiário não encontrado no banco.' });
-      await snap.docs[0]!.ref.delete();
+      if (snap.empty) {
+          // Se não achou no banco, tenta buscar no Rapidoc para garantir
+          // (Caso o banco esteja dessincronizado)
+          // Mas para exclusão, retornamos 404 se não temos registro local para auditar
+          return res.status(404).json({ error: 'Beneficiário não encontrado no banco de dados.' });
+      }
+      
+      const doc = snap.docs[0];
+      // @ts-ignore
+      const data = doc.data();
+      const rapidocUuid = data.rapidocUuid;
+
+      // 2. Remove na API do Rapidoc (Se tiver UUID)
+      if (rapidocUuid) {
+        try {
+          console.log(`[removerBeneficiarioPorCpf] Excluindo do Rapidoc UUID: ${rapidocUuid}`);
+          const resp = await inativarBeneficiarioRapidoc(rapidocUuid);
+          
+          if (resp && resp.success === false) {
+             throw new Error(resp.message || 'Erro na API Rapidoc');
+          }
+        } catch (rapidocError: any) {
+          console.error('[removerBeneficiarioPorCpf] Erro Rapidoc:', rapidocError?.message);
+          // IMPORTANTE: Se o Rapidoc rejeitar a exclusão, impedimos a exclusão local?
+          // Como solicitado no fluxo de cancelamento, sim.
+          return res.status(500).json({ 
+              error: 'Não foi possível remover o dependente no sistema parceiro (Rapidoc). Tente novamente.',
+              detail: rapidocError?.response?.data || rapidocError.message
+          });
+        }
+      } else {
+        console.warn(`[removerBeneficiarioPorCpf] Beneficiário ${cleanCpf} sem UUID. Removendo apenas local.`);
+      }
+
+      // 3. Remove do Firestore (Só chega aqui se o Rapidoc não deu erro)
+      // @ts-ignore
+      await doc.ref.delete();
+      
       return res.status(200).json({ ok: true, removedCpf: cleanCpf });
     } catch (error: any) {
-      return res.status(500).json({ error: error?.message || 'Erro ao remover beneficiário por CPF.' });
+      return res.status(500).json({ error: error?.message || 'Erro ao remover beneficiário.' });
     }
   }
 
