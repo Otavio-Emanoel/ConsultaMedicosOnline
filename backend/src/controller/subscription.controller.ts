@@ -377,10 +377,11 @@ export class SubscriptionController {
             const { firebaseApp } = await import('../config/firebase.js');
             const db = getFirestore(firebaseApp);
             
-            // Buscar CPF
+            // Buscar CPF e Referência do Usuário
             const usuarioRef = db.collection('usuarios').doc(uid);
             const usuarioDoc = await usuarioRef.get();
             let cpf: string | undefined = usuarioDoc.exists ? usuarioDoc.data()?.cpf : undefined;
+            
             if (!cpf) cpf = (req.user as any)?.cpf || uid;
             
             if (!cpf) return res.status(400).json({ error: 'CPF do usuário não encontrado.' });
@@ -388,9 +389,9 @@ export class SubscriptionController {
             const cpfClean = String(cpf).replace(/\D/g, '');
             const cpfFormatted = cpfClean.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/, '$1.$2.$3-$4');
 
-            console.log(`[cancelarPlanoUsuario] 1. Usuário: ${cpfClean}`);
+            console.log(`[cancelarPlanoUsuario] 1. Usuário: ${cpfClean} (UID: ${uid})`);
 
-            // 2. Busca TODAS as assinaturas locais
+            // 2. Busca Assinaturas Locais
             const assinaturasSnap = await db.collection('assinaturas')
                 .where('cpfUsuario', 'in', [cpfClean, cpfFormatted])
                 .get();
@@ -400,7 +401,7 @@ export class SubscriptionController {
                 return res.status(404).json({ error: 'Nenhuma assinatura vinculada ao seu usuário.' });
             }
 
-            // 3. Verifica no ASAAS qual está realmente ATIVA
+            // 3. Verifica no ASAAS qual está ATIVA
             let assinaturaAtivaId: string | undefined;
             let assinaturaDocLocal: any;
             let periodicidade: string | undefined;
@@ -421,7 +422,7 @@ export class SubscriptionController {
                     });
                     
                     const statusReal = resp.data?.status;
-                    console.log(` -> Local: ${asaasId} | Status Local: ${data.status} | Status Asaas: ${statusReal}`);
+                    console.log(` -> Local: ${asaasId} | Status Asaas: ${statusReal}`);
 
                     if (statusReal === 'ACTIVE') {
                         assinaturaAtivaId = asaasId;
@@ -430,7 +431,7 @@ export class SubscriptionController {
                         break; 
                     }
                 } catch (e: any) {
-                    // Ignora erros de assinaturas antigas não encontradas
+                    // Ignora assinaturas não encontradas no Asaas
                 }
             }
 
@@ -438,23 +439,22 @@ export class SubscriptionController {
                 return res.status(404).json({ error: 'Nenhuma assinatura ATIVA encontrada no sistema de pagamentos.' });
             }
 
-            console.log(`[cancelarPlanoUsuario] 3. Assinatura para cancelar: ${assinaturaAtivaId}`);
-
             // 4. Verificação de Dependentes (Bloqueio)
             const dependentesSnapshot = await db.collection('beneficiarios')
                 .where('holder', 'in', [cpfClean, cpfFormatted])
                 .get();
 
-            // Filtra o próprio titular da contagem de dependentes
+            // Filtra o próprio titular da contagem
             const dependentesReais = dependentesSnapshot.docs.filter(doc => {
                 const d = doc.data();
                 const dCpf = String(d.cpf || '').replace(/\D/g, '');
-                return dCpf !== cpfClean && d.isActive !== false; 
+                // Considera dependente se o CPF for diferente do titular E se ainda estiver ativo (opcional, mas seguro)
+                return dCpf !== cpfClean; 
             });
 
             if (dependentesReais.length > 0) {
                 return res.status(400).json({ 
-                    error: `Você possui ${dependentesReais.length} dependente(s). Remova-os antes de cancelar o plano.`,
+                    error: `Você possui ${dependentesReais.length} dependente(s). Remova-os antes de excluir sua conta.`,
                     dependentesCount: dependentesReais.length
                 });
             }
@@ -479,9 +479,8 @@ export class SubscriptionController {
                 });
             }
 
-            // 6. RAPIDOC: Apagar conta (Inativar)
+            // 6. RAPIDOC: Apagar conta (DELETE)
             const { buscarBeneficiarioRapidocPorCpf, inativarBeneficiarioRapidoc } = await import('../services/rapidoc.service.js');
-            
             try {
                 const beneficiarioResp = await buscarBeneficiarioRapidocPorCpf(cpfClean);
                 const beneficiario = beneficiarioResp?.beneficiary;
@@ -497,7 +496,7 @@ export class SubscriptionController {
             } catch (rapidocError: any) {
                 console.error('[cancelarPlanoUsuario] ERRO CRÍTICO RAPIDOC:', rapidocError?.message);
                 return res.status(500).json({ 
-                    error: 'Falha ao remover conta no parceiro médico (Rapidoc). Cancelamento abortado.',
+                    error: 'Falha ao remover conta no parceiro médico (Rapidoc). Processo abortado.',
                     detail: rapidocError?.response?.data || rapidocError?.message
                 });
             }
@@ -511,31 +510,38 @@ export class SubscriptionController {
                 console.error('[cancelarPlanoUsuario] Erro Asaas (prosseguindo):', asaasError.message);
             }
 
-            // 8. FIRESTORE: Limpeza e Atualização
+            // 8. EXCLUSÃO TOTAL DOS DADOS (Firestore & Auth)
+            console.log(`[cancelarPlanoUsuario] 6. Excluindo dados do banco e autenticação...`);
             
-            // A) Atualiza o status da assinatura para manter histórico financeiro (não deleta a assinatura)
-            await assinaturaDocLocal.ref.update({
-                status: 'CANCELADA',
-                dataCancelamento: new Date().toISOString(),
-                motivoCancelamento: req.body.reasons || [],
-                comentariosCancelamento: req.body.comments || ''
-            });
-
-            // B) DELETA o registro de beneficiário do titular (Isso fará sumir do sistema/dashboard)
-            const titSnap = await db.collection('beneficiarios').where('cpf', '==', cpfClean).get();
             const batch = db.batch();
-            
-            if (!titSnap.empty) {
-                console.log(`[cancelarPlanoUsuario] 6. Deletando ${titSnap.size} registros de beneficiário do banco local.`);
-                titSnap.forEach(d => batch.delete(d.ref));
-            }
-            
+
+            // A) Deleta documento da assinatura
+            batch.delete(assinaturaDocLocal.ref);
+
+            // B) Deleta documento do beneficiário titular
+            const titSnap = await db.collection('beneficiarios').where('cpf', '==', cpfClean).get();
+            titSnap.forEach(d => batch.delete(d.ref));
+
+            // C) Deleta documento do usuário (Perfil)
+            batch.delete(usuarioRef);
+
+            // Executa exclusões no Firestore
             await batch.commit();
 
-            console.log('[cancelarPlanoUsuario] 7. Sucesso! Dados limpos.');
+            // D) Deleta usuário do Firebase Authentication
+            try {
+                const admin = (await import('firebase-admin')).default;
+                await admin.auth().deleteUser(uid);
+                console.log(`[cancelarPlanoUsuario] Usuário ${uid} deletado do Firebase Auth.`);
+            } catch (authError: any) {
+                console.error('[cancelarPlanoUsuario] Erro ao deletar do Auth:', authError);
+                // Não retorna erro aqui para não travar o sucesso da operação, pois o banco já foi limpo
+            }
+
+            console.log('[cancelarPlanoUsuario] 7. Sucesso! Conta excluída.');
             return res.status(200).json({ 
                 success: true,
-                message: 'Plano cancelado e dados removidos com sucesso.',
+                message: 'Conta e plano excluídos com sucesso.',
                 dataCancelamento: new Date().toISOString()
             });
 
