@@ -35,8 +35,13 @@ function usePlanosLanding() {
       setLoading(true);
       setErro("");
       try {
-        const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:3000/api";
-        const res = await fetch(`${API_BASE}/planos`);
+        const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL;
+        const res = await fetch(`${API_BASE}/planos`, {
+          headers: {
+            'Content-Type': 'application/json',
+            'ngrok-skip-browser-warning': 'true',
+          },
+        });
         if (!res.ok) throw new Error('Erro ao buscar planos');
         const data = await res.json();
         // Mapeia para o formato do card
