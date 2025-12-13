@@ -104,6 +104,7 @@ export default function AdminDashboardPage() {
         const res = await fetch(`${API_BASE}/admin/dashboard`, {
           headers: {
             Authorization: `Bearer ${token}`,
+            'ngrok-skip-browser-warning': 'true',
           },
         });
         if (!res.ok) {

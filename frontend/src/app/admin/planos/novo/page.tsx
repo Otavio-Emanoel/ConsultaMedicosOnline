@@ -91,7 +91,7 @@ export default function AdminNovoPlanoPage() {
 			setLoadingData(true);
 			setErro('');
 			try {
-				const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:3000/api';
+				const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL;
 				const auth = getAuth(app);
 				const user = auth.currentUser;
 				if (!user) {
@@ -100,7 +100,7 @@ export default function AdminNovoPlanoPage() {
 					return;
 				}
 				const token = await user.getIdToken();
-				const headers = { Authorization: `Bearer ${token}` };
+				const headers = { Authorization: `Bearer ${token}`, 'ngrok-skip-browser-warning': 'true' };
 
 				const [plansResp, specsResp] = await Promise.all([
 					fetch(`${API_BASE}/planos/rapidoc`, { headers }),
@@ -281,6 +281,7 @@ export default function AdminNovoPlanoPage() {
 				headers: {
 					'Content-Type': 'application/json',
 					Authorization: `Bearer ${token}`,
+					'ngrok-skip-browser-warning': 'true',
 				},
 				body: JSON.stringify(payload),
 			});

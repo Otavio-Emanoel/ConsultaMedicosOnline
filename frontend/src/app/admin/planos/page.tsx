@@ -172,6 +172,7 @@ export default function AdminPlanosPage() {
       headers: {
         'Content-Type': 'application/json',
         Authorization: `Bearer ${token}`,
+        'ngrok-skip-browser-warning': 'true',
       },
       body: JSON.stringify(data),
     });
@@ -200,6 +201,7 @@ export default function AdminPlanosPage() {
         const res = await fetch(`${API_BASE}/admin/planos/dashboard`, {
           headers: {
             Authorization: `Bearer ${token}`,
+            'ngrok-skip-browser-warning': 'true',
           },
         });
         if (!res.ok) throw new Error('Erro ao buscar planos');
@@ -403,7 +405,7 @@ export default function AdminPlanosPage() {
                               const token = await user.getIdToken();
                               const res = await fetch(`${API_BASE}/planos/${deletePlano.id}`, {
                                 method: 'DELETE',
-                                headers: { Authorization: `Bearer ${token}` },
+                                headers: { Authorization: `Bearer ${token}`, 'ngrok-skip-browser-warning': 'true' },
                               });
                               if (!res.ok) {
                                 const err = await res.json().catch(() => ({}));

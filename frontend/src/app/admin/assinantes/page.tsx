@@ -189,6 +189,7 @@ export default function AdminAssinantesPage() {
     }
     return {
       'Content-Type': 'application/json',
+      'ngrok-skip-browser-warning': 'true',
       Authorization: `Bearer ${token}`,
     } as HeadersInit;
   };

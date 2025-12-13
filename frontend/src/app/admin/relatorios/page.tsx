@@ -94,6 +94,7 @@ export default function AdminRelatoriosPage() {
         const res = await fetch(url, {
           headers: {
             Authorization: `Bearer ${token}`,
+            'ngrok-skip-browser-warning': 'true',
           },
         });
         if (!res.ok) throw new Error('Erro ao buscar dados do dashboard');

@@ -72,6 +72,7 @@ export default function CriarUsuarioPage() {
         const headers: HeadersInit = {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${token}`,
+          'ngrok-skip-browser-warning': 'true',
         };
 
         // Buscar beneficiários sem conta
@@ -129,6 +130,7 @@ export default function CriarUsuarioPage() {
       const headers: HeadersInit = {
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${token}`,
+        'ngrok-skip-browser-warning': 'true',
       };
 
       // Determinar ciclo baseado na periodicidade

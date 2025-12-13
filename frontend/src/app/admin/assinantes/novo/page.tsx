@@ -65,7 +65,7 @@ export default function NovoAssinantePage() {
         const token = typeof window !== 'undefined' 
           ? (localStorage.getItem('token') || localStorage.getItem('auth_token')) 
           : null;
-        const headers: HeadersInit = { 'Content-Type': 'application/json' };
+        const headers: HeadersInit = { 'Content-Type': 'application/json', 'ngrok-skip-browser-warning': 'true' };
         if (token) headers['Authorization'] = `Bearer ${token}`;
 
         const planosResp = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL}/planos`, { headers });
@@ -108,6 +108,7 @@ export default function NovoAssinantePage() {
       const headers: HeadersInit = {
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${token}`,
+        'ngrok-skip-browser-warning': 'true',
       };
 
       // Buscar dados do plano selecionado
