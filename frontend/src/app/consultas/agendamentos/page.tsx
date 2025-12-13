@@ -198,7 +198,7 @@ export default function AgendamentosPage() {
         throw new Error('Token de autenticação não encontrado. Faça login novamente.');
       }
 
-      const headers = { Authorization: `Bearer ${token}` };
+      const headers = { Authorization: `Bearer ${token}`, 'ngrok-skip-browser-warning': 'true' };
 
       const usuarioRes = await fetch(`${API_BASE_URL}/usuario/me`, { headers });
       if (!usuarioRes.ok) {
@@ -282,7 +282,7 @@ export default function AgendamentosPage() {
 
       const response = await fetch(`${API_BASE_URL}/agendamentos/${appointment.uuid}`, {
         method: 'DELETE',
-        headers: { Authorization: `Bearer ${token}` },
+        headers: { Authorization: `Bearer ${token}`, 'ngrok-skip-browser-warning': 'true' },
       });
 
       if (!response.ok && response.status !== 204) {

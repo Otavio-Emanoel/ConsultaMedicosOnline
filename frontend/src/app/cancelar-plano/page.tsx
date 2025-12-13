@@ -72,7 +72,7 @@ export default function CancelarPlanoPage() {
 
         // 1. Buscar Dashboard (Plano e Usuário)
         const dashboardResp = await fetch(`${apiBase}/dashboard`, {
-          headers: { Authorization: `Bearer ${token}` }
+          headers: { Authorization: `Bearer ${token}`, 'ngrok-skip-browser-warning': 'true' }
         });
 
         if (!dashboardResp.ok) throw new Error('Erro ao carregar dados do usuário');
@@ -84,7 +84,9 @@ export default function CancelarPlanoPage() {
         if (assinatura?.planoId) {
            // Tenta buscar nome do plano se tiver ID
            try {
-             const planosResp = await fetch(`${apiBase}/planos`);
+             const planosResp = await fetch(`${apiBase}/planos`, {
+               headers: { 'ngrok-skip-browser-warning': 'true' }
+             });
              if (planosResp.ok) {
                 const planos = await planosResp.json();
                 const planoDetalhe = Array.isArray(planos) ? planos.find((p: any) => p.id === assinatura.planoId) : null;
@@ -108,7 +110,7 @@ export default function CancelarPlanoPage() {
         const userCpf = dashboardData.usuario?.cpf;
         if (userCpf) {
             const depsResp = await fetch(`${apiBase}/dependentes/${userCpf}`, {
-                headers: { Authorization: `Bearer ${token}` }
+              headers: { Authorization: `Bearer ${token}`, 'ngrok-skip-browser-warning': 'true' }
             });
             if (depsResp.ok) {
                 const depsData = await depsResp.json();
@@ -120,7 +122,7 @@ export default function CancelarPlanoPage() {
 
         // 3. Verificar Faturas (Pagamento em dia)
         const faturasResp = await fetch(`${apiBase}/faturas`, {
-            headers: { Authorization: `Bearer ${token}` }
+          headers: { Authorization: `Bearer ${token}`, 'ngrok-skip-browser-warning': 'true' }
         });
         if (faturasResp.ok) {
             const faturasData = await faturasResp.json();
@@ -164,8 +166,8 @@ export default function CancelarPlanoPage() {
         
         // Usar o endpoint de delete criado anteriormente ou genérico
         const resp = await fetch(`${apiBase}/beneficiarios/${depCpf}`, {
-            method: 'DELETE',
-            headers: { Authorization: `Bearer ${token}` }
+          method: 'DELETE',
+          headers: { Authorization: `Bearer ${token}`, 'ngrok-skip-browser-warning': 'true' }
         });
 
         if (!resp.ok) {
@@ -204,7 +206,8 @@ export default function CancelarPlanoPage() {
         method: 'POST',
         headers: { 
           Authorization: `Bearer ${token}`,
-          'Content-Type': 'application/json'
+          'Content-Type': 'application/json',
+          'ngrok-skip-browser-warning': 'true'
         },
         body: JSON.stringify({
           reasons: selectedReasons,

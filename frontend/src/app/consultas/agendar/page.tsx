@@ -79,7 +79,10 @@ function AgendarContent() {
       try {
         // 1. Buscar CPF e dados do usuário logado
         const usuarioRes = await fetch(`${apiBase}/usuario/me`, {
-          headers: { Authorization: `Bearer ${token}` },
+          headers: {
+            Authorization: `Bearer ${token}`,
+            'ngrok-skip-browser-warning': 'true',
+          },
           signal: controller.signal,
         });
 
@@ -98,12 +101,18 @@ function AgendarContent() {
 
         // 2. Buscar pacientes (titular + dependentes) e especialidades em paralelo
         const pacientesPromise = fetch(`${apiBase}/dependentes/${cpf}`, {
-          headers: { Authorization: `Bearer ${token}` },
+          headers: {
+            Authorization: `Bearer ${token}`,
+            'ngrok-skip-browser-warning': 'true',
+          },
           signal: controller.signal,
         }).then(res => res.ok ? res.json() : { dependentes: [] }).catch(() => ({ dependentes: [] }));
 
         const especialidadesPromise = fetch(`${apiBase}/beneficiarios/${cpf}/especialidades`, {
-          headers: { Authorization: `Bearer ${token}` },
+          headers: {
+            Authorization: `Bearer ${token}`,
+            'ngrok-skip-browser-warning': 'true',
+          },
           signal: controller.signal,
         }).then(res => res.ok ? res.json() : { specialties: [] }).catch(() => ({ specialties: [] }));
 
@@ -205,7 +214,10 @@ function AgendarContent() {
     const dateFinal = `${String(lastDay).padStart(2, '0')}/${month}/${year}`;
 
     fetch(`${apiBase}/agendamentos/disponibilidade?specialtyUuid=${selectedSpecialtyUuid}&dateInitial=${dateInitial}&dateFinal=${dateFinal}`, {
-      headers: { Authorization: `Bearer ${token}` },
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'ngrok-skip-browser-warning': 'true',
+      },
     })
       .then((res) => {
         if (!res.ok) throw new Error('Erro ao buscar disponibilidade');
@@ -300,7 +312,10 @@ function AgendarContent() {
 
       // Buscar beneficiário no Rapidoc para obter o UUID
       const beneficiarioRes = await fetch(`${apiBase}/rapidoc/beneficiario/${pacienteSelecionado.cpf}`, {
-        headers: { Authorization: `Bearer ${token}` },
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'ngrok-skip-browser-warning': 'true',
+        },
       });
 
       if (!beneficiarioRes.ok) {
@@ -325,7 +340,10 @@ function AgendarContent() {
       } else {
         // Para outras especialidades: buscar encaminhamentos agendáveis daquela especialidade
         const encaminhamentosRes = await fetch(`${apiBase}/beneficiarios/${pacienteSelecionado.cpf}/encaminhamentos`, {
-          headers: { Authorization: `Bearer ${token}` },
+          headers: {
+            Authorization: `Bearer ${token}`,
+            'ngrok-skip-browser-warning': 'true',
+          },
         });
 
         if (!encaminhamentosRes.ok) {
@@ -404,6 +422,7 @@ function AgendarContent() {
         headers: {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${token}`,
+          'ngrok-skip-browser-warning': 'true',
         },
         body: JSON.stringify(body),
       });

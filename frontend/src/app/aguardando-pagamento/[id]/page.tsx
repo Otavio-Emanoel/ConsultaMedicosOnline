@@ -99,7 +99,11 @@ export default function AguardandoPagamentoPage() {
         try {
           setLoadingCheckout(true);
           // Buscar detalhes do pagamento - isso retorna invoiceUrl se for cartão
-          const resp = await fetch(`${API_BASE}/subscription/payment-details/${assinaturaId}`);
+          const resp = await fetch(`${API_BASE}/subscription/payment-details/${assinaturaId}`,
+            {
+              headers: { 'ngrok-skip-browser-warning': 'true' }
+            }
+          );
           if (resp.ok) {
             const data = await resp.json();
             if (data.pagamento) {
@@ -139,7 +143,11 @@ export default function AguardandoPagamentoPage() {
     }
     
     try {
-      const resp = await fetch(`${API_BASE}/subscription/check-payment/${assinaturaId}`);
+      const resp = await fetch(`${API_BASE}/subscription/check-payment/${assinaturaId}`,
+        {
+          headers: { 'ngrok-skip-browser-warning': 'true' }
+        }
+      );
       const data = await resp.json();
       if (resp.ok) {
         setStatus(data);
@@ -258,7 +266,7 @@ export default function AguardandoPagamentoPage() {
           setMensagem(`Cadastrando beneficiário no Rapidoc (tentativa ${tentativa}/${maxTentativas})...`);
           const resp = await fetch(`${API_BASE}/subscription/rapidoc-beneficiary`, {
             method: "POST",
-            headers: { "Content-Type": "application/json" },
+            headers: { "Content-Type": "application/json", 'ngrok-skip-browser-warning': 'true' },
             body: JSON.stringify(bodyRapidoc),
           });
           if (resp.ok) {
@@ -342,7 +350,7 @@ export default function AguardandoPagamentoPage() {
           setMensagem(`Criando usuário (tentativa ${tentativa}/${maxUserTentativas})...`);
           const respUser = await fetch(`${API_BASE}/usuarios`, {
             method: "POST",
-            headers: { "Content-Type": "application/json" },
+            headers: { "Content-Type": "application/json", 'ngrok-skip-browser-warning': 'true' },
             body: JSON.stringify(body),
           });
           if (respUser.ok) {
@@ -366,7 +374,7 @@ export default function AguardandoPagamentoPage() {
                 setMensagem(`Salvando assinatura no banco (tentativa ${t}/${maxAssTentativas})...`);
                 const respAssin = await fetch(`${API_BASE}/assinaturas`, {
                   method: "POST",
-                  headers: { "Content-Type": "application/json" },
+                  headers: { "Content-Type": "application/json", 'ngrok-skip-browser-warning': 'true' },
                   body: JSON.stringify(assinaturaBody),
                 });
                 if (respAssin.ok) {

@@ -60,7 +60,9 @@ export default function CadastroPage() {
   useEffect(() => {
     if (!planoId) return;
     
-    fetch(`${API_BASE}/planos`)
+    fetch(`${API_BASE}/planos`, {
+      headers: { 'ngrok-skip-browser-warning': 'true' }
+    })
       .then((res) => res.json())
       .then((planos) => {
         const p = planos.find((pl: Plano) => pl.id === planoId);
@@ -177,7 +179,7 @@ export default function CadastroPage() {
       }
       const resp = await fetch(`${API_BASE}/subscription/start`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", 'ngrok-skip-browser-warning': 'true' },
         body: JSON.stringify(body),
       });
       

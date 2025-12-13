@@ -43,6 +43,7 @@ export default function Page() {
         headers: {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${token}`,
+          'ngrok-skip-browser-warning': 'true',
         },
         body: JSON.stringify({ senhaAtual: currentPassword, novaSenha: newPassword }),
       });
@@ -73,7 +74,7 @@ export default function Page() {
       const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
       if (!token) throw new Error('Usuário não autenticado');
       const res = await fetch(`${apiBase}/dashboard`, {
-        headers: { Authorization: `Bearer ${token}` }
+        headers: { Authorization: `Bearer ${token}`, 'ngrok-skip-browser-warning': 'true' }
       });
       if (!res.ok) throw new Error('Erro ao buscar dados do dashboard');
       const data = await res.json();

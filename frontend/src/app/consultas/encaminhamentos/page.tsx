@@ -106,7 +106,10 @@ export default function EncaminhamentosPage() {
           let referralsRes: Response | null = null;
           try {
             referralsRes = await fetch(`${apiBase}/encaminhamentos/me`, {
-              headers: { Authorization: `Bearer ${token}` },
+              headers: {
+                Authorization: `Bearer ${token}`,
+                'ngrok-skip-browser-warning': 'true',
+              },
               signal: controller.signal,
             });
           } catch {
@@ -181,7 +184,10 @@ export default function EncaminhamentosPage() {
             let appointmentsRes: Response | null = null;
             try {
               appointmentsRes = await fetch(`${apiBase}/agendamentos`, {
-                headers: { Authorization: `Bearer ${token}` },
+                headers: {
+                  Authorization: `Bearer ${token}`,
+                  'ngrok-skip-browser-warning': 'true',
+                },
                 signal: controller.signal,
               });
             } catch {

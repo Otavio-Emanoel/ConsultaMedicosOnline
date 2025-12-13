@@ -52,7 +52,10 @@ export default function AtendimentoImediatoPage() {
 
         // 1. Buscar CPF e dados do usuário logado (titular)
         const usuarioRes = await fetch(`${apiBase}/usuario/me`, {
-          headers: { Authorization: `Bearer ${token}` },
+          headers: {
+            Authorization: `Bearer ${token}`,
+            'ngrok-skip-browser-warning': 'true',
+          },
           signal: controller.signal,
         });
 
@@ -71,7 +74,10 @@ export default function AtendimentoImediatoPage() {
 
         // 2. Buscar dependentes em paralelo
         const dependentesRes = await fetch(`${apiBase}/dependentes/${cpf}`, {
-          headers: { Authorization: `Bearer ${token}` },
+          headers: {
+            Authorization: `Bearer ${token}`,
+            'ngrok-skip-browser-warning': 'true',
+          },
           signal: controller.signal,
         });
 
@@ -159,6 +165,7 @@ export default function AtendimentoImediatoPage() {
         headers: {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${token}`,
+          'ngrok-skip-browser-warning': 'true',
         },
         body: JSON.stringify({
           cpf: pacienteSelecionado.cpf, // A API espera 'cpf', não 'cpfSelecionado'

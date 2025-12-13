@@ -125,7 +125,10 @@ export default function HistoricoConsultasPage() {
 
         // 1. Buscar CPF do usuário logado
         const usuarioRes = await fetch(`${apiBase}/usuario/me`, {
-          headers: { Authorization: `Bearer ${token}` },
+          headers: {
+            Authorization: `Bearer ${token}`,
+            'ngrok-skip-browser-warning': 'true',
+          },
           signal: controller.signal,
         });
 
@@ -144,7 +147,10 @@ export default function HistoricoConsultasPage() {
 
         // 2. Buscar beneficiário no Rapidoc para pegar UUID
         const rapidocRes = await fetch(`${apiBase}/rapidoc/beneficiario/${cpf}`, {
-          headers: { Authorization: `Bearer ${token}` },
+          headers: {
+            Authorization: `Bearer ${token}`,
+            'ngrok-skip-browser-warning': 'true',
+          },
           signal: controller.signal,
         });
 
@@ -168,7 +174,10 @@ export default function HistoricoConsultasPage() {
         let appointmentsRes;
         try {
           appointmentsRes = await fetch(`${apiBase}/beneficiarios/${rapidocUuid}/appointments`, {
-            headers: { Authorization: `Bearer ${token}` },
+            headers: {
+              Authorization: `Bearer ${token}`,
+              'ngrok-skip-browser-warning': 'true',
+            },
             signal: appointmentsController.signal,
           });
           clearTimeout(appointmentsTimeout);
