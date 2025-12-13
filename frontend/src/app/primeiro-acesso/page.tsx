@@ -25,7 +25,7 @@ function extractErrorMessage(err: unknown): string {
 }
 
 function PrimeiroAcessoContent() {
-  const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:3000/api";
+  const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL;
   const router = useRouter();
   const searchParams = useSearchParams();
 
@@ -72,7 +72,10 @@ function PrimeiroAcessoContent() {
     try {
       const resp = await fetch(`${API_BASE}/first-access`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          "ngrok-skip-browser-warning": "true",
+        },
         body: JSON.stringify({ cpf: cpf.replace(/\D/g, "") }),
       });
 

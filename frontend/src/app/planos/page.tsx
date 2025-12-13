@@ -22,7 +22,9 @@ export default function PlanosPage() {
   useEffect(() => {
     const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL;
     
-    fetch(`${API_BASE}/planos`)
+    fetch(`${API_BASE}/planos`, {
+      headers: { 'ngrok-skip-browser-warning': 'true' },
+    })
       .then((res) => {
         if (!res.ok) throw new Error("Erro ao buscar planos");
         return res.json();

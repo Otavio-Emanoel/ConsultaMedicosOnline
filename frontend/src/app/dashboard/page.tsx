@@ -66,7 +66,10 @@ export default function DashboardPage() {
         }, 60000);
 
         const response = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL}/dashboard`, {
-          headers: { Authorization: `Bearer ${token}` },
+          headers: {
+            Authorization: `Bearer ${token}`,
+            'ngrok-skip-browser-warning': 'true',
+          },
           signal: controller.signal,
         });
 
@@ -97,7 +100,10 @@ export default function DashboardPage() {
         }, 120000);
 
         fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL}/dashboard/agendamentos?limit=5`, {
-          headers: { Authorization: `Bearer ${token}` },
+          headers: {
+            Authorization: `Bearer ${token}`,
+            'ngrok-skip-browser-warning': 'true',
+          },
           signal: appointmentsController.signal,
         })
           .then((appointmentsRes) => {

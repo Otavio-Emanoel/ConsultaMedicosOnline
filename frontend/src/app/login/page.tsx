@@ -39,7 +39,10 @@ export default function HomePage() {
       const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL;
       const resp = await fetch(`${API_BASE}/auth/tipo-usuario`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'ngrok-skip-browser-warning': 'true',
+        },
         body: JSON.stringify({ email })
       });
       const data = await resp.json();

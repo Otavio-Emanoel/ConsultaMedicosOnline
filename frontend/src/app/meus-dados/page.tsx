@@ -110,7 +110,7 @@ export default function MeusDadosPage() {
 
         // Dados locais (Firestore)
         const res = await fetch(`${apiBase}/usuario/me`, {
-          headers: { Authorization: `Bearer ${token}` },
+          headers: { Authorization: `Bearer ${token}`, 'ngrok-skip-browser-warning': 'true' },
         });
 
         if (!res.ok) {
@@ -146,7 +146,7 @@ export default function MeusDadosPage() {
         if (cpfResolvido) {
           try {
             const rapidocRes = await fetch(`${apiBase}/rapidoc/beneficiario/${cpfResolvido}`, {
-              headers: { Authorization: `Bearer ${token}` },
+              headers: { Authorization: `Bearer ${token}`, 'ngrok-skip-browser-warning': 'true' },
             });
             if (rapidocRes.ok) {
               const rapidoc = await rapidocRes.json();
@@ -268,6 +268,7 @@ export default function MeusDadosPage() {
         headers: {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${token}`,
+          'ngrok-skip-browser-warning': 'true',
         },
         body: JSON.stringify(body),
       });
@@ -290,7 +291,7 @@ export default function MeusDadosPage() {
 
       if (activeTab === 'local') {
         const resUser = await fetch(`${apiBase}/usuario/me`, {
-          headers: { Authorization: `Bearer ${token}` },
+          headers: { Authorization: `Bearer ${token}`, 'ngrok-skip-browser-warning': 'true' },
         });
         if (resUser.ok) {
           const userData = await resUser.json();
@@ -316,7 +317,7 @@ export default function MeusDadosPage() {
 
       if (activeTab === 'rapidoc') {
         const resRapidoc = await fetch(`${apiBase}/rapidoc/beneficiario/${userCpf}`, {
-          headers: { Authorization: `Bearer ${token}` },
+          headers: { Authorization: `Bearer ${token}`, 'ngrok-skip-browser-warning': 'true' },
         });
         if (resRapidoc.ok) {
           const rapidoc = await resRapidoc.json();

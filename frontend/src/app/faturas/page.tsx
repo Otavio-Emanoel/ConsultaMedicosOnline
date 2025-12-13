@@ -76,7 +76,9 @@ export default function FaturasPage() {
     const apiBase = process.env.NEXT_PUBLIC_API_BASE_URL;
     const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
     fetch(`${apiBase}/dashboard`, {
-      headers: token ? { Authorization: `Bearer ${token}` } : {},
+      headers: token
+        ? { Authorization: `Bearer ${token}`, 'ngrok-skip-browser-warning': 'true' }
+        : { 'ngrok-skip-browser-warning': 'true' },
     })
       .then((res) => res.json())
       .then((json) => {
@@ -572,7 +574,7 @@ function PaymentMethodModal({
 
       try {
         const res = await fetch(`${apiBase}/usuario/me`, {
-          headers: { Authorization: `Bearer ${token}` },
+          headers: { Authorization: `Bearer ${token}`, 'ngrok-skip-browser-warning': 'true' },
         });
         if (res.ok) {
           const userData = await res.json();
@@ -726,6 +728,7 @@ function PaymentMethodModal({
         headers: {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${token}`,
+          'ngrok-skip-browser-warning': 'true',
         },
         body: JSON.stringify(body),
       });

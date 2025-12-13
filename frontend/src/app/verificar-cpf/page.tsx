@@ -36,10 +36,13 @@ export default function VerificarCPFPage() {
     setLoading(true);
 
     try {
-      const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:3000/api";
+      const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL;
       const response = await fetch(`${API_BASE}/first-access/validate-cpf`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          "ngrok-skip-browser-warning": "true",
+        },
         body: JSON.stringify({ cpf: cpf.replace(/\D/g, "") }),
       });
       

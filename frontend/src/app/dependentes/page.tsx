@@ -95,7 +95,7 @@ export default function DependentesPage() {
       let token: string | null = null;
       if (auth.currentUser) token = await auth.currentUser.getIdToken();
       else token = typeof window !== 'undefined' ? localStorage.getItem('auth_token') : null;
-      const headers: HeadersInit = { 'Content-Type': 'application/json' };
+      const headers: HeadersInit = { 'Content-Type': 'application/json', 'ngrok-skip-browser-warning': 'true' };
       if (token) headers['Authorization'] = `Bearer ${token}`;
       const resp = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL}/dependentes/${holderOnlyDigits}`, { headers });
       if (!resp.ok) throw new Error('Erro ao buscar dependentes');
@@ -214,7 +214,7 @@ export default function DependentesPage() {
       let token: string | null = null;
       if (auth.currentUser) token = await auth.currentUser.getIdToken();
       else token = typeof window !== 'undefined' ? localStorage.getItem('auth_token') : null;
-      const headers: HeadersInit = { 'Content-Type': 'application/json' };
+      const headers: HeadersInit = { 'Content-Type': 'application/json', 'ngrok-skip-browser-warning': 'true' };
       if (token) headers['Authorization'] = `Bearer ${token}`;
       const resp = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL}/beneficiarios/rapidoc/me`, { headers });
       if (!resp.ok) throw new Error('Falha ao consultar Rapidoc');
@@ -281,7 +281,7 @@ export default function DependentesPage() {
       let token: string | null = null;
       if (auth.currentUser) token = await auth.currentUser.getIdToken(true);
       else token = typeof window !== 'undefined' ? localStorage.getItem('auth_token') : null;
-      const headers: HeadersInit = { 'Content-Type': 'application/json' };
+      const headers: HeadersInit = { 'Content-Type': 'application/json', 'ngrok-skip-browser-warning': 'true' };
       if (token) headers['Authorization'] = `Bearer ${token}`;
       const resp = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL}/beneficiarios/dependente`, {
         method: 'POST',
@@ -361,7 +361,7 @@ export default function DependentesPage() {
     let token: string | null = null;
     if (auth.currentUser) token = await auth.currentUser.getIdToken(true); // força refresh para evitar expiração
     else token = typeof window !== 'undefined' ? localStorage.getItem('auth_token') : null;
-    const headers: HeadersInit = { 'Content-Type': 'application/json' };
+    const headers: HeadersInit = { 'Content-Type': 'application/json', 'ngrok-skip-browser-warning': 'true' };
     if (token) headers['Authorization'] = `Bearer ${token}`;
     try {
       if (editingCpf) {
@@ -438,7 +438,7 @@ export default function DependentesPage() {
       let token: string | null = null;
       if (auth.currentUser) token = await auth.currentUser.getIdToken(true);
       else token = typeof window !== 'undefined' ? localStorage.getItem('auth_token') : null;
-      const headers: HeadersInit = { 'Content-Type': 'application/json' };
+      const headers: HeadersInit = { 'Content-Type': 'application/json', 'ngrok-skip-browser-warning': 'true' };
       if (token) headers['Authorization'] = `Bearer ${token}`;
 
       const rapidocResp = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL}/beneficiarios/${cpfToDelete}/inativar-rapidoc`, {
