@@ -265,7 +265,7 @@ export default function AdminLogsPage() {
                           {tempo}
                         </span>
                       </div>
-                      <h4 className="text-sm font-semibold text-gray-900 dark:text-white mb-2">
+                      <h4 className="text-sm font-semibold text-gray-900 dark:text-white mb-2 break-words break-all truncate max-w-full" style={{ wordBreak: 'break-word', overflowWrap: 'break-word' }}>
                         {log.url}
                       </h4>
                       <div className="grid grid-cols-1 md:grid-cols-3 gap-2 text-xs text-gray-600 dark:text-gray-400 mb-2">
