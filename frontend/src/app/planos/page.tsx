@@ -35,8 +35,8 @@ export default function PlanosPage() {
   }, []);
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-green-50 via-white to-green-50 dark:from-slate-900 dark:via-gray-900 dark:to-slate-800 py-16 px-4">
-      <div className="max-w-7xl mx-auto">
+    <div className="min-h-screen overflow-x-hidden bg-gradient-to-br from-green-50 via-white to-green-50 dark:from-slate-900 dark:via-gray-900 dark:to-slate-800 py-16">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <button
           onClick={() => router.push("/verificar-cpf")}
           className="inline-flex items-center gap-2 px-4 py-2 text-sm text-gray-600 dark:text-gray-400 hover:text-primary transition mb-8"
@@ -69,11 +69,11 @@ export default function PlanosPage() {
             <p className="text-red-800 dark:text-red-200">{erro}</p>
           </div>
         ) : (
-          <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-8">
+          <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">
             {planos.map((plano) => (
               <div
                 key={plano.id}
-                className="bg-white dark:bg-gray-800 rounded-2xl shadow-lg p-6 flex flex-col border border-gray-200 dark:border-gray-700 hover:shadow-xl transition-all hover:-translate-y-1"
+                className="bg-white dark:bg-gray-800 rounded-2xl shadow-lg p-6 flex flex-col min-w-0 w-full max-w-full border border-gray-200 dark:border-gray-700 hover:shadow-xl transition-all hover:-translate-y-1"
               >
                 <div className="flex-1">
                   <div className="inline-flex items-center px-3 py-1 rounded-full bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-300 text-xs font-semibold mb-4">
@@ -84,7 +84,7 @@ export default function PlanosPage() {
                     {plano.tipo}
                   </h3>
                   
-                  <p className="text-gray-600 dark:text-gray-300 text-sm mb-4">
+                  <p className="text-gray-600 dark:text-gray-300 text-sm mb-4 break-words">
                     {plano.descricao}
                   </p>
 
@@ -93,7 +93,7 @@ export default function PlanosPage() {
                       <p className="text-xs font-semibold text-gray-700 dark:text-gray-300 mb-2">
                         Especialidades incluídas:
                       </p>
-                      <ul className="space-y-1">
+                      <ul className="space-y-1 break-words">
                         {plano.especialidades.slice(0, 5).map((esp, idx) => (
                           <li key={idx} className="flex items-start gap-2 text-xs text-gray-600 dark:text-gray-400">
                             <Check className="w-4 h-4 text-primary flex-shrink-0 mt-0.5" />
@@ -111,15 +111,14 @@ export default function PlanosPage() {
                 </div>
 
                 <div className="border-t border-gray-200 dark:border-gray-700 pt-4 mt-4">
-                  <div className="flex items-baseline justify-center mb-4">
+                  <div className="flex flex-col xs:flex-row items-center xs:items-baseline justify-center gap-2 mb-4">
                     <span className="text-4xl font-extrabold text-gray-900 dark:text-white">
                       R$ {plano.preco.toFixed(2)}
                     </span>
-                    <span className="text-gray-600 dark:text-gray-400 ml-2">/mês</span>
+                    <span className="text-gray-600 dark:text-gray-400 ml-0 xs:ml-2">/mês</span>
                   </div>
-
                   <button
-                    className="w-full bg-gradient-to-r from-primary to-green-600 hover:from-green-600 hover:to-primary text-white font-semibold py-3 px-6 rounded-lg shadow-md hover:shadow-lg transition-all"
+                    className="w-full bg-gradient-to-r from-primary to-green-600 hover:from-green-600 hover:to-primary text-white font-semibold py-3 px-6 rounded-lg shadow-md hover:shadow-lg transition-all mt-2 xs:mt-0"
                     onClick={() => router.push(`/cadastro/${plano.id}`)}
                   >
                     Quero esse!
