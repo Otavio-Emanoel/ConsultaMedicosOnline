@@ -796,8 +796,8 @@ export default function AdminAssinantesPage() {
         {!loading && !error && filteredAssinantes.map((assinante) => (
           <Card key={assinante.id} className="hover:shadow-lg transition-shadow">
             <CardBody>
-              <div className="flex items-start justify-between">
-                <div className="flex items-start space-x-4 flex-1">
+              <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+                <div className="flex items-start space-x-4 flex-1 min-w-0">
                   <div className="w-12 h-12 bg-primary/10 rounded-full flex items-center justify-center flex-shrink-0">
                     <Users className="w-6 h-6 text-primary" />
                   </div>
@@ -809,8 +809,8 @@ export default function AdminAssinantesPage() {
                       {getStatusBadge(assinante.status)}
                     </div>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-sm text-gray-600 dark:text-gray-400 mb-3">
-                      <div>📧 {assinante.email}</div>
-                      <div>🆔 {assinante.cpf}</div>
+                      <div className="break-words">📧 {assinante.email}</div>
+                      <div className="break-words">🆔 {assinante.cpf}</div>
                       <div className="flex items-center">
                         <Package className="w-4 h-4 mr-1" />
                         {assinante.plano}
@@ -828,14 +828,14 @@ export default function AdminAssinantesPage() {
                     </div>
                   </div>
                 </div>
-                <div className="flex flex-col items-end space-y-3 ml-4">
-                  <div className="text-right">
+                <div className="flex flex-col items-start md:items-end space-y-3 md:ml-4 w-full md:w-auto">
+                  <div className="text-left md:text-right">
                     <p className="text-sm text-gray-600 dark:text-gray-400">Valor mensal</p>
                     <p className="text-xl font-bold text-primary">
                       R$ {assinante.valorMensal.toFixed(2).replace('.', ',')}
                     </p>
                   </div>
-                  <div className="flex items-center space-x-2">
+                  <div className="flex flex-wrap items-center gap-2 w-full md:justify-end">
                     <Button variant="outline" size="sm" onClick={async () => {
                       setModalAssinante(assinante);
                       setModalLoading(true);
