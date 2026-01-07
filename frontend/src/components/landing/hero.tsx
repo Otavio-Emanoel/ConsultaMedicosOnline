@@ -22,14 +22,13 @@ export default function Hero() {
                 Tenha atendimento médico online agora!
               </h1>
               <p className="mt-4 text-xl text-gray-600 max-w-2xl mx-auto lg:mx-0">
-                Basta cadastrar-se e tenha acesso a mais de 11 especialidades médicas
-                <br />
-                sem carência, ilimitado e sem custos com deslocamentos.
+                Cadastrar-se e tenha acesso a mais de 11 especialidades médicas, 
+                sem carência, ilimitado — tudo sem sair de casa..
                 <br />
                 Planos a partir de
                 <span className="font-bold"> R$29,90!</span>
                 <br />
-                Invista na sua saúde e da sua família!
+                Cuidar da sua saúde nunca foi tão fácil.
               </p>
               <div className="mt-6 flex flex-col sm:flex-row sm:justify-start items-center lg:items-start justify-center gap-4">
                 <button
