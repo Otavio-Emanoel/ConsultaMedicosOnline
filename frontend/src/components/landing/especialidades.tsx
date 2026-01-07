@@ -60,6 +60,13 @@ export default function Especialidades() {
   const autoPlayTimeoutRef = useRef<NodeJS.Timeout | null>(null)
   const [flipped, setFlipped] = useState<number | null>(null)
 
+  const scrollToPlanos = () => {
+    const planosSection = document.getElementById('planos')
+    if (planosSection) {
+      planosSection.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    }
+  }
+
   return (
     <section id="especialidades" className="py-16 sm:py-20 lg:py-24 bg-gradient-to-br from-emerald-50 to-white">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -147,9 +154,10 @@ export default function Especialidades() {
             {Array.from({ length: 10 }).flatMap(() => especialidades).map((esp, index) => (
               <div
                 key={index}
-                className="flex-shrink-0 w-96 h-80 card-flip"
+                className="flex-shrink-0 w-96 h-80 card-flip cursor-pointer"
                 onMouseEnter={() => setFlipped(index)}
                 onMouseLeave={() => setFlipped(null)}
+                onClick={scrollToPlanos}
               >
                 <div className={`card-flip-inner ${flipped === index ? "flipped" : ""}`}>
                   {/* Frente - Imagem */}
