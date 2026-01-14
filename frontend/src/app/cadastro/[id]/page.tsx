@@ -56,6 +56,7 @@ export default function CadastroPage() {
   const [assinaturaCriada, setAssinaturaCriada] = useState(false);
   const [assinaturaId, setAssinaturaId] = useState<string | null>(null);
   const [redirecionamentoTentado, setRedirecionamentoTentado] = useState(false);
+  const [aceitouTermos, setAceitouTermos] = useState(false);
 
   useEffect(() => {
     if (!planoId) return;
@@ -603,14 +604,29 @@ export default function CadastroPage() {
                   </div>
                 </div>
                 {!assinaturaCriada ? (
-                  <button
-                    type="button"
-                    className="w-full mt-6 bg-gradient-to-r from-green-600 to-green-700 hover:from-green-700 hover:to-green-800 text-white rounded-lg py-3 font-semibold shadow-md hover:shadow-lg transition-all disabled:opacity-50"
-                    disabled={enviando}
-                    onClick={submitAssinatura}
-                  >
-                    {enviando ? "Enviando..." : "Confirmar e Criar Assinatura"}
-                  </button>
+                  <>
+                    <div className="mt-4">
+                      <label className="flex items-start gap-3 text-sm text-gray-700 dark:text-gray-300">
+                        <input
+                          type="checkbox"
+                          checked={aceitouTermos}
+                          onChange={(e) => setAceitouTermos(e.target.checked)}
+                          className="mt-1 w-4 h-4 rounded border-gray-300 dark:border-gray-600 text-primary focus:ring-2 focus:ring-primary cursor-pointer"
+                        />
+                        <span>
+                          Li e concordo com os Termos de Uso e Política de Privacidade
+                        </span>
+                      </label>
+                    </div>
+                    <button
+                      type="button"
+                      className="w-full mt-3 bg-gradient-to-r from-green-600 to-green-700 hover:from-green-700 hover:to-green-800 text-white rounded-lg py-3 font-semibold shadow-md hover:shadow-lg transition-all disabled:opacity-50"
+                      disabled={!aceitouTermos || enviando}
+                      onClick={submitAssinatura}
+                    >
+                      {enviando ? "Enviando..." : "Confirmar e Criar Assinatura"}
+                    </button>
+                  </>
                 ) : form.billingType === 'CREDIT_CARD' && checkoutUrl ? (
                   <div className="mt-6 space-y-3">
                     <div className="bg-blue-50 dark:bg-blue-900/20 border-2 border-blue-300 dark:border-blue-700 rounded-lg p-5">
