@@ -47,6 +47,104 @@ export class DependenteController {
         });
       }
 
+      // ==================================================================================
+      // VERIFICAÇÃO DE LIMITE DE DEPENDENTES POR PLANO
+      // ==================================================================================
+      const db = admin.firestore();
+
+      // A) Buscar dados do titular para descobrir o plano
+      const usuariosRef = db.collection('usuarios');
+      const qUsuario = await usuariosRef.where('cpf', 'in', [holderNormalizado, req.body.holder]).limit(1).get();
+      
+      let limiteDependentes = 0; // Padrão restritivo (Individual = 0 dependentes)
+      let nomePlano = 'Não identificado (Individual)';
+
+      console.log('[DependenteController.adicionar] Buscando usuário com CPF:', { holderNormalizado, reqHolderBody: req.body.holder, usuariosEncontrados: qUsuario.size });
+
+      if (!qUsuario.empty) {
+          const usuarioDoc = qUsuario.docs?.[0];
+          const usuarioData = usuarioDoc?.data();
+          console.log('[DependenteController.adicionar] Dados do usuário encontrados:', { planoId: usuarioData?.planoId, usuarioId: usuarioDoc?.id });
+          
+          if (!usuarioData) {
+              console.warn('[DependenteController] Usuário encontrado mas sem dados válidos');
+          } else {
+              const planoId = usuarioData.planoId;
+
+              if (planoId) {
+                  const planoDoc = await db.collection('planos').doc(planoId).get();
+                  console.log('[DependenteController.adicionar] Plano buscado:', { planoId, planoExists: planoDoc.exists });
+                  
+                  if (planoDoc.exists) {
+                      const planoData = planoDoc.data() || {};
+                      // Normaliza o nome para verificação
+                      const nomePlanoLower = (planoData.nome || planoData.descricao || planoData.tipo || '').toLowerCase();
+                      const descricaoLower = (planoData.descricao || '').toLowerCase();
+                      
+                      nomePlano = planoData.nome || planoData.tipo || planoData.descricao || 'Plano Personalizado';
+
+                      // Prioridade 1: Campo explícito no banco 'maxDependentes'
+                      if (planoData.maxDependentes !== undefined && planoData.maxDependentes !== null) {
+                          limiteDependentes = Number(planoData.maxDependentes);
+                          console.log('[DependenteController] Limite via maxDependentes:', limiteDependentes);
+                      } 
+                      // Prioridade 2: Campo 'maxBeneficiaries' (Total de vidas). Dependentes = Total - 1 (Titular)
+                      else if (planoData.maxBeneficiaries !== undefined && planoData.maxBeneficiaries !== null) {
+                          limiteDependentes = Number(planoData.maxBeneficiaries) - 1;
+                          if (limiteDependentes < 0) limiteDependentes = 0;
+                          console.log('[DependenteController] Limite via maxBeneficiaries:', { maxBeneficiaries: planoData.maxBeneficiaries, limiteDependentes });
+                      }
+                      // Prioridade 3: Inferência pelo nome (Regra de Negócio do Cliente)
+                      else {
+                          if (nomePlanoLower.includes('familiar') || nomePlanoLower.includes('família') || descricaoLower.includes('família')) {
+                              limiteDependentes = 3; // Familiar = 3 dependentes
+                          } else if (nomePlanoLower.includes('casal') || descricaoLower.includes('casal')) {
+                              limiteDependentes = 1; // Casal = 1 dependente
+                          } else {
+                              limiteDependentes = 0; // Individual = 0 dependentes
+                          }
+                          console.log('[DependenteController] Limite via inferência de nome:', { nomePlano, limiteDependentes });
+                      }
+                  } else {
+                      console.warn('[DependenteController] Plano com ID não encontrado na coleção:', planoId);
+                  }
+              } else {
+                  console.warn('[DependenteController] Usuário não tem planoId definido');
+              }
+          }
+      } else {
+          console.warn('[DependenteController] Nenhum usuário encontrado com CPF:', { holderNormalizado, reqHolderBody: req.body.holder });
+      }
+
+      // B) Contar quantos dependentes ativos este titular já tem
+      const beneficiariosRef = db.collection('beneficiarios');
+      const snapshotDep = await beneficiariosRef.where('holder', 'in', [holderNormalizado, req.body.holder]).get();
+      
+      // Filtra para garantir que não estamos contando o próprio titular se ele estiver nesta coleção
+      // e garante que contamos apenas CPFs únicos (caso haja sujeira no banco)
+      const cpfsDependentes = new Set<string>();
+      snapshotDep.docs.forEach(doc => {
+          const dados = doc.data();
+          const cpfDep = String(dados.cpf || '').replace(/\D/g, '');
+          // Só conta se o CPF for válido e DIFERENTE do titular
+          if (cpfDep && cpfDep !== holderNormalizado) {
+              cpfsDependentes.add(cpfDep);
+          }
+      });
+
+      const quantidadeAtual = cpfsDependentes.size;
+
+      console.log(`[DependenteController] Verificação Limite: Plano="${nomePlano}", Limite=${limiteDependentes}, Atual=${quantidadeAtual}`);
+
+      if (quantidadeAtual >= limiteDependentes) {
+          return res.status(403).json({ 
+              error: `O seu plano (${nomePlano}) permite no máximo ${limiteDependentes} dependente(s). Você já possui ${quantidadeAtual}. Faça um upgrade para adicionar mais.`,
+              limit: limiteDependentes,
+              current: quantidadeAtual
+          });
+      }
+      // ==================================================================================
+
       // 4. Montagem dos Planos
       const plansNormalizados: Array<{ paymentType: string; plan: { uuid: string } }> = Array.isArray(plans)
         ? plans
