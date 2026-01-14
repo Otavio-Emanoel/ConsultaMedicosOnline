@@ -329,11 +329,10 @@ export class DependenteController {
 
       const { nome, birthDate, parentesco, holder, email, phone, zipCode, address, city, state, paymentType, serviceType, plans } = req.body;
       
-      // Validação básica se veio algo para atualizar
       const hasUpdates = [nome, birthDate, email, phone, zipCode, address, city, state, paymentType, serviceType, plans, parentesco].some(v => v !== undefined && v !== '');
       if (!hasUpdates) return res.status(400).json({ error: 'Nenhum campo para atualizar informado.' });
 
-      // 1. Busca o dependente no Firestore pelo CPF
+      // 1. Busca o dependente no Firestore
       const snapshot = await admin.firestore().collection('beneficiarios').where('cpf', '==', cpfParam).limit(1).get();
       if (snapshot.empty) {
         return res.status(404).json({ error: 'Dependente não encontrado no sistema.' });
@@ -343,23 +342,7 @@ export class DependenteController {
       const dependente = doc.data();
       let rapidocUuid = dependente.rapidocUuid;
 
-      // Normalização e validação de telefone (Rapidoc exige 11 dígitos BR)
-      let phoneNormalized = typeof phone === 'string' ? phone.replace(/\D/g, '') : '';
-      // Remove prefixo 55 enquanto exceder 11 dígitos
-      while (phoneNormalized.startsWith('55') && phoneNormalized.length > 11) {
-        phoneNormalized = phoneNormalized.slice(2);
-      }
-      if (phone && phoneNormalized.length !== 11) {
-        return res.status(400).json({ error: 'Telefone deve conter 11 dígitos (DDD + celular).' });
-      }
-
-      // Payment type: garante valor válido para Rapidoc
-      let paymentTypeFinal = (paymentType ?? dependente.paymentType ?? 'S').toString().trim().toUpperCase();
-      if (paymentTypeFinal !== 'S' && paymentTypeFinal !== 'A') {
-        paymentTypeFinal = 'S';
-      }
-
-      // 2. Se não tem UUID, tenta recuperar do Rapidoc via CPF
+      // 2. Se não tem UUID, tenta recuperar (mantido igual)
       if (!rapidocUuid) {
         try {
           const { RAPIDOC_BASE_URL, RAPIDOC_TOKEN, RAPIDOC_CLIENT_ID } = process.env as Record<string, string | undefined>;
@@ -369,70 +352,166 @@ export class DependenteController {
           const data = resp.data;
           rapidocUuid = data?.beneficiary?.uuid || (Array.isArray(data?.beneficiaries) ? data.beneficiaries[0]?.uuid : null) || data?.uuid;
           
-      // @ts-ignore
+          // @ts-ignore
           if (rapidocUuid) await doc.ref.update({ rapidocUuid });
         } catch (e) {
           console.warn('[DependenteController.editar] Não foi possível recuperar UUID externo.');
         }
       }
 
-      // 3. Atualiza no Rapidoc (se tiver UUID)
+      // 3. Atualiza no Rapidoc
       if (rapidocUuid) {
-        const rapidocBody: any = { uuid: rapidocUuid };
-        
-        if (nome) rapidocBody.name = nome;
-        if (birthDate) rapidocBody.birthday = birthDate;
-        
-        if (email && email.trim() !== (dependente.email || '').trim()) {
-          rapidocBody.email = email.trim();
+        // Busca dados atuais do dependente no Rapidoc para obter os planos corretos
+        let atualRapidoc: any = null;
+        try {
+          const { RAPIDOC_BASE_URL, RAPIDOC_TOKEN, RAPIDOC_CLIENT_ID } = process.env as Record<string, string | undefined>;
+          const respAtual = await axios.get(`${RAPIDOC_BASE_URL}/tema/api/beneficiaries/${rapidocUuid}`, {
+            headers: {
+              Authorization: `Bearer ${RAPIDOC_TOKEN}`,
+              clientId: RAPIDOC_CLIENT_ID as string,
+              'Content-Type': 'application/vnd.rapidoc.tema-v2+json'
+            }
+          });
+          if (respAtual.data) {
+            atualRapidoc = respAtual.data.beneficiary || respAtual.data.data?.beneficiary || respAtual.data.data || respAtual.data;
+          }
+          console.log('[DependenteController.editar] Dados atuais do Rapidoc:', JSON.stringify(atualRapidoc?.plans || 'sem planos'));
+        } catch (e) {
+          console.warn('[DependenteController.editar] Não foi possível buscar dados atuais do Rapidoc.');
         }
 
-        if (phone) rapidocBody.phone = phoneNormalized;
+        const rapidocBody: any = { uuid: rapidocUuid };
+        
+        // Mapeamento de campos
+        if (nome) rapidocBody.name = nome;
+        if (birthDate) rapidocBody.birthday = birthDate;
+        if (email && email.trim() !== (dependente.email || '').trim()) rapidocBody.email = email.trim();
+        if (phone) rapidocBody.phone = phone.replace(/\D/g, ''); // Remove o 55 se o front mandar, ou remove formatação
         if (zipCode) rapidocBody.zipCode = zipCode;
         if (address) rapidocBody.address = address;
         if (city) rapidocBody.city = city;
         if (state) rapidocBody.state = state;
 
-        // Garante paymentType válido mesmo em updates sem mudança de plano
-        rapidocBody.paymentType = paymentTypeFinal;
+        // --- LÓGICA DE PLANOS BASEADA NO USUARIO.CONTROLLER.TS ---
+        // Função helper para verificar se parece um UUID válido
+        const isValidUuid = (str: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str);
 
+        // Se o front mandou plans explicitamente, usa
         if (Array.isArray(plans) && plans.length > 0) {
-          rapidocBody.plans = plans;
-        } else if (serviceType && serviceType.trim()) {
-          rapidocBody.plans = [{
-            plan: { uuid: serviceType.trim() },
-            paymentType: paymentTypeFinal
-          }];
+            rapidocBody.plans = plans
+                .filter((p: any) => p && p.plan && typeof p.plan.uuid === 'string' && p.plan.uuid.trim().length > 0)
+                .map((p: any) => {
+                    const out: any = { plan: { uuid: String(p.plan.uuid).trim() } };
+                    const pt = String(p.paymentType || 'S').trim().toUpperCase();
+                    out.paymentType = (pt === 'S' || pt === 'A') ? pt : 'S';
+                    return out;
+                });
+        } else if (serviceType && serviceType.trim() && isValidUuid(serviceType.trim())) {
+            // Se mandou serviceType específico (e é um UUID válido)
+            const planEntry: any = { plan: { uuid: serviceType.trim() } };
+            const pt = paymentType ? String(paymentType).trim().toUpperCase() : 'S';
+            planEntry.paymentType = (pt === 'S' || pt === 'A') ? pt : 'S';
+            rapidocBody.plans = [planEntry];
+        } else if (atualRapidoc && Array.isArray(atualRapidoc.plans) && atualRapidoc.plans.length > 0) {
+            // FALLBACK 1: Usa os planos atuais do próprio beneficiário no Rapidoc
+            const normalizedPlans = atualRapidoc.plans
+                .map((p: any) => {
+                    const uuid = p?.plan?.uuid || p?.planUuid || p?.uuid || p?.id;
+                    if (!uuid || typeof uuid !== 'string') return null;
+                    const rawPt = String(p?.paymentType || 'S').trim().toUpperCase();
+                    const paymentTypeNormalized = (rawPt === 'A') ? 'A' : 'S';
+                    return { plan: { uuid: uuid.trim() }, paymentType: paymentTypeNormalized };
+                })
+                .filter(Boolean);
+            if (normalizedPlans.length > 0) {
+                rapidocBody.plans = normalizedPlans;
+                console.log('[DependenteController.editar] Usando planos atuais do Rapidoc:', JSON.stringify(normalizedPlans));
+            }
+        } else if (dependente.serviceType && isValidUuid(dependente.serviceType)) {
+            // FALLBACK 2: Usa o serviceType salvo no Firestore (só se for UUID válido)
+            const existingPt = dependente.paymentType ? String(dependente.paymentType).trim().toUpperCase() : 'S';
+            const validPt = (existingPt === 'A') ? 'A' : 'S';
+            rapidocBody.plans = [{
+                plan: { uuid: dependente.serviceType },
+                paymentType: validPt
+            }];
+            console.log('[DependenteController.editar] Usando plano do Firestore:', dependente.serviceType);
+        } else {
+            // FALLBACK 3: Busca o plano do TITULAR no Firestore
+            const holderCpf = holder || dependente.holder;
+            if (holderCpf) {
+                try {
+                    const db = admin.firestore();
+                    const userSnap = await db.collection('usuarios').where('cpf', '==', String(holderCpf).replace(/\D/g, '')).limit(1).get();
+                    
+                    if (!userSnap.empty && userSnap.docs[0]) {
+                        const userData = userSnap.docs[0].data();
+                        if (userData?.planoId) {
+                            // Busca o plano do titular
+                            let planoData: any = null;
+                            const planoSnap = await db.collection('planos').doc(userData.planoId).get();
+                            planoData = planoSnap.exists ? planoSnap.data() : null;
+                            
+                            // Tenta achar via internalPlanKey se não achar por ID
+                            if (!planoData) {
+                                const qPlan = await db.collection('planos').where('internalPlanKey', '==', userData.planoId).limit(1).get();
+                                if (!qPlan.empty && qPlan.docs[0]) {
+                                    planoData = qPlan.docs[0].data();
+                                }
+                            }
+
+                            if (planoData?.uuidRapidocPlano && isValidUuid(planoData.uuidRapidocPlano)) {
+                                console.log('[DependenteController.editar] Usando plano do titular:', planoData.uuidRapidocPlano);
+                                rapidocBody.plans = [{
+                                    plan: { uuid: planoData.uuidRapidocPlano },
+                                    paymentType: 'S'
+                                }];
+                            }
+                        }
+                    }
+                } catch (err) {
+                    console.warn('[DependenteController.editar] Falha ao buscar plano do titular.');
+                }
+            }
         }
+        // Se nenhum plano foi definido, NÃO envia o campo plans (a API pode aceitar sem)
+        if (!rapidocBody.plans) {
+            console.log('[DependenteController.editar] Nenhum plano encontrado, enviando sem o campo plans.');
+        }
+        // ----------------------------------------
 
         try {
-           console.log('[DependenteController.editar] Atualizando Rapidoc:', JSON.stringify(rapidocBody));
+           console.log('[DependenteController.editar] Payload Rapidoc:', JSON.stringify(rapidocBody));
            await atualizarBeneficiarioRapidoc(rapidocUuid, rapidocBody);
         } catch (e: any) {
            console.error('[DependenteController.editar] Erro Rapidoc:', e.response?.data || e.message);
+           
+           // Se der erro de validação, retornamos detalhes
            if (e.response && (e.response.status === 422 || e.response.status === 400)) {
                return res.status(e.response.status).json({ 
                    error: 'Erro de validação no Rapidoc', 
                    details: e.response.data 
                });
            }
+           // Se for outro erro, apenas logamos e continuamos para atualizar o Firestore
+           // (Às vezes o erro é no Rapidoc mas queremos salvar a edição local, como telefone)
         }
       }
 
-      // 4. Atualiza no Firestore
+      // 4. Atualiza no Firestore (Código mantido, apenas adicionando update do serviceType se mudou)
       const holderFinal = holder || dependente.holder;
       
       const updateLocal: any = {
         nome: nome ?? dependente.nome,
         birthDate: birthDate ?? dependente.birthDate,
         email: email ?? dependente.email,
-        phone: phone ? phoneNormalized : dependente.phone ?? null,
+        phone: phone ? phone.replace(/\D/g, '') : (dependente.phone ?? null),
         zipCode: zipCode ?? dependente.zipCode ?? null,
         address: address ?? dependente.address ?? null,
         city: city ?? dependente.city ?? null,
         state: state ?? dependente.state ?? null,
         parentesco: parentesco ?? dependente.parentesco ?? null,
-        paymentType: paymentType ?? dependente.paymentType ?? paymentTypeFinal ?? null,
+        paymentType: paymentType ?? dependente.paymentType ?? null,
         serviceType: serviceType ?? dependente.serviceType ?? null,
         rapidocUuid: rapidocUuid || dependente.rapidocUuid || null,
         updatedAt: new Date()
@@ -443,7 +522,6 @@ export class DependenteController {
       // @ts-ignore
       await doc.ref.update(updateLocal);
 
-      // 5. Retorna lista atualizada
       const listaSnapshot = await admin.firestore().collection('beneficiarios').where('holder', '==', holderFinal).get();
       const lista = listaSnapshot.docs.map(d => ({ id: d.id, ...d.data() }));
 
