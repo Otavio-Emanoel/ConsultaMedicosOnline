@@ -343,6 +343,22 @@ export class DependenteController {
       const dependente = doc.data();
       let rapidocUuid = dependente.rapidocUuid;
 
+      // Normalização e validação de telefone (Rapidoc exige 11 dígitos BR)
+      let phoneNormalized = typeof phone === 'string' ? phone.replace(/\D/g, '') : '';
+      // Remove prefixo 55 enquanto exceder 11 dígitos
+      while (phoneNormalized.startsWith('55') && phoneNormalized.length > 11) {
+        phoneNormalized = phoneNormalized.slice(2);
+      }
+      if (phone && phoneNormalized.length !== 11) {
+        return res.status(400).json({ error: 'Telefone deve conter 11 dígitos (DDD + celular).' });
+      }
+
+      // Payment type: garante valor válido para Rapidoc
+      let paymentTypeFinal = (paymentType ?? dependente.paymentType ?? 'S').toString().trim().toUpperCase();
+      if (paymentTypeFinal !== 'S' && paymentTypeFinal !== 'A') {
+        paymentTypeFinal = 'S';
+      }
+
       // 2. Se não tem UUID, tenta recuperar do Rapidoc via CPF
       if (!rapidocUuid) {
         try {
@@ -368,25 +384,25 @@ export class DependenteController {
         if (birthDate) rapidocBody.birthday = birthDate;
         
         if (email && email.trim() !== (dependente.email || '').trim()) {
-            rapidocBody.email = email.trim();
+          rapidocBody.email = email.trim();
         }
 
-        if (phone) rapidocBody.phone = phone.replace(/\D/g, '');
+        if (phone) rapidocBody.phone = phoneNormalized;
         if (zipCode) rapidocBody.zipCode = zipCode;
         if (address) rapidocBody.address = address;
         if (city) rapidocBody.city = city;
         if (state) rapidocBody.state = state;
 
+        // Garante paymentType válido mesmo em updates sem mudança de plano
+        rapidocBody.paymentType = paymentTypeFinal;
+
         if (Array.isArray(plans) && plans.length > 0) {
-            rapidocBody.plans = plans;
+          rapidocBody.plans = plans;
         } else if (serviceType && serviceType.trim()) {
-            const pt = paymentType ? String(paymentType).trim().toUpperCase() : 'S';
-            if (pt === 'S' || pt === 'A') {
-                rapidocBody.plans = [{
-                    plan: { uuid: serviceType.trim() },
-                    paymentType: pt
-                }];
-            }
+          rapidocBody.plans = [{
+            plan: { uuid: serviceType.trim() },
+            paymentType: paymentTypeFinal
+          }];
         }
 
         try {
@@ -410,13 +426,13 @@ export class DependenteController {
         nome: nome ?? dependente.nome,
         birthDate: birthDate ?? dependente.birthDate,
         email: email ?? dependente.email,
-        phone: phone ?? dependente.phone ?? null,
+        phone: phone ? phoneNormalized : dependente.phone ?? null,
         zipCode: zipCode ?? dependente.zipCode ?? null,
         address: address ?? dependente.address ?? null,
         city: city ?? dependente.city ?? null,
         state: state ?? dependente.state ?? null,
         parentesco: parentesco ?? dependente.parentesco ?? null,
-        paymentType: paymentType ?? dependente.paymentType ?? null,
+        paymentType: paymentType ?? dependente.paymentType ?? paymentTypeFinal ?? null,
         serviceType: serviceType ?? dependente.serviceType ?? null,
         rapidocUuid: rapidocUuid || dependente.rapidocUuid || null,
         updatedAt: new Date()
