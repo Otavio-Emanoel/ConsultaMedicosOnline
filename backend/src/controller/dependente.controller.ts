@@ -69,7 +69,32 @@ export class DependenteController {
           if (!usuarioData) {
               console.warn('[DependenteController] Usuário encontrado mas sem dados válidos');
           } else {
-              const planoId = usuarioData.planoId;
+              let planoId = usuarioData.planoId;
+
+              // Se não tem planoId, tenta buscar via assinatura ativa
+              if (!planoId) {
+                  console.log('[DependenteController] planoId não encontrado no usuário, buscando via assinaturas...');
+                  try {
+                      // Busca a assinatura ativa do usuário
+                      const assinaturasRef = db.collection('assinaturas');
+                      const qAssinatura = await assinaturasRef
+                          .where('cpf', '==', holderNormalizado)
+                          .where('status', 'in', ['ACTIVE', 'PENDING', 'ONGOING']) // Status ativo/pendente
+                          .limit(1)
+                          .get();
+                      
+                      if (!qAssinatura.empty) {
+                          const assinaturaDoc = qAssinatura.docs?.[0];
+                          const assinaturaData = assinaturaDoc?.data();
+                          planoId = assinaturaData?.planoId || assinaturaData?.planId;
+                          console.log('[DependenteController] PlanoId encontrado via assinatura:', planoId);
+                      } else {
+                          console.warn('[DependenteController] Nenhuma assinatura ativa encontrada para CPF:', holderNormalizado);
+                      }
+                  } catch (e) {
+                      console.error('[DependenteController] Erro ao buscar assinaturas:', e);
+                  }
+              }
 
               if (planoId) {
                   const planoDoc = await db.collection('planos').doc(planoId).get();
@@ -109,7 +134,7 @@ export class DependenteController {
                       console.warn('[DependenteController] Plano com ID não encontrado na coleção:', planoId);
                   }
               } else {
-                  console.warn('[DependenteController] Usuário não tem planoId definido');
+                  console.warn('[DependenteController] Não foi possível encontrar planoId via usuário ou assinatura');
               }
           }
       } else {
