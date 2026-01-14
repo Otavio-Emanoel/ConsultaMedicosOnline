@@ -64,6 +64,35 @@ export class DependenteController {
           
           console.log(`[DEBUG] Usuário encontrado. PlanoId no usuário: "${planoId}"`);
 
+          // Se não tem planoId no usuário, busca na assinatura ativa
+          if (!planoId) {
+              console.log('[DEBUG] planoId não encontrado no usuário. Buscando via assinaturas...');
+              try {
+                  const assinaturasRef = db.collection('assinaturas');
+                  
+                  // CORREÇÃO: O campo é cpfUsuario, não cpf
+                  let qAssinatura = await assinaturasRef
+                      .where('cpfUsuario', '==', holderNormalizado)
+                      .limit(1)
+                      .get();
+                  
+                  if (!qAssinatura.empty) {
+                      const assinaturaData = qAssinatura.docs?.[0]?.data();
+                      planoId = assinaturaData?.planoId;
+                      console.log('[DEBUG] PlanoId encontrado via assinatura:', planoId);
+                      console.log('[DEBUG] Dados completos da assinatura:', {
+                          ciclo: assinaturaData?.ciclo,
+                          formaPagamento: assinaturaData?.formaPagamento,
+                          planoId: assinaturaData?.planoId
+                      });
+                  } else {
+                      console.warn('[DEBUG] Nenhuma assinatura encontrada para CPF:', holderNormalizado);
+                  }
+              } catch (e) {
+                  console.error('[DEBUG] Erro ao buscar assinaturas:', e);
+              }
+          }
+
           if (planoId) {
               let planoDoc = await db.collection('planos').doc(planoId).get();
               let planoData = planoDoc.exists ? planoDoc.data() : null;
