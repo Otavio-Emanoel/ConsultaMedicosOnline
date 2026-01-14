@@ -24,12 +24,8 @@ export class DependenteController {
         plans 
       } = req.body;
 
-      console.log('[DependenteController.adicionar] Início', { 
-        nome, 
-        hasCpf: !!cpf, 
-        birthDate, 
-        holder 
-      });
+      console.log('--- [DependenteController.adicionar] INÍCIO ---');
+      console.log('Dados recebidos:', { nome, cpf, holder });
 
       // 2. Sanitização Básica
       const cpfNormalizado = typeof cpf === 'string' ? cpf.replace(/\D/g, '') : '';
@@ -48,110 +44,99 @@ export class DependenteController {
       }
 
       // ==================================================================================
-      // VERIFICAÇÃO DE LIMITE DE DEPENDENTES POR PLANO
+      // NOVA LÓGICA: VERIFICAÇÃO DE LIMITE DE DEPENDENTES POR PLANO (COM DEBUG)
       // ==================================================================================
       const db = admin.firestore();
 
       // A) Buscar dados do titular para descobrir o plano
       const usuariosRef = db.collection('usuarios');
+      // Busca flexível pelo CPF do titular
       const qUsuario = await usuariosRef.where('cpf', 'in', [holderNormalizado, req.body.holder]).limit(1).get();
       
-      let limiteDependentes = 0; // Padrão restritivo (Individual = 0 dependentes)
-      let nomePlano = 'Não identificado (Individual)';
-
-      console.log('[DependenteController.adicionar] Buscando usuário com CPF:', { holderNormalizado, reqHolderBody: req.body.holder, usuariosEncontrados: qUsuario.size });
+      let limiteDependentes = 0; // Começa bloqueado por segurança
+      let nomePlano = 'Plano Desconhecido';
+      let planoEncontrado = false;
 
       if (!qUsuario.empty) {
           const usuarioDoc = qUsuario.docs?.[0];
           const usuarioData = usuarioDoc?.data();
-          console.log('[DependenteController.adicionar] Dados do usuário encontrados:', { planoId: usuarioData?.planoId, usuarioId: usuarioDoc?.id });
+          let planoId = usuarioData?.planoId;
           
-          if (!usuarioData) {
-              console.warn('[DependenteController] Usuário encontrado mas sem dados válidos');
-          } else {
-              let planoId = usuarioData.planoId;
+          console.log(`[DEBUG] Usuário encontrado. PlanoId no usuário: "${planoId}"`);
 
-              // Se não tem planoId, tenta buscar via assinatura ativa
-              if (!planoId) {
-                  console.log('[DependenteController] planoId não encontrado no usuário, buscando via assinaturas...');
-                  try {
-                      // Busca a assinatura ativa do usuário
-                      const assinaturasRef = db.collection('assinaturas');
-                      const qAssinatura = await assinaturasRef
-                          .where('cpf', '==', holderNormalizado)
-                          .where('status', 'in', ['ACTIVE', 'PENDING', 'ONGOING']) // Status ativo/pendente
-                          .limit(1)
-                          .get();
-                      
-                      if (!qAssinatura.empty) {
-                          const assinaturaDoc = qAssinatura.docs?.[0];
-                          const assinaturaData = assinaturaDoc?.data();
-                          planoId = assinaturaData?.planoId || assinaturaData?.planId;
-                          console.log('[DependenteController] PlanoId encontrado via assinatura:', planoId);
-                      } else {
-                          console.warn('[DependenteController] Nenhuma assinatura ativa encontrada para CPF:', holderNormalizado);
+          if (planoId) {
+              let planoDoc = await db.collection('planos').doc(planoId).get();
+              let planoData = planoDoc.exists ? planoDoc.data() : null;
+
+              // TENTATIVA DE FALLBACK: Se não achar pelo ID direto, busca por chave interna
+              if (!planoDoc.exists) {
+                  console.log(`[DEBUG] Plano não encontrado pelo ID direto. Tentando buscar por internalPlanKey...`);
+                  const qPlanoKey = await db.collection('planos').where('internalPlanKey', '==', planoId).limit(1).get();
+                  if (!qPlanoKey.empty) {
+                      const planoDocTemp = qPlanoKey.docs?.[0];
+                      if (planoDocTemp) {
+                          planoDoc = planoDocTemp as any;
+                              planoData = planoDoc.data();
+                          console.log(`[DEBUG] Plano recuperado via internalPlanKey.`);
                       }
-                  } catch (e) {
-                      console.error('[DependenteController] Erro ao buscar assinaturas:', e);
                   }
               }
 
-              if (planoId) {
-                  const planoDoc = await db.collection('planos').doc(planoId).get();
-                  console.log('[DependenteController.adicionar] Plano buscado:', { planoId, planoExists: planoDoc.exists });
+              if (planoData) {
+                  planoEncontrado = true;
+                  nomePlano = planoData.nome || planoData.descricao || planoData.tipo || 'Plano Personalizado';
                   
-                  if (planoDoc.exists) {
-                      const planoData = planoDoc.data() || {};
-                      // Normaliza o nome para verificação
-                      const nomePlanoLower = (planoData.nome || planoData.descricao || planoData.tipo || '').toLowerCase();
-                      const descricaoLower = (planoData.descricao || '').toLowerCase();
-                      
-                      nomePlano = planoData.nome || planoData.tipo || planoData.descricao || 'Plano Personalizado';
+                  // LOG DO JSON DO PLANO PARA VOCÊ CONFERIR NO TERMINAL
+                  console.log('[DEBUG] Dados do Plano Carregado:', JSON.stringify(planoData, null, 2));
 
-                      // Prioridade 1: Campo explícito no banco 'maxDependentes'
-                      if (planoData.maxDependentes !== undefined && planoData.maxDependentes !== null) {
-                          limiteDependentes = Number(planoData.maxDependentes);
-                          console.log('[DependenteController] Limite via maxDependentes:', limiteDependentes);
-                      } 
-                      // Prioridade 2: Campo 'maxBeneficiaries' (Total de vidas). Dependentes = Total - 1 (Titular)
-                      else if (planoData.maxBeneficiaries !== undefined && planoData.maxBeneficiaries !== null) {
-                          limiteDependentes = Number(planoData.maxBeneficiaries) - 1;
-                          if (limiteDependentes < 0) limiteDependentes = 0;
-                          console.log('[DependenteController] Limite via maxBeneficiaries:', { maxBeneficiaries: planoData.maxBeneficiaries, limiteDependentes });
+                  // REGRA 1: Procura maxBeneficiaries na RAIZ ou dentro de beneficiaryConfig
+                  const maxBeneficiariesRoot = planoData.maxBeneficiaries;
+                  const maxBeneficiariesConfig = planoData.beneficiaryConfig?.maxBeneficiaries;
+                  
+                  // Prioriza o que estiver definido
+                  let totalVidas = undefined;
+                  if (maxBeneficiariesRoot !== undefined) totalVidas = Number(maxBeneficiariesRoot);
+                  else if (maxBeneficiariesConfig !== undefined) totalVidas = Number(maxBeneficiariesConfig);
+
+                  // Se achou um número válido
+                  if (totalVidas !== undefined && !isNaN(totalVidas)) {
+                      // O campo maxBeneficiaries geralmente inclui o titular.
+                      // Então Dependentes = Total - 1
+                      // SE o seu banco considera maxBeneficiaries APENAS como dependentes, remova o "- 1" abaixo.
+                      // Baseado no seu JSON (4 vidas), assumo que seja 1 titular + 3 dependentes.
+                      limiteDependentes = totalVidas > 0 ? totalVidas - 1 : 0; 
+                      console.log(`[DEBUG] Limite calculado via maxBeneficiaries (${totalVidas}) - 1 titular = ${limiteDependentes} dependentes.`);
+                  } 
+                  else {
+                      // REGRA 2: Inferência (Fallback)
+                      console.log('[DEBUG] Campo maxBeneficiaries não encontrado. Usando inferência por nome.');
+                      const nomeLower = (nomePlano || '').toLowerCase();
+                      if (nomeLower.includes('familiar') || nomeLower.includes('família')) {
+                          limiteDependentes = 3; 
+                      } else if (nomeLower.includes('casal')) {
+                          limiteDependentes = 1; 
+                      } else {
+                          limiteDependentes = 0; // Individual
                       }
-                      // Prioridade 3: Inferência pelo nome (Regra de Negócio do Cliente)
-                      else {
-                          if (nomePlanoLower.includes('familiar') || nomePlanoLower.includes('família') || descricaoLower.includes('família')) {
-                              limiteDependentes = 3; // Familiar = 3 dependentes
-                          } else if (nomePlanoLower.includes('casal') || descricaoLower.includes('casal')) {
-                              limiteDependentes = 1; // Casal = 1 dependente
-                          } else {
-                              limiteDependentes = 0; // Individual = 0 dependentes
-                          }
-                          console.log('[DependenteController] Limite via inferência de nome:', { nomePlano, limiteDependentes });
-                      }
-                  } else {
-                      console.warn('[DependenteController] Plano com ID não encontrado na coleção:', planoId);
                   }
               } else {
-                  console.warn('[DependenteController] Não foi possível encontrar planoId via usuário ou assinatura');
+                  console.log('[DEBUG] Documento do plano não encontrado no Firestore.');
               }
+          } else {
+              console.log('[DEBUG] Campo planoId está vazio no cadastro do usuário.');
           }
       } else {
-          console.warn('[DependenteController] Nenhum usuário encontrado com CPF:', { holderNormalizado, reqHolderBody: req.body.holder });
+          console.log('[DEBUG] Usuário titular não encontrado no banco de dados.');
       }
 
       // B) Contar quantos dependentes ativos este titular já tem
       const beneficiariosRef = db.collection('beneficiarios');
       const snapshotDep = await beneficiariosRef.where('holder', 'in', [holderNormalizado, req.body.holder]).get();
       
-      // Filtra para garantir que não estamos contando o próprio titular se ele estiver nesta coleção
-      // e garante que contamos apenas CPFs únicos (caso haja sujeira no banco)
       const cpfsDependentes = new Set<string>();
       snapshotDep.docs.forEach(doc => {
           const dados = doc.data();
           const cpfDep = String(dados.cpf || '').replace(/\D/g, '');
-          // Só conta se o CPF for válido e DIFERENTE do titular
           if (cpfDep && cpfDep !== holderNormalizado) {
               cpfsDependentes.add(cpfDep);
           }
@@ -159,15 +144,32 @@ export class DependenteController {
 
       const quantidadeAtual = cpfsDependentes.size;
 
-      console.log(`[DependenteController] Verificação Limite: Plano="${nomePlano}", Limite=${limiteDependentes}, Atual=${quantidadeAtual}`);
+      console.log(`--- [RESUMO DA TRAVA] ---`);
+      console.log(`Plano: ${nomePlano}`);
+      console.log(`Limite Permitido: ${limiteDependentes}`);
+      console.log(`Dependentes Atuais: ${quantidadeAtual}`);
+      console.log(`Pode Adicionar? ${quantidadeAtual < limiteDependentes ? 'SIM' : 'NÃO'}`);
+      console.log('-------------------------');
 
-      if (quantidadeAtual >= limiteDependentes) {
+      if (planoEncontrado && quantidadeAtual >= limiteDependentes) {
           return res.status(403).json({ 
-              error: `O seu plano (${nomePlano}) permite no máximo ${limiteDependentes} dependente(s). Você já possui ${quantidadeAtual}. Faça um upgrade para adicionar mais.`,
-              limit: limiteDependentes,
-              current: quantidadeAtual
+              error: `Seu plano (${nomePlano}) atingiu o limite de ${limiteDependentes} dependente(s).`,
+              details: { limit: limiteDependentes, current: quantidadeAtual }
           });
       }
+      
+      // Se plano não foi encontrado, mas o usuário existe, talvez liberar ou bloquear? 
+      // Por segurança, se não achou o plano, o limite ficou 0, então vai bloquear abaixo.
+      if (!planoEncontrado) {
+           console.warn('[WARN] Prosseguindo com limite 0 pois plano não foi identificado.');
+           if (quantidadeAtual >= limiteDependentes) {
+                return res.status(403).json({ 
+                    error: `Não foi possível verificar o limite do seu plano. Contate o suporte.`,
+                    debug: 'Plano não localizado'
+                });
+           }
+      }
+
       // ==================================================================================
 
       // 4. Montagem dos Planos
@@ -240,7 +242,7 @@ export class DependenteController {
       }
 
       if (!uuidGerado) {
-          console.warn('[DependenteController.adicionar] ATENÇÃO: UUID não encontrado na resposta do Rapidoc. Estrutura recebida:', Object.keys(rapidocObj || {}));
+          console.warn('[DependenteController.adicionar] ATENÇÃO: UUID não encontrado na resposta do Rapidoc.');
       }
 
       // 7. Salva no Firestore
@@ -265,7 +267,7 @@ export class DependenteController {
       Object.keys(docData).forEach(key => docData[key] === undefined && delete docData[key]);
 
       const createdRef = await admin.firestore().collection('beneficiarios').add(docData);
-      console.log('[DependenteController.adicionar] Documento criado no Firestore:', createdRef.id, 'com UUID Rapidoc:', uuidGerado);
+      console.log('[DependenteController.adicionar] Documento criado no Firestore:', createdRef.id);
 
       // 8. Retorna lista atualizada
       const snapshot = await admin.firestore().collection('beneficiarios').where('holder', '==', holderNormalizado).get();
@@ -333,12 +335,9 @@ export class DependenteController {
       if (rapidocUuid) {
         const rapidocBody: any = { uuid: rapidocUuid };
         
-        // Mapeamento e lógica para evitar envio duplicado de email
         if (nome) rapidocBody.name = nome;
         if (birthDate) rapidocBody.birthday = birthDate;
         
-        // CORREÇÃO: Só envia o email se ele for diferente do que está no banco
-        // Isso evita o erro "Email address already in use" se o usuário não trocou o email
         if (email && email.trim() !== (dependente.email || '').trim()) {
             rapidocBody.email = email.trim();
         }
@@ -349,11 +348,9 @@ export class DependenteController {
         if (city) rapidocBody.city = city;
         if (state) rapidocBody.state = state;
 
-        // Lógica de Planos e Pagamento
         if (Array.isArray(plans) && plans.length > 0) {
             rapidocBody.plans = plans;
         } else if (serviceType && serviceType.trim()) {
-            // Só monta o plano se serviceType for válido
             const pt = paymentType ? String(paymentType).trim().toUpperCase() : 'S';
             if (pt === 'S' || pt === 'A') {
                 rapidocBody.plans = [{
@@ -368,7 +365,6 @@ export class DependenteController {
            await atualizarBeneficiarioRapidoc(rapidocUuid, rapidocBody);
         } catch (e: any) {
            console.error('[DependenteController.editar] Erro Rapidoc:', e.response?.data || e.message);
-           // Retorna erro se for 422 (validação) ou 400
            if (e.response && (e.response.status === 422 || e.response.status === 400)) {
                return res.status(e.response.status).json({ 
                    error: 'Erro de validação no Rapidoc', 
@@ -413,7 +409,6 @@ export class DependenteController {
       return res.status(500).json({ error: error.message || 'Erro ao editar dependente.' });
     }
   }
-  
   // Métodos auxiliares para rotas específicas (mantidos para compatibilidade, mas o editar acima cobre tudo)
   static async atualizarLocal(req: Request, res: Response) { return DependenteController.editar(req, res); }
   static async atualizarRapidoc(req: Request, res: Response) { return DependenteController.editar(req, res); }
