@@ -57,12 +57,17 @@ export function PlanoCanceladoBlocker() {
       }
 
       const user = JSON.parse(storedUser);
+      const cpf = user.cpf || user.uid;
+      if (!cpf) {
+        console.error('[PlanoCanceladoBlocker] Usuário sem CPF/UID. Dados salvos:', user);
+        return;
+      }
       console.log('[PlanoCanceladoBlocker] Usuário encontrado:', user);
       
       // Busca o status atualizado da API
       try {
-        console.log('[PlanoCanceladoBlocker] Verificando status do usuário:', user.cpf);
-        const response = await fetch(`${API_BASE}/usuario/${user.cpf}/status`, {
+        console.log('[PlanoCanceladoBlocker] Verificando status do usuário:', cpf);
+        const response = await fetch(`${API_BASE}/usuario/${cpf}/status`, {
           headers: { 'ngrok-skip-browser-warning': 'true' }
         });
 
@@ -83,7 +88,7 @@ export function PlanoCanceladoBlocker() {
         if (statusBloqueantes.includes(statusAtualizado)) {
           console.log('[PlanoCanceladoBlocker] 🔴 Usuário bloqueado! Status:', statusAtualizado);
           setBloqueado(true);
-          buscarFaturasPendentes(user.cpf);
+          buscarFaturasPendentes(cpf);
         } else {
           console.log('[PlanoCanceladoBlocker] ✅ Usuário ativo! Status:', statusAtualizado);
           setBloqueado(false);
@@ -96,7 +101,7 @@ export function PlanoCanceladoBlocker() {
 
         if (statusBloqueantes.includes(status)) {
           setBloqueado(true);
-          buscarFaturasPendentes(user.cpf);
+          buscarFaturasPendentes(cpf);
         }
       }
     } catch (error) {
