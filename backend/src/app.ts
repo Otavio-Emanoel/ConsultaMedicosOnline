@@ -16,6 +16,7 @@ import faturasRoutes from './routes/faturas.routes.js';
 import agendamentoRoutes from './routes/agendamento.routes.js';
 import beneficiarioRoutes from './routes/beneficiario.routes.js';
 import especialidadesRoutes from './routes/especialidades.routes.js';
+import webhookRoutes from './routes/webhook.routes.js';
 import { auditLogger } from './middlewares/audit.middleware.js';
 import swaggerUi from 'swagger-ui-express';
 import YAML from 'yamljs';
@@ -53,6 +54,7 @@ app.use('/api', planosDashboardRoutes);
 app.use('/api', faturasRoutes);
 app.use('/api', agendamentoRoutes);
 app.use('/api', beneficiarioRoutes);
+app.use('/api/webhooks', webhookRoutes);
 
 app.use('/api', authRoutes);
 
