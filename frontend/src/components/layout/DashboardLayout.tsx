@@ -14,7 +14,8 @@ export function DashboardLayout({ children, title }: DashboardLayoutProps) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
   return (
-    <PlanoCanceladoBlocker>
+    <>
+      <PlanoCanceladoBlocker />
       <div className="min-h-screen bg-background-light dark:bg-background-dark">
         {/* Sidebar */}
         <Sidebar isOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} />
@@ -22,7 +23,7 @@ export function DashboardLayout({ children, title }: DashboardLayoutProps) {
         {/* Main Content */}
         <div className="lg:pl-64">
           <Topbar onMenuClick={() => setSidebarOpen(true)} title={title} />
-          
+
           <main className="p-4 md:p-6 lg:p-8">
             <div className="max-w-7xl mx-auto">
               {children}
@@ -30,6 +31,6 @@ export function DashboardLayout({ children, title }: DashboardLayoutProps) {
           </main>
         </div>
       </div>
-    </PlanoCanceladoBlocker>
+    </>
   );
 }

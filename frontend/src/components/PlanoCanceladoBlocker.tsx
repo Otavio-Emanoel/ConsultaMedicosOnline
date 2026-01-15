@@ -26,6 +26,13 @@ export function PlanoCanceladoBlocker() {
 
   useEffect(() => {
     verificarStatus();
+    
+    // Verifica o status a cada 30 segundos para capturar mudanças do webhook
+    const interval = setInterval(() => {
+      verificarStatus();
+    }, 30000); // 30 segundos
+
+    return () => clearInterval(interval);
   }, []);
 
   const verificarStatus = async () => {
@@ -34,14 +41,40 @@ export function PlanoCanceladoBlocker() {
       if (!storedUser) return;
 
       const user = JSON.parse(storedUser);
-      const status = user.statusAssinatura ? user.statusAssinatura.toLowerCase() : 'ativo';
+      
+      // Busca o status atualizado da API
+      try {
+        console.log('[PlanoCanceladoBlocker] Verificando status do usuário:', user.cpf);
+        const response = await api.get(`/usuario/${user.cpf}/status`);
+        const statusAtualizado = response.data.statusAssinatura ? response.data.statusAssinatura.toLowerCase() : 'ativo';
+        
+        console.log('[PlanoCanceladoBlocker] Status recebido da API:', statusAtualizado);
+        
+        // Atualiza o localStorage com o status mais recente
+        user.statusAssinatura = statusAtualizado;
+        localStorage.setItem('usuario', JSON.stringify(user));
+        
+        // Lista de status que bloqueiam o acesso
+        const statusBloqueantes = ['suspenso', 'overdue', 'cancelado', 'bloqueado'];
 
-      // Lista de status que bloqueiam o acesso
-      const statusBloqueantes = ['suspenso', 'overdue', 'cancelado', 'bloqueado'];
+        if (statusBloqueantes.includes(statusAtualizado)) {
+          console.log('[PlanoCanceladoBlocker] 🔴 Usuário bloqueado! Status:', statusAtualizado);
+          setBloqueado(true);
+          buscarFaturasPendentes(user.cpf);
+        } else {
+          console.log('[PlanoCanceladoBlocker] ✅ Usuário ativo! Status:', statusAtualizado);
+          setBloqueado(false);
+        }
+      } catch (apiError) {
+        console.error('Erro ao buscar status da API, usando localStorage:', apiError);
+        // Fallback: usa o status do localStorage se a API falhar
+        const status = user.statusAssinatura ? user.statusAssinatura.toLowerCase() : 'ativo';
+        const statusBloqueantes = ['suspenso', 'overdue', 'cancelado', 'bloqueado'];
 
-      if (statusBloqueantes.includes(status)) {
-        setBloqueado(true);
-        buscarFaturasPendentes(user.cpf);
+        if (statusBloqueantes.includes(status)) {
+          setBloqueado(true);
+          buscarFaturasPendentes(user.cpf);
+        }
       }
     } catch (error) {
       console.error('Erro ao verificar status:', error);

@@ -576,4 +576,30 @@ export class UsuarioController {
             return res.status(500).json({ error: error.message || 'Erro ao obter beneficiário no Rapidoc.' });
         }
     }
+
+    static async obterStatusUsuario(req: Request, res: Response) {
+        const { cpf } = req.params;
+        if (!cpf) return res.status(400).json({ error: 'CPF é obrigatório.' });
+
+        try {
+            const usuarioRef = admin.firestore().collection('usuarios').doc(cpf);
+            const usuarioDoc = await usuarioRef.get();
+            
+            if (!usuarioDoc.exists) {
+                return res.status(404).json({ error: 'Usuário não encontrado.' });
+            }
+
+            const userData = usuarioDoc.data();
+            const statusAssinatura = userData?.statusAssinatura || 'ativo';
+
+            return res.status(200).json({ 
+                statusAssinatura,
+                nome: userData?.nome || '',
+                email: userData?.email || ''
+            });
+        } catch (error: any) {
+            console.error('[obterStatusUsuario] Erro:', error);
+            return res.status(500).json({ error: error.message || 'Erro ao obter status do usuário.' });
+        }
+    }
 }
