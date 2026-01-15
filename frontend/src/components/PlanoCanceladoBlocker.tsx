@@ -1,159 +1,257 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { XCircle, AlertTriangle } from 'lucide-react';
-import { auth } from '@/lib/firebase';
-import api from '@/lib/api';
+import { useRouter } from 'next/navigation';
+import { Button } from '@/components/ui/Button';
+import { Card } from '@/components/ui/Card';
+import { AlertCircle, FileText, Copy, ExternalLink, Loader2 } from 'lucide-react';
+import { toast } from '@/components/landing/ui/use-toast';
 
-interface PlanoCanceladoBlockerProps {
-  children: React.ReactNode;
+interface Fatura {
+  id: string;
+  value: number;
+  dueDate: string;
+  status: string;
+  invoiceUrl: string;
+  bankSlipUrl?: string; // URL do boleto bancário
+  pixQrCodeId?: string; // Se tiver PIX
 }
 
-export function PlanoCanceladoBlocker({ children }: PlanoCanceladoBlockerProps) {
-  const [planoCancelado, setPlanoCancelado] = useState<boolean | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [dataCancelamento, setDataCancelamento] = useState<string>('');
+export function PlanoCanceladoBlocker() {
+  const [bloqueado, setBloqueado] = useState(false);
+  const [faturas, setFaturas] = useState<Fatura[]>([]);
+  const [loading, setLoading] = useState(false);
+  const router = useRouter();
+  const API_BASE =
+    process.env.NEXT_PUBLIC_API_BASE_URL?.replace(/\/$/, '') ||
+    process.env.NEXT_PUBLIC_API_URL?.replace(/\/$/, '') ||
+    (typeof window !== 'undefined' ? `${window.location.origin}/api` : '');
+
+  console.log('[PlanoCanceladoBlocker] Componente montado. Estado bloqueado:', bloqueado);
+  
+  // DEBUG: Descomente a linha abaixo para testar o modal forçadamente
+  // useEffect(() => { setBloqueado(true); setFaturas([{ id: '1', value: 99.90, dueDate: '2026-01-10', status: 'OVERDUE', invoiceUrl: 'https://exemplo.com' }]); }, []);
 
   useEffect(() => {
-    // TEMPORARIAMENTE COMENTADO: Verificação de status do plano desabilitada para testar performance
-    // TODO: Reativar após verificar se está causando lentidão
-    /*
-    const verificarStatusPlano = async () => {
-      try {
-        // Obter token atualizado
-        if (auth.currentUser) {
-          const token = await auth.currentUser.getIdToken();
-          localStorage.setItem('auth_token', token);
-        }
-
-        // Buscar assinatura do usuário no Firestore via backend
-        // Como não temos um endpoint específico, vamos verificar via dashboard ou criar um endpoint
-        // Por enquanto, vamos verificar se há erro 402 (pagamento não em dia) ou verificar diretamente
-        const uid = auth.currentUser?.uid;
-        if (!uid) {
-          setLoading(false);
-          return;
-        }
-
-        // Verificar status do plano via endpoint específico
-        // OTIMIZAÇÃO: Adicionar timeout para não travar se o endpoint estiver lento
-        try {
-          const controller = new AbortController();
-          const timeout = setTimeout(() => controller.abort(), 60000); // Timeout de 60s
-          
-          const response = await api.get('/subscription/status-plano', {
-            signal: controller.signal
-          });
-          
-          clearTimeout(timeout);
-          
-          if (response.data.cancelado) {
-            setPlanoCancelado(true);
-            setDataCancelamento(response.data.dataCancelamento || '');
-          } else {
-            setPlanoCancelado(false);
-          }
-        } catch (err: any) {
-          // Se der erro 401, usuário não está autenticado, não bloqueia
-          if (err.response?.status === 401) {
-            setPlanoCancelado(false);
-          } else if (err.name === 'AbortError' || err.code === 'ECONNABORTED') {
-            // Timeout - não bloqueia, permite acesso
-            setPlanoCancelado(false);
-          } else if (err.response?.status === 404) {
-            // Endpoint não encontrado - não bloqueia (pode não estar implementado)
-            console.warn('Endpoint /subscription/status-plano não encontrado (404)');
-            setPlanoCancelado(false);
-          } else {
-            // Em caso de erro, não bloqueia (permite acesso)
-            if (process.env.NODE_ENV === 'development') {
-              console.error('Erro ao verificar status do plano:', err);
-            }
-            setPlanoCancelado(false);
-          }
-        }
-      } catch (error) {
-        console.error('Erro ao verificar status do plano:', error);
-        setPlanoCancelado(false);
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    if (auth.currentUser) {
-      verificarStatusPlano();
-    } else {
-      setLoading(false);
-    }
-    */
+    verificarStatus();
     
-    // TEMPORÁRIO: Não verificar status do plano - permite acesso sempre
-    setPlanoCancelado(false);
-    setLoading(false);
+    // Verifica o status a cada 30 segundos para capturar mudanças do webhook
+    const interval = setInterval(() => {
+      verificarStatus();
+    }, 30000); // 30 segundos
+
+    return () => clearInterval(interval);
   }, []);
 
-  if (loading) {
-    return <>{children}</>;
-  }
+  const verificarStatus = async () => {
+    try {
+      if (!API_BASE) {
+        console.error('[PlanoCanceladoBlocker] API_BASE não configurado. Defina NEXT_PUBLIC_API_BASE_URL ou NEXT_PUBLIC_API_URL');
+        return;
+      }
 
-  if (planoCancelado) {
-    return (
-      <div className="min-h-screen bg-background-light dark:bg-background-dark flex items-center justify-center p-4">
-        <div className="max-w-2xl w-full">
-          <div className="bg-white dark:bg-surface-dark rounded-2xl shadow-2xl p-8 md:p-12 text-center border-4 border-red-500">
-            <div className="w-24 h-24 bg-red-100 dark:bg-red-900/30 rounded-full flex items-center justify-center mx-auto mb-6">
-              <XCircle className="w-12 h-12 text-red-600 dark:text-red-400" />
-            </div>
-            
-            <h1 className="text-3xl md:text-4xl font-bold text-gray-900 dark:text-white mb-4">
-              Plano Cancelado
-            </h1>
-            
-            <div className="bg-yellow-50 dark:bg-yellow-900/20 border-2 border-yellow-400 dark:border-yellow-600 rounded-xl p-6 mb-6">
-              <div className="flex items-start justify-center mb-3">
-                <AlertTriangle className="w-6 h-6 text-yellow-600 dark:text-yellow-400 mr-2 flex-shrink-0 mt-1" />
-                <p className="text-lg font-semibold text-yellow-800 dark:text-yellow-300">
-                  Seu plano foi cancelado e o acesso aos serviços está bloqueado.
-                </p>
-              </div>
-              
-              {dataCancelamento && (
-                <p className="text-sm text-yellow-700 dark:text-yellow-400 mt-2">
-                  Data do cancelamento: {new Date(dataCancelamento).toLocaleDateString('pt-BR', {
-                    day: '2-digit',
-                    month: 'long',
-                    year: 'numeric'
-                  })}
-                </p>
-              )}
-            </div>
+      const storedUser = localStorage.getItem('user');
+      if (!storedUser) {
+        console.log('[PlanoCanceladoBlocker] Nenhum usuário encontrado no localStorage');
+        return;
+      }
 
-            <div className="space-y-4 text-gray-700 dark:text-gray-300">
-              <p className="text-base">
-                Para reativar seu plano e voltar a utilizar nossos serviços, entre em contato com nosso suporte.
-              </p>
-              
-              <div className="bg-blue-50 dark:bg-blue-900/20 rounded-xl p-4 mt-6">
-                <p className="text-sm text-blue-800 dark:text-blue-300">
-                  <strong>Importante:</strong> Seus dados ficarão salvos por 90 dias após o cancelamento.
-                </p>
-              </div>
-            </div>
+      const user = JSON.parse(storedUser);
+      const cpf = user.cpf || user.uid;
+      if (!cpf) {
+        console.error('[PlanoCanceladoBlocker] Usuário sem CPF/UID. Dados salvos:', user);
+        return;
+      }
+      console.log('[PlanoCanceladoBlocker] Usuário encontrado:', user);
+      
+      // Busca o status atualizado da API
+      try {
+        console.log('[PlanoCanceladoBlocker] Verificando status do usuário:', cpf);
+        const response = await fetch(`${API_BASE}/usuario/${cpf}/status`, {
+          headers: { 'ngrok-skip-browser-warning': 'true' }
+        });
 
-            <div className="mt-8">
-              <button
-                onClick={() => window.location.href = '/cancelar-plano'}
-                className="px-6 py-3 bg-primary hover:bg-primary/90 text-white rounded-lg font-semibold transition-colors"
-              >
-                Ver Detalhes do Cancelamento
-              </button>
-            </div>
+        if (!response.ok) throw new Error(`Status HTTP ${response.status}`);
+
+        const data = await response.json();
+        const statusAtualizado = data.statusAssinatura ? data.statusAssinatura.toLowerCase() : 'ativo';
+        
+        console.log('[PlanoCanceladoBlocker] Status recebido da API:', statusAtualizado);
+        
+        // Atualiza o localStorage com o status mais recente
+        user.statusAssinatura = statusAtualizado;
+        localStorage.setItem('user', JSON.stringify(user));
+        
+        // Lista de status que bloqueiam o acesso
+        const statusBloqueantes = ['suspenso', 'overdue', 'cancelado', 'bloqueado'];
+
+        if (statusBloqueantes.includes(statusAtualizado)) {
+          console.log('[PlanoCanceladoBlocker] 🔴 Usuário bloqueado! Status:', statusAtualizado);
+          setBloqueado(true);
+          buscarFaturasPendentes(cpf);
+        } else {
+          console.log('[PlanoCanceladoBlocker] ✅ Usuário ativo! Status:', statusAtualizado);
+          setBloqueado(false);
+        }
+      } catch (apiError) {
+        console.error('Erro ao buscar status da API, usando localStorage:', apiError);
+        // Fallback: usa o status do localStorage se a API falhar
+        const status = user.statusAssinatura ? user.statusAssinatura.toLowerCase() : 'ativo';
+        const statusBloqueantes = ['suspenso', 'overdue', 'cancelado', 'bloqueado'];
+
+        if (statusBloqueantes.includes(status)) {
+          setBloqueado(true);
+          buscarFaturasPendentes(cpf);
+        }
+      }
+    } catch (error) {
+      console.error('Erro ao verificar status:', error);
+    }
+  };
+
+  const buscarFaturasPendentes = async (cpf: string) => {
+    setLoading(true);
+    try {
+      if (!API_BASE) throw new Error('API_BASE não configurado');
+
+      const token = localStorage.getItem('token');
+      const headers: Record<string, string> = { 'ngrok-skip-browser-warning': 'true' };
+      if (token) headers.Authorization = `Bearer ${token}`;
+
+      const resp = await fetch(`${API_BASE}/faturas`, { headers });
+
+      if (!resp.ok) throw new Error(`Erro ao buscar faturas: HTTP ${resp.status}`);
+
+      const data = await resp.json();
+      const pendentes = Array.isArray(data)
+        ? data.filter((f: Fatura) => ['PENDING', 'OVERDUE'].includes(f.status))
+        : [];
+
+      setFaturas(pendentes);
+    } catch (error) {
+      console.error('Erro ao buscar faturas:', error);
+      toast({
+        title: "Erro",
+        description: "Não foi possível carregar suas faturas pendentes.",
+        variant: "destructive"
+      });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const copiarCodigo = (texto: string) => {
+    navigator.clipboard.writeText(texto);
+    toast({
+      title: "Copiado!",
+      description: "Link/Código copiado para a área de transferência.",
+    });
+  };
+
+  console.log('[PlanoCanceladoBlocker] Renderizando. Bloqueado:', bloqueado, '| Faturas:', faturas.length);
+
+  if (!bloqueado) return null;
+
+  return (
+    <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
+      <div className="w-full max-w-md bg-white dark:bg-zinc-900 rounded-lg shadow-2xl border border-red-200 overflow-hidden">
+        
+        {/* Cabeçalho do Modal */}
+        <div className="bg-red-50 dark:bg-red-900/20 p-6 text-center border-b border-red-100 dark:border-red-900/50">
+          <div className="w-16 h-16 bg-red-100 dark:bg-red-900/40 rounded-full flex items-center justify-center mx-auto mb-4">
+            <AlertCircle className="w-8 h-8 text-red-600 dark:text-red-400" />
           </div>
+          <h2 className="text-xl font-bold text-red-700 dark:text-red-400">Acesso Bloqueado</h2>
+          <p className="text-sm text-red-600/80 dark:text-red-300 mt-2">
+            Identificamos pendências financeiras em sua assinatura. Para liberar seu acesso a consultas e agendamentos, realize o pagamento abaixo.
+          </p>
+        </div>
+
+        {/* Corpo com as Faturas */}
+        <div className="p-6 max-h-[60vh] overflow-y-auto">
+          {loading ? (
+            <div className="flex flex-col items-center justify-center py-8">
+              <Loader2 className="w-8 h-8 animate-spin text-primary" />
+              <span className="text-sm text-muted-foreground mt-2">Buscando faturas...</span>
+            </div>
+          ) : faturas.length === 0 ? (
+            <div className="text-center py-4">
+              <p className="text-zinc-600 dark:text-zinc-400">
+                Nenhuma fatura pendente encontrada automaticamente. 
+                <br />
+                Entre em contato com o suporte.
+              </p>
+              <Button 
+                className="mt-4 w-full"
+                onClick={() => window.open('https://wa.me/55SEUNUMERO', '_blank')}
+              >
+                Falar com Suporte
+              </Button>
+            </div>
+          ) : (
+            <div className="space-y-4">
+              <h3 className="font-semibold text-zinc-700 dark:text-zinc-200 flex items-center gap-2">
+                <FileText className="w-4 h-4" />
+                Faturas em Aberto
+              </h3>
+              
+              {faturas.map((fatura) => (
+                <Card key={fatura.id} className="p-4 border-l-4 border-l-red-500 bg-zinc-50 dark:bg-zinc-800/50">
+                  <div className="flex justify-between items-start mb-3">
+                    <div>
+                      <p className="font-bold text-lg">
+                        {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(fatura.value)}
+                      </p>
+                      <p className="text-xs text-zinc-500">
+                        Venceu em: {new Date(fatura.dueDate).toLocaleDateString('pt-BR')}
+                      </p>
+                    </div>
+                    <span className="px-2 py-1 text-xs font-bold bg-red-100 text-red-700 rounded-full uppercase">
+                      {fatura.status === 'OVERDUE' ? 'Vencida' : 'Pendente'}
+                    </span>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-2 mt-2">
+                    <Button 
+                      variant="outline" 
+                      size="sm" 
+                      className="w-full text-xs"
+                      onClick={() => window.open(fatura.invoiceUrl, '_blank')}
+                    >
+                      <ExternalLink className="w-3 h-3 mr-1" />
+                      Abrir Fatura
+                    </Button>
+                    
+                    <Button 
+                      size="sm" 
+                      className="w-full text-xs bg-green-600 hover:bg-green-700 text-white"
+                      onClick={() => window.open(fatura.bankSlipUrl || fatura.invoiceUrl, '_blank')}
+                    >
+                      <Copy className="w-3 h-3 mr-1" />
+                      Pagar Agora
+                    </Button>
+                  </div>
+                </Card>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* Rodapé (Opcional: Botão de Atualizar) */}
+        <div className="p-4 bg-zinc-50 dark:bg-zinc-900 border-t flex justify-center">
+            <Button 
+                variant="ghost" 
+                size="sm" 
+                onClick={() => {
+                    setLoading(true);
+                    verificarStatus(); // Tenta revalidar
+                }}
+                className="text-xs text-zinc-500"
+            >
+                Já paguei, verificar novamente
+            </Button>
         </div>
       </div>
-    );
-  }
-
-  return <>{children}</>;
+    </div>
+  );
 }
-

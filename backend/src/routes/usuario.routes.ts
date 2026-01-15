@@ -19,6 +19,9 @@ router.patch('/rapidoc/beneficiario/:cpf', autenticarFirebase, UsuarioController
 // GET /api/usuario/:cpf - Obtém dados do usuário pelo CPF
 router.get('/usuario/:cpf', autenticarFirebase, UsuarioController.obterDados);
 
+// GET /api/usuario/:cpf/status - Obtém apenas o status do usuário (sem autenticação necessária para webhook refresh)
+router.get('/usuario/:cpf/status', UsuarioController.obterStatusUsuario);
+
 // POST /api/usuario/recuperar-senha
 router.post('/usuario/recuperar-senha', UsuarioController.recuperarSenha);
 

@@ -626,3 +626,30 @@ export async function listarBeneficiariosRapidoc(): Promise<any[]> {
     throw new Error(`Erro ao buscar beneficiários do Rapidoc: ${error?.message || 'Erro desconhecido'}`);
   }
 }
+
+export const reativarBeneficiarioRapidoc = async (uuid: string) => {
+  if (!RAPIDOC_BASE_URL || !RAPIDOC_TOKEN || !RAPIDOC_CLIENT_ID) throw new Error('Configuração Rapidoc ausente');
+  try {
+    const url = `${RAPIDOC_BASE_URL}/tema/api/beneficiaries/${uuid}/reactivate`;
+    const headers = {
+      Authorization: `Bearer ${RAPIDOC_TOKEN}`,
+      clientId: RAPIDOC_CLIENT_ID,
+      'Content-Type': 'application/vnd.rapidoc.tema-v2+json'
+    };
+
+    logDebug(`Reativando beneficiário: ${uuid}`);
+    
+    // O corpo pode ser vazio ou conter dados, dependendo da API. 
+    // Geralmente um objeto vazio {} basta para acionar o comando.
+    const response = await rapidocAxios.put(url, {}, { headers });
+    
+    // Invalidar cache do beneficiário após reativação
+    cache.delete(`rapidoc:beneficiary:uuid:${uuid}`);
+    cache.delete('rapidoc:beneficiaries:all');
+    
+    return response.data;
+  } catch (error: any) {
+    logDebug('Erro ao reativar beneficiário:', error.response?.data || error.message);
+    throw error; // Repassa o erro para o controller tratar
+  }
+};
