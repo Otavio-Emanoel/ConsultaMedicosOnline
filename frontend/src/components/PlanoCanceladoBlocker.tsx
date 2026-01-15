@@ -2,7 +2,6 @@
 
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import api from '@/lib/api';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
 import { AlertCircle, FileText, Copy, ExternalLink, Loader2 } from 'lucide-react';
@@ -23,6 +22,15 @@ export function PlanoCanceladoBlocker() {
   const [faturas, setFaturas] = useState<Fatura[]>([]);
   const [loading, setLoading] = useState(false);
   const router = useRouter();
+  const API_BASE =
+    process.env.NEXT_PUBLIC_API_BASE_URL?.replace(/\/$/, '') ||
+    process.env.NEXT_PUBLIC_API_URL?.replace(/\/$/, '') ||
+    (typeof window !== 'undefined' ? `${window.location.origin}/api` : '');
+
+  console.log('[PlanoCanceladoBlocker] Componente montado. Estado bloqueado:', bloqueado);
+  
+  // DEBUG: Descomente a linha abaixo para testar o modal forçadamente
+  // useEffect(() => { setBloqueado(true); setFaturas([{ id: '1', value: 99.90, dueDate: '2026-01-10', status: 'OVERDUE', invoiceUrl: 'https://exemplo.com' }]); }, []);
 
   useEffect(() => {
     verificarStatus();
@@ -37,22 +45,37 @@ export function PlanoCanceladoBlocker() {
 
   const verificarStatus = async () => {
     try {
-      const storedUser = localStorage.getItem('usuario');
-      if (!storedUser) return;
+      if (!API_BASE) {
+        console.error('[PlanoCanceladoBlocker] API_BASE não configurado. Defina NEXT_PUBLIC_API_BASE_URL ou NEXT_PUBLIC_API_URL');
+        return;
+      }
+
+      const storedUser = localStorage.getItem('user');
+      if (!storedUser) {
+        console.log('[PlanoCanceladoBlocker] Nenhum usuário encontrado no localStorage');
+        return;
+      }
 
       const user = JSON.parse(storedUser);
+      console.log('[PlanoCanceladoBlocker] Usuário encontrado:', user);
       
       // Busca o status atualizado da API
       try {
         console.log('[PlanoCanceladoBlocker] Verificando status do usuário:', user.cpf);
-        const response = await api.get(`/usuario/${user.cpf}/status`);
-        const statusAtualizado = response.data.statusAssinatura ? response.data.statusAssinatura.toLowerCase() : 'ativo';
+        const response = await fetch(`${API_BASE}/usuario/${user.cpf}/status`, {
+          headers: { 'ngrok-skip-browser-warning': 'true' }
+        });
+
+        if (!response.ok) throw new Error(`Status HTTP ${response.status}`);
+
+        const data = await response.json();
+        const statusAtualizado = data.statusAssinatura ? data.statusAssinatura.toLowerCase() : 'ativo';
         
         console.log('[PlanoCanceladoBlocker] Status recebido da API:', statusAtualizado);
         
         // Atualiza o localStorage com o status mais recente
         user.statusAssinatura = statusAtualizado;
-        localStorage.setItem('usuario', JSON.stringify(user));
+        localStorage.setItem('user', JSON.stringify(user));
         
         // Lista de status que bloqueiam o acesso
         const statusBloqueantes = ['suspenso', 'overdue', 'cancelado', 'bloqueado'];
@@ -84,14 +107,21 @@ export function PlanoCanceladoBlocker() {
   const buscarFaturasPendentes = async (cpf: string) => {
     setLoading(true);
     try {
-      // Busca todas as faturas do usuário
-      const response = await api.get(`/faturas/usuario/${cpf}`);
-      
-      // Filtra apenas as que estão pendentes ou vencidas
-      const pendentes = response.data.filter((f: Fatura) => 
-        ['PENDING', 'OVERDUE'].includes(f.status)
-      );
-      
+      if (!API_BASE) throw new Error('API_BASE não configurado');
+
+      const token = localStorage.getItem('token');
+      const headers: Record<string, string> = { 'ngrok-skip-browser-warning': 'true' };
+      if (token) headers.Authorization = `Bearer ${token}`;
+
+      const resp = await fetch(`${API_BASE}/faturas`, { headers });
+
+      if (!resp.ok) throw new Error(`Erro ao buscar faturas: HTTP ${resp.status}`);
+
+      const data = await resp.json();
+      const pendentes = Array.isArray(data)
+        ? data.filter((f: Fatura) => ['PENDING', 'OVERDUE'].includes(f.status))
+        : [];
+
       setFaturas(pendentes);
     } catch (error) {
       console.error('Erro ao buscar faturas:', error);
@@ -112,6 +142,8 @@ export function PlanoCanceladoBlocker() {
       description: "Link/Código copiado para a área de transferência.",
     });
   };
+
+  console.log('[PlanoCanceladoBlocker] Renderizando. Bloqueado:', bloqueado, '| Faturas:', faturas.length);
 
   if (!bloqueado) return null;
 
