@@ -1,6 +1,7 @@
 "use client"
 
-import { Heart, Sparkles, Activity, User, Flower2, Brain } from "lucide-react"
+import { useState } from "react"
+import { Heart, Sparkles, Activity, User, Flower2, Brain, Baby, Users as UsersIcon, Apple, Smile, HeartPulse } from "lucide-react"
 
 const especialidades = [
   { 
@@ -33,9 +34,37 @@ const especialidades = [
     icon: Brain,
     gradient: "from-violet-400 to-purple-500",
   },
+  { 
+    nome: "Pediatria",
+    icon: Baby,
+    gradient: "from-blue-400 to-cyan-500",
+  },
+  { 
+    nome: "Urologia",
+    icon: UsersIcon,
+    gradient: "from-indigo-400 to-blue-500",
+  },
+  { 
+    nome: "Nutrição",
+    icon: Apple,
+    gradient: "from-green-400 to-emerald-500",
+  },
+  { 
+    nome: "Psicologia",
+    icon: Smile,
+    gradient: "from-yellow-400 to-amber-500",
+  },
+  { 
+    nome: "Psiquiatria",
+    icon: HeartPulse,
+    gradient: "from-purple-400 to-indigo-500",
+  },
 ]
 
 export default function Especialidades() {
+  const [showAll, setShowAll] = useState(false)
+  const especialidadesExibidas = showAll ? especialidades : especialidades.slice(0, 6)
+
   return (
     <section id="especialidades" className="py-16 md:py-24 bg-gradient-to-b from-white to-gray-50">
       <div className="container mx-auto px-5 md:px-4">
@@ -58,7 +87,7 @@ export default function Especialidades() {
 
         {/* Grid */}
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-4 md:gap-6 transition-all duration-500 ease-out">
-          {especialidades.map((especialidade, index) => (
+          {especialidadesExibidas.map((especialidade, index) => (
             <div
               key={index}
               className="group flex flex-col items-center bg-white rounded-2xl p-5 md:p-6 border border-gray-100 hover:border-emerald-300 hover:shadow-lg cursor-pointer hover:-translate-y-1 animate-fade-in transition-all duration-300"
@@ -79,10 +108,13 @@ export default function Especialidades() {
           ))}
         </div>
 
-        {/* Ver mais button */}
+        {/* Ver mais/menos button */}
         <div className="text-center mt-10">
-          <button className="inline-flex items-center gap-2 px-6 py-3 bg-emerald-600 text-white rounded-full font-medium hover:bg-emerald-700 transition-colors">
-            Ver todas as especialidades
+          <button 
+            onClick={() => setShowAll(!showAll)}
+            className="inline-flex items-center gap-2 px-6 py-3 bg-emerald-600 text-white rounded-full font-medium hover:bg-emerald-700 transition-colors"
+          >
+            {showAll ? "Ver menos" : "Ver todas as especialidades"}
             <svg
               xmlns="http://www.w3.org/2000/svg"
               width="20"
@@ -93,6 +125,7 @@ export default function Especialidades() {
               strokeWidth="2"
               strokeLinecap="round"
               strokeLinejoin="round"
+              className={`transition-transform duration-300 ${showAll ? "rotate-180" : ""}`}
             >
               <path d="m6 9 6 6 6-6" />
             </svg>
