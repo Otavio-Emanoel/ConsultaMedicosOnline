@@ -11,6 +11,7 @@ import Footer from "@/components/landing/footer"
 import PlansCards from "@/components/landing/plans-cards"
 import TermosPage from "@/components/landing/termos-page"
 import SectionDivider from "@/components/landing/section-divider"
+import FAQSection from "@/components/landing/faq-section"
 import "@/styles/landing-animations.css"
 
 export default function LandingPage() {
@@ -43,6 +44,8 @@ export default function LandingPage() {
       </section>
       <SectionDivider />
       <Parceiros onOpenTermos={() => setTermosPageOpen(true)} />
+      <SectionDivider />
+      <FAQSection />
       <SectionDivider />
       <TermosSection onOpenTermos={() => setTermosPageOpen(true)} />
       <Footer />
