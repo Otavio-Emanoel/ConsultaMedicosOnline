@@ -15,7 +15,7 @@ type UserRole = 'admin' | 'subscriber' | 'dependent';
 
 export default function HomePage() {
   const router = useRouter();
-  const [selectedRole, setSelectedRole] = useState<UserRole | null>(null);
+  const [selectedRole, setSelectedRole] = useState<UserRole | null>('subscriber');
   const [isNewUser, setIsNewUser] = useState(false);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
