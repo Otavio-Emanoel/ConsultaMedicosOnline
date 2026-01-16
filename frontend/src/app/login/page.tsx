@@ -113,7 +113,7 @@ export default function HomePage() {
       <div className="w-full max-w-md">
         {/* Botão Voltar */}
         <button
-          onClick={() => router.push('/landing')}
+          onClick={() => isAdminMode ? setIsAdminMode(false) : router.push('/landing')}
           aria-label="Voltar para o início"
           className={`fixed top-4 left-4 z-50 inline-flex items-center gap-2 px-4 py-3 text-sm rounded-full shadow-lg transition ${
             isAdminMode
