@@ -15,17 +15,20 @@ type UserRole = 'admin' | 'subscriber' | 'dependent';
 
 export default function HomePage() {
   const router = useRouter();
-  const [selectedRole, setSelectedRole] = useState<UserRole | null>(null);
+  const [selectedRole, setSelectedRole] = useState<UserRole | null>('subscriber');
   const [isNewUser, setIsNewUser] = useState(false);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [name, setName] = useState('');
   const [cpf, setCpf] = useState('');
+  const [showAdminLogin, setShowAdminLogin] = useState(false);
 
   const roleOptions = [
     { role: 'admin' as UserRole, title: 'Administrador', icon: Shield, color: 'from-primary to-green-600' },
     { role: 'subscriber' as UserRole, title: 'Assinante', icon: CreditCard, color: 'from-primary to-green-600' },
   ];
+  
+  const visibleRoles = showAdminLogin ? roleOptions : roleOptions.filter(opt => opt.role === 'subscriber');
 
   const [erro, setErro] = useState<string>("");
   const handleLogin = async (e: React.FormEvent) => {
@@ -133,8 +136,8 @@ export default function HomePage() {
             <Card>
               <CardHeader>1. Escolha seu perfil</CardHeader>
               <CardBody>
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                  {roleOptions.map((option) => {
+                <div className={`grid gap-4 ${showAdminLogin ? 'grid-cols-1 md:grid-cols-2' : 'grid-cols-1 max-w-xs mx-auto'}`}>
+                  {visibleRoles.map((option) => {
                     const Icon = option.icon;
                     const isSelected = selectedRole === option.role;
                     return (
@@ -148,6 +151,16 @@ export default function HomePage() {
                     );
                   })}
                 </div>
+                {!showAdminLogin && (
+                  <div className="mt-4 text-center">
+                    <button
+                      onClick={() => setShowAdminLogin(true)}
+                      className="text-xs text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors"
+                    >
+                      Acesso administrativo
+                    </button>
+                  </div>
+                )}
               </CardBody>
             </Card>
           </div>

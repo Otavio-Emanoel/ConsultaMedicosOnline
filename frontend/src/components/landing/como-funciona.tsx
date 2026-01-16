@@ -1,74 +1,90 @@
 "use client"
 
+import { UserPlus, Monitor, CalendarCheck, HeartPulse } from "lucide-react"
+
 const steps = [
   {
-    number: 1,
+    icon: UserPlus,
     title: "Cadastro seguro",
-    description: "Preencha os dados essenciais, aceite os termos e escolha o plano ideal.",
+    description: "Preencha os dados essenciais, aceite os termos e escolha o plano ideal para você.",
   },
   {
-    number: 2,
-    title: "Triagem inteligente",
-    description: "Analisamos sintomas e histórico para indicar a especialidade certa.",
+    icon: Monitor,
+    title: "Nossa Plataforma",
+    description: "Depois de escolher seu plano, é só fazer login na nossa plataforma. Lá, você terá acesso a clínico geral, agendamentos e a tudo o que a telemedicina tem de melhor.",
   },
   {
-    number: 3,
-    title: "Consulta online",
-    description: "Videochamada com envio de orientações, receitas e atestados digitais.",
+    icon: CalendarCheck,
+    title: "Agendamento",
+    description: "Para agendar consultas (exceto Psicologia e Nutrição), é necessário ter um encaminhamento. Para obtê-lo, você precisa passar primeiro pelo clínico geral.",
   },
   {
-    number: 4,
+    icon: HeartPulse,
     title: "Acompanhamento contínuo",
-    description: "Revisões programadas, histórico acessível e suporte sempre ativo.",
+    description: "Histórico sempre acessível e revisões programadas para cuidar de você.",
   },
 ]
 
 export default function ComoFunciona() {
   return (
-    <section id="como-funciona" className="py-16 sm:py-20 lg:py-24 bg-white">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="grid gap-12 lg:grid-cols-2 items-start">
-          {/* Left Column */}
-          <div className="space-y-6">
-            <h2 className="text-3xl sm:text-4xl font-bold text-emerald-600">Como Funciona</h2>
-            <p className="text-lg text-gray-600">
-              Conteúdo provisório: descreva com mais detalhes cada etapa do serviço, tempo de resposta, canais de
-              atendimento e diferenciais operacionais. Quando receber o texto final, basta substituir este parágrafo
-              mantendo a estrutura alinhada à esquerda para dar leitura confortável mesmo com blocos maiores.
-            </p>
-            <div className="grid gap-4 sm:grid-cols-2">
-              <div className="rounded-2xl border border-emerald-100 bg-emerald-50/60 p-5">
-                <h3 className="text-base font-semibold text-emerald-700">Guia completo</h3>
-                <p className="mt-2 text-sm text-gray-600">
-                  Acesse a página dedicada com o passo a passo detalhado, FAQs e materiais de apoio.
-                </p>
-                
+    <section id="como-funciona" className="py-20 md:py-28 bg-white">
+      <div className="container mx-auto px-5 md:px-4">
+        <div className="text-center mb-16">
+          <h2 className="text-3xl md:text-4xl lg:text-5xl font-bold text-gray-900 mb-4">
+            Como <span className="text-emerald-500">Funciona?</span>
+          </h2>
+          <div className="w-20 h-1 bg-emerald-500 mx-auto rounded-full" />
+        </div>
+
+        <div className="max-w-5xl mx-auto">
+          {steps.map((step, index) => (
+            <div
+              key={index}
+              className="flex items-start gap-6 mb-12 last:mb-0 animate-fade-in"
+              style={{ animationDelay: `${index * 100}ms`, animationFillMode: "backwards" }}
+            >
+              {/* Icon Circle */}
+              <div className="flex-shrink-0">
+                <div className="w-14 h-14 md:w-16 md:h-16 rounded-full bg-emerald-500 flex items-center justify-center shadow-lg shadow-emerald-500/30">
+                  <step.icon className="w-7 h-7 md:w-8 md:h-8 text-white" />
+                </div>
               </div>
-              <div className="rounded-2xl border border-emerald-100 bg-white p-5 shadow-sm">
-                <h3 className="text-base font-semibold text-gray-900">Atendimento humanizado</h3>
-                <p className="mt-2 text-sm text-gray-600">
-                  Profissionais disponíveis 24h e acompanhamento ativo pós-consulta.
+
+              {/* Content */}
+              <div className="flex-1 pt-1">
+                <div className="flex items-center gap-3 mb-2">
+                  <span className="text-sm font-semibold text-emerald-600 bg-emerald-50 px-3 py-1 rounded-full">
+                    Passo {index + 1}
+                  </span>
+                </div>
+                <h3 className="font-bold text-gray-900 text-xl md:text-2xl mb-2">
+                  {step.title}
+                </h3>
+                <p className="text-gray-600 leading-relaxed max-w-2xl">
+                  {step.description}
                 </p>
               </div>
             </div>
-          </div>
-
-          {/* Right Column - Steps */}
-          <div className="space-y-6">
-            {steps.map((step) => (
-              <div key={step.number} className="flex items-start gap-4">
-                <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-lg bg-emerald-100 text-emerald-600 font-semibold">
-                  {step.number}
-                </div>
-                <div>
-                  <h3 className="font-semibold text-lg text-gray-900">{step.title}</h3>
-                  <p className="mt-1 text-sm text-gray-600">{step.description}</p>
-                </div>
-              </div>
-            ))}
-          </div>
+          ))}
         </div>
       </div>
+
+      <style>{`
+        @keyframes fade-in {
+          from {
+            opacity: 0;
+            transform: translateY(20px);
+          }
+          to {
+            opacity: 1;
+            transform: translateY(0);
+          }
+        }
+
+        .animate-fade-in {
+          animation: fade-in 0.6s ease-out;
+        }
+      `}</style>
     </section>
   )
 }

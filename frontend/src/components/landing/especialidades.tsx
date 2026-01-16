@@ -1,200 +1,165 @@
 "use client"
 
-import { useState, useRef, useEffect } from "react"
+import { useState } from "react"
+import { Heart, Sparkles, Activity, User, Flower2, Brain, Baby, Users as UsersIcon, Apple, Smile, HeartPulse } from "lucide-react"
 
 const especialidades = [
   { 
-    nome: "Cardiologia", 
-    imagem: "/cardiologistas.png",
-    descricao: "Especializada em diagnóstico e tratamento de doenças do coração e sistema circulatório."
+    nome: "Cardiologia",
+    icon: Heart,
+    gradient: "from-red-400 to-rose-500",
   },
   { 
-    nome: "Dermatologia", 
-    imagem: "/dermatologistas.png",
-    descricao: "Cuidado especializado da pele, diagnóstico e tratamento de doenças dermatológicas."
+    nome: "Dermatologia",
+    icon: Sparkles,
+    gradient: "from-pink-400 to-fuchsia-500",
   },
   { 
-    nome: "Neurologia", 
-    imagem: "/neurologista.png",
-    descricao: "Especializada em diagnóstico e tratamento de doenças do sistema nervoso."
+    nome: "Endocrinologia",
+    icon: Activity,
+    gradient: "from-teal-400 to-cyan-500",
   },
   { 
-    nome: "Nutrição", 
-    imagem: "/nutricionista.png",
-    descricao: "Orientação profissional em nutrição para melhora da saúde e qualidade de vida."
+    nome: "Geriatria",
+    icon: User,
+    gradient: "from-amber-400 to-orange-500",
   },
   { 
-    nome: "Psicologia", 
-    imagem: "/psicologos.png",
-    descricao: "Suporte emocional e psicológico para melhor bem-estar mental e qualidade de vida."
+    nome: "Ginecologia",
+    icon: Flower2,
+    gradient: "from-rose-400 to-pink-500",
   },
   { 
-    nome: "Pediatria", 
-    imagem: "/pediatras.png",
-    descricao: "Cuidado especializado da saúde de crianças desde o nascimento até a adolescência."
+    nome: "Neurologia",
+    icon: Brain,
+    gradient: "from-violet-400 to-purple-500",
   },
   { 
-    nome: "Ginecologia", 
-    imagem: "/ginecologista.png",
-    descricao: "Saúde reprodutiva e ginecológica da mulher com atendimento especializado."
+    nome: "Pediatria",
+    icon: Baby,
+    gradient: "from-blue-400 to-cyan-500",
   },
   { 
-    nome: "Psiquiatria", 
-    imagem: "/psiquiatras.png",
-    descricao: "Diagnóstico e tratamento de transtornos mentais com abordagem clínica especializada."
+    nome: "Urologia",
+    icon: UsersIcon,
+    gradient: "from-indigo-400 to-blue-500",
   },
   { 
-    nome: "Endocrinologia", 
-    imagem: "/endocrinologistas.png",
-    descricao: "Especializada em doenças do sistema endócrino e distúrbios metabólicos."
+    nome: "Nutrição",
+    icon: Apple,
+    gradient: "from-green-400 to-emerald-500",
   },
   { 
-    nome: "Urologia", 
-    imagem: "/urologista.png",
-    descricao: "Diagnóstico e tratamento de doenças do sistema urinário e reprodutor."
+    nome: "Psicologia",
+    icon: Smile,
+    gradient: "from-yellow-400 to-amber-500",
+  },
+  { 
+    nome: "Psiquiatria",
+    icon: HeartPulse,
+    gradient: "from-purple-400 to-indigo-500",
   },
 ]
 
 export default function Especialidades() {
-  const containerRef = useRef<HTMLDivElement>(null)
-  const autoPlayTimeoutRef = useRef<NodeJS.Timeout | null>(null)
-  const [flipped, setFlipped] = useState<number | null>(null)
+  const [showAll, setShowAll] = useState(false)
+  const especialidadesExibidas = showAll ? especialidades : especialidades.slice(0, 6)
 
-  const scrollToPlanos = () => {
-    const planosSection = document.getElementById('planos')
-    if (planosSection) {
-      planosSection.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  const handleToggle = () => {
+    setShowAll(!showAll)
+    // Scroll suave para o início da seção ao fechar
+    if (showAll) {
+      const section = document.getElementById('especialidades')
+      if (section) {
+        section.scrollIntoView({ behavior: 'smooth', block: 'start' })
+      }
     }
   }
 
   return (
-    <section id="especialidades" className="py-16 sm:py-20 lg:py-24 bg-gradient-to-br from-emerald-50 to-white">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="text-center max-w-3xl mx-auto mb-12">
-          <h2 className="text-3xl sm:text-4xl font-extrabold text-emerald-600">
-            11+ especialidades <span className="text-emerald-600">ao seu alcance</span>
+    <section id="especialidades" className="py-16 md:py-24 bg-gradient-to-b from-white to-gray-50">
+      <div className="container mx-auto px-5 md:px-4">
+        {/* Header */}
+        <div className="text-center mb-12 md:mb-16">
+          <span className="inline-block px-4 py-1.5 bg-emerald-100 text-emerald-700 text-sm font-medium rounded-full mb-4">
+            +10 Especialidades Disponíveis
+          </span>
+          <h2 className="text-3xl md:text-4xl lg:text-5xl font-bold text-gray-900 mb-4">
+            Encontre o{" "}
+            <span className="text-emerald-600 relative">
+              ESPECIALISTA ideal
+              <span className="absolute -bottom-1 left-0 w-full h-1 bg-gradient-to-r from-emerald-600/60 via-emerald-600 to-emerald-600/60 rounded-full" />
+            </span>
           </h2>
-          <p className="mt-3 text-gray-600 text-lg">Conecte-se com especialistas qualificados em minutos, 24/7.</p>
+          <p className="text-gray-600 text-lg max-w-2xl mx-auto">
+            Conecte-se com médicos qualificados em diversas áreas da saúde
+          </p>
         </div>
 
-        <style>{`
-          @keyframes especialidadesTrain {
-            0% {
-              transform: translateX(calc(-408px * 10));
-            }
-            100% {
-              transform: translateX(0);
-            }
-          }
-
-          .especialidades-carousel {
-            animation: especialidadesTrain 120s linear infinite;
-            animation-play-state: running;
-            will-change: transform;
-          }
-
-          .especialidades-carousel:hover {
-            animation-play-state: paused;
-          }
-
-          .card-flip {
-            perspective: 1000px;
-          }
-
-          .card-flip-inner {
-            position: relative;
-            width: 100%;
-            height: 100%;
-            transition: transform 0.6s;
-            transform-style: preserve-3d;
-          }
-
-          .card-flip-inner.flipped {
-            transform: rotateY(180deg);
-          }
-
-          .card-flip-front, .card-flip-back {
-            position: absolute;
-            width: 100%;
-            height: 100%;
-            backface-visibility: hidden;
-            -webkit-backface-visibility: hidden;
-          }
-
-          .card-flip-back {
-            transform: rotateY(180deg);
-          }
-
-          .carousel-container {
-            scrollbar-width: none;
-            -ms-overflow-style: none;
-            overflow: hidden;
-          }
-
-          .carousel-container::-webkit-scrollbar {
-            display: none;
-          }
-        `}</style>
-
-        <div className="carousel-container overflow-hidden">
-          <div
-            ref={containerRef}
-            className="especialidades-carousel flex gap-6 w-max pb-4"
-            onMouseEnter={() => {
-              if (containerRef.current) {
-                containerRef.current.style.animationPlayState = "paused"
-              }
-            }}
-            onMouseLeave={() => {
-              if (containerRef.current) {
-                containerRef.current.style.animationPlayState = "running"
-              }
-            }}
-          >
-            {Array.from({ length: 10 }).flatMap(() => especialidades).map((esp, index) => (
+        {/* Grid */}
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-4 md:gap-6 transition-all duration-500 ease-out">
+          {especialidadesExibidas.map((especialidade, index) => (
+            <div
+              key={`${especialidade.nome}-${index}`}
+              className="group flex flex-col items-center bg-white rounded-2xl p-5 md:p-6 border border-gray-100 hover:border-emerald-300 hover:shadow-lg cursor-pointer hover:-translate-y-1 animate-fade-in transition-all duration-300"
+              style={{
+                animationDelay: `${index * 50}ms`,
+                animationFillMode: "backwards",
+              }}
+            >
               <div
-                key={index}
-                className="flex-shrink-0 w-96 h-80 card-flip cursor-pointer"
-                onMouseEnter={() => setFlipped(index)}
-                onMouseLeave={() => setFlipped(null)}
-                onClick={scrollToPlanos}
+                className={`w-14 h-14 md:w-16 md:h-16 bg-gradient-to-br ${especialidade.gradient} rounded-2xl flex items-center justify-center mb-4 shadow-lg group-hover:scale-110 transition-transform duration-300`}
               >
-                <div className={`card-flip-inner ${flipped === index ? "flipped" : ""}`}>
-                  {/* Frente - Imagem */}
-                  <div className="card-flip-front rounded-2xl bg-white border border-gray-100 shadow-sm hover:shadow-lg transition-all overflow-hidden flex flex-col">
-                    <div className="flex-1 flex items-center justify-center rounded-t-2xl overflow-hidden bg-emerald-50">
-                      <img
-                        src={esp.imagem}
-                        alt={esp.nome}
-                        className="h-full w-full object-cover"
-                      />
-                    </div>
-                    <div className="p-4 text-center bg-white">
-                      <span className="text-emerald-600 font-bold text-base">{esp.nome}</span>
-                    </div>
-                  </div>
-
-                  {/* Verso - Descrição */}
-                  <div className="card-flip-back rounded-2xl bg-gradient-to-br from-emerald-600 to-emerald-700 border border-gray-100 shadow-sm flex flex-col items-center justify-center p-6 text-center">
-                    <p className="text-white font-semibold text-sm leading-relaxed">
-                      {esp.descricao}
-                    </p>
-                  </div>
-                </div>
+                <especialidade.icon className="w-7 h-7 md:w-8 md:h-8 text-white" />
               </div>
-            ))}
-          </div>
+              <h3 className="font-semibold text-gray-900 text-sm md:text-base text-center transition-colors duration-200">
+                {especialidade.nome}
+              </h3>
+            </div>
+          ))}
         </div>
 
-        <div className="mt-12 text-center">
-          <a
-            href="#planos"
-            className="inline-flex items-center gap-2 rounded-full bg-gradient-to-r from-emerald-500 to-emerald-600 text-white px-6 py-3 font-medium shadow-md hover:shadow-lg transition-transform hover:-translate-y-0.5"
+        {/* Ver mais/menos button */}
+        <div className="text-center mt-10">
+          <button 
+            onClick={handleToggle}
+            className="inline-flex items-center gap-2 px-6 py-3 bg-emerald-600 text-white rounded-full font-medium hover:bg-emerald-700 transition-colors"
           >
-            <i className="fas fa-heart" /> Ver planos recomendados
-          </a>
+            {showAll ? "Ver menos" : "Ver todas as especialidades"}
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              width="20"
+              height="20"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              className={`transition-transform duration-300 ${showAll ? "rotate-180" : ""}`}
+            >
+              <path d="m6 9 6 6 6-6" />
+            </svg>
+          </button>
         </div>
       </div>
+
+      <style>{`
+        @keyframes fade-in {
+          from {
+            opacity: 0;
+            transform: translateY(20px);
+          }
+          to {
+            opacity: 1;
+            transform: translateY(0);
+          }
+        }
+
+        .animate-fade-in {
+          animation: fade-in 0.6s ease-out;
+        }
+      `}</style>
     </section>
   )
 }
