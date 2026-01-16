@@ -15,20 +15,14 @@ type UserRole = 'admin' | 'subscriber' | 'dependent';
 
 export default function HomePage() {
   const router = useRouter();
-  const [selectedRole, setSelectedRole] = useState<UserRole | null>('subscriber');
+  const [isAdminMode, setIsAdminMode] = useState(false);
   const [isNewUser, setIsNewUser] = useState(false);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [name, setName] = useState('');
   const [cpf, setCpf] = useState('');
-  const [showAdminLogin, setShowAdminLogin] = useState(false);
 
-  const roleOptions = [
-    { role: 'admin' as UserRole, title: 'Administrador', icon: Shield, color: 'from-primary to-green-600' },
-    { role: 'subscriber' as UserRole, title: 'Assinante', icon: CreditCard, color: 'from-primary to-green-600' },
-  ];
-  
-  const visibleRoles = showAdminLogin ? roleOptions : roleOptions.filter(opt => opt.role === 'subscriber');
+  const selectedRole: UserRole = isAdminMode ? 'admin' : 'subscriber';
 
   const [erro, setErro] = useState<string>("");
   const handleLogin = async (e: React.FormEvent) => {
@@ -111,119 +105,205 @@ export default function HomePage() {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-green-50 via-white to-green-50 dark:from-slate-900 dark:via-gray-900 dark:to-slate-800 flex items-center justify-center p-4">
-      <div className="w-full max-w-6xl">
+    <div className={`min-h-screen flex items-center justify-center p-4 transition-all duration-500 ${
+      isAdminMode 
+        ? 'bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900' 
+        : 'bg-gradient-to-br from-green-50 via-white to-green-50'
+    }`}>
+      <div className="w-full max-w-md">
+        {/* Botão Voltar */}
+        <button
+          onClick={() => router.push('/landing')}
+          aria-label="Voltar para o início"
+          className={`fixed top-4 left-4 z-50 inline-flex items-center gap-2 px-4 py-3 text-sm rounded-full shadow-lg transition ${
+            isAdminMode
+              ? 'text-white bg-slate-700 hover:bg-slate-600'
+              : 'text-white bg-green-600 hover:bg-emerald-700'
+          }`}
+        >
+          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" />
+          </svg>
+          <span className="ml-2 text-sm font-medium">
+            {isAdminMode ? 'Voltar para login' : 'Voltar para o início'}
+          </span>
+        </button>
+
+        {/* Header */}
         <div className="text-center mb-8">
-          <button
-            onClick={() => router.push('/landing')}
-            aria-label="Voltar para o início"
-            className="fixed top-4 left-4 z-50 inline-flex items-center gap-2 px-4 py-3 text-sm text-white bg-green-600 hover:bg-emerald-700 rounded-full shadow-lg transition"
-          >
-            <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" />
-            </svg>
-            <span className="ml-2 text-sm font-medium">Voltar para o início</span>
-          </button>
-          <div className="mb-4">
-            <img src="/logo.png" alt="Consultas Online" className="w-20 h-20 object-contain mx-auto" />
-          </div>
-          <h1 className="text-4xl font-bold text-gray-900 dark:text-white mb-2">Médicos Consultas Online</h1>
-          <p className="text-lg text-gray-600 dark:text-gray-300">Tenha atendimento médico online agora!</p>
+          {!isAdminMode ? (
+            <>
+              <div className="mb-4">
+                <img src="/logo.png" alt="Consultas Online" className="w-20 h-20 object-contain mx-auto" />
+              </div>
+              <h1 className="text-4xl font-bold text-gray-900 mb-2">Boas-vindas!</h1>
+              <p className="text-lg text-gray-600">Sua saúde online em todo lugar.</p>
+            </>
+          ) : (
+            <>
+              <div className="w-16 h-16 bg-slate-700 rounded-2xl flex items-center justify-center mx-auto mb-4">
+                <Shield className="w-8 h-8 text-slate-300" />
+              </div>
+              <h1 className="text-3xl font-bold text-white mb-2">Área Administrativa</h1>
+              <p className="text-slate-400">Acesso restrito para administradores</p>
+            </>
+          )}
         </div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          <div className="lg:col-span-2">
-            <Card>
-              <CardHeader>1. Escolha seu perfil</CardHeader>
-              <CardBody>
-                <div className={`grid gap-4 ${showAdminLogin ? 'grid-cols-1 md:grid-cols-2' : 'grid-cols-1 max-w-xs mx-auto'}`}>
-                  {visibleRoles.map((option) => {
-                    const Icon = option.icon;
-                    const isSelected = selectedRole === option.role;
-                    return (
-                      <button key={option.role} onClick={() => setSelectedRole(option.role)} className={`p-6 rounded-2xl border-2 transition-all text-center ${isSelected ? 'border-primary bg-green-50 dark:bg-slate-800 shadow-lg scale-105' : 'border-gray-200 dark:border-gray-700 hover:border-primary/50 hover:shadow-md'}`}>
-                        <div className={`w-16 h-16 bg-gradient-to-br ${option.color} rounded-2xl flex items-center justify-center mx-auto mb-3`}>
-                          <Icon className="w-8 h-8 text-white" />
-                        </div>
-                        <h3 className="font-bold text-gray-900 dark:text-white mb-1">{option.title}</h3>
-                        {isSelected && <div className="mt-2"><span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-primary text-white">Selecionado</span></div>}
-                      </button>
-                    );
-                  })}
-                </div>
-                {!showAdminLogin && (
-                  <div className="mt-4 text-center">
+        {/* Card de Login */}
+        <Card className={isAdminMode ? 'bg-slate-800 border-slate-700' : ''}>
+          <CardBody>
+            {isAdminMode && (
+              <div className="mb-6 text-center">
+                <img src="/logo.png" alt="Logo" className="w-16 h-16 object-contain mx-auto" />
+              </div>
+            )}
+            
+            <form onSubmit={handleLogin} className="space-y-4">
+              {isNewUser && !isAdminMode && (
+                <>
+                  <Input 
+                    label="Nome completo" 
+                    type="text" 
+                    value={name} 
+                    onChange={(e) => setName(e.target.value)} 
+                    placeholder="Seu nome" 
+                    required 
+                  />
+                  <Input 
+                    label="CPF" 
+                    type="text" 
+                    value={cpf} 
+                    onChange={(e) => setCpf(e.target.value)} 
+                    placeholder="000.000.000-00" 
+                    required 
+                  />
+                </>
+              )}
+              
+              <Input 
+                label={isAdminMode ? "E-mail administrativo" : "E-mail"}
+                type="email" 
+                value={email} 
+                onChange={(e) => setEmail(e.target.value)} 
+                icon={<Mail className="w-5 h-5" />} 
+                placeholder={isAdminMode ? "admin@medicosconsultas.com.br" : "seu@email.com"}
+                required 
+              />
+              
+              <Input 
+                label="Senha" 
+                type="password" 
+                value={password} 
+                onChange={(e) => setPassword(e.target.value)} 
+                icon={<Lock className="w-5 h-5" />} 
+                placeholder="••••••••" 
+                required 
+              />
+
+              <div className="text-right">
+                <button
+                  type="button"
+                  onClick={() => router.push('/esqueci-senha')}
+                  className={`text-sm hover:underline ${
+                    isAdminMode ? 'text-slate-400 hover:text-slate-300' : 'text-primary hover:text-green-700'
+                  }`}
+                >
+                  Esqueci minha senha
+                </button>
+              </div>
+              
+              <Button 
+                type="submit" 
+                variant="primary" 
+                size="lg" 
+                className={`w-full ${
+                  isAdminMode 
+                    ? 'bg-slate-700 hover:bg-slate-600 text-white' 
+                    : 'bg-gradient-to-r from-primary to-green-600 hover:from-green-600 hover:to-primary'
+                }`}
+              >
+                {isAdminMode ? 'Acessar painel' : (isNewUser ? 'Criar conta' : 'Entrar')}
+                <ArrowRight className="w-5 h-5 ml-2" />
+              </Button>
+              
+              {!isAdminMode && (
+                <div className="text-center">
+                  {isNewUser ? (
                     <button
-                      onClick={() => setShowAdminLogin(true)}
-                      className="text-xs text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors"
+                      type="button"
+                      onClick={() => setIsNewUser(false)}
+                      className="text-sm text-primary hover:underline"
                     >
-                      Acesso administrativo
+                      Já tem conta? Fazer login
                     </button>
-                  </div>
-                )}
-              </CardBody>
-            </Card>
-          </div>
-
-          <div>
-            <Card className={selectedRole ? 'ring-2 ring-primary' : ''}>
-              <CardHeader>2. {isNewUser ? 'Criar conta' : 'Fazer login'}</CardHeader>
-              <CardBody>
-                <form onSubmit={handleLogin} className="space-y-4">
-                  {isNewUser && (
-                    <>
-                      <Input label="Nome completo" type="text" value={name} onChange={(e) => setName(e.target.value)} placeholder="Seu nome" required />
-                      <Input label="CPF" type="text" value={cpf} onChange={(e) => setCpf(e.target.value)} placeholder="000.000.000-00" required />
-                    </>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => router.push('/planos')}
+                      className="text-sm text-primary hover:underline"
+                    >
+                      Primeiro acesso? Criar conta
+                    </button>
                   )}
-                  <Input label="Email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} icon={<Mail className="w-5 h-5" />} placeholder="seu@email.com" required />
-                  <Input label="Senha" type="password" value={password} onChange={(e) => setPassword(e.target.value)} icon={<Lock className="w-5 h-5" />} placeholder="" required />
-                  <Button type="submit" variant="primary" size="lg" className="w-full bg-gradient-to-r from-primary to-green-600 hover:from-green-600 hover:to-primary" disabled={!selectedRole}>{isNewUser ? 'Criar conta' : 'Entrar'}<ArrowRight className="w-5 h-5 ml-2" /></Button>
-                  <div className="text-center">
-                    {isNewUser ? (
-                      <button
-                        type="button"
-                        onClick={() => setIsNewUser(false)}
-                        className="text-sm text-primary hover:underline"
-                      >
-                        Já tem conta? Fazer login
-                      </button>
-                    ) : (
-                      <button
-                        type="button"
-                        onClick={() => router.push('/planos')}
-                        className="text-sm text-primary hover:underline"
-                      >
-                        Primeiro acesso? Criar conta
-                      </button>
-                    )}
-                  </div>
-                </form>
-                {erro && <div className="mt-4 p-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg"><p className="text-xs text-red-800 dark:text-red-200 text-center">{erro}</p></div>}
-              </CardBody>
-            </Card>
-          </div>
+                </div>
+              )}
+            </form>
+            
+            {erro && (
+              <div className="mt-4 p-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg">
+                <p className="text-xs text-red-800 dark:text-red-200 text-center">{erro}</p>
+              </div>
+            )}
+          </CardBody>
+        </Card>
+
+        {/* Link alternador Admin/Assinante */}
+        <div className="mt-6 text-center">
+          <button
+            onClick={() => setIsAdminMode(!isAdminMode)}
+            className={`text-sm transition-colors inline-flex items-center gap-1 ${
+              isAdminMode 
+                ? 'text-slate-400 hover:text-slate-300' 
+                : 'text-gray-400 hover:text-gray-600'
+            }`}
+          >
+            {isAdminMode ? '🔓 Conexão segura e criptografada' : '🔐 Acesso administrativo'}
+          </button>
         </div>
 
-        <div className="mt-8 grid grid-cols-1 md:grid-cols-3 gap-6">
-          <div className="text-center p-6 bg-white dark:bg-gray-800 rounded-2xl shadow-sm">
-            <div className="w-12 h-12 bg-green-100 dark:bg-slate-700 rounded-full flex items-center justify-center mx-auto mb-3"><Stethoscope className="w-6 h-6 text-primary" /></div>
-            <h3 className="font-semibold text-gray-900 dark:text-white mb-2">50+ Especialidades</h3>
-            <p className="text-sm text-gray-600 dark:text-gray-400">Consulte com os melhores médicos</p>
+        {/* Cards informativos - apenas para modo assinante */}
+        {!isAdminMode && (
+          <div className="mt-8 grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div className="text-center p-4 bg-white rounded-2xl shadow-sm">
+              <div className="w-12 h-12 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-3">
+                <Stethoscope className="w-6 h-6 text-primary" />
+              </div>
+              <h3 className="font-semibold text-gray-900 text-sm mb-1">10+ Especialidades</h3>
+              <p className="text-xs text-gray-600">Especialistas</p>
+            </div>
+            
+            <div className="text-center p-4 bg-white rounded-2xl shadow-sm">
+              <div className="w-12 h-12 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-3">
+                <Shield className="w-6 h-6 text-primary" />
+              </div>
+              <h3 className="font-semibold text-gray-900 text-sm mb-1">100% Seguro</h3>
+              <p className="text-xs text-gray-600">Atendimento</p>
+            </div>
+            
+            <div className="text-center p-4 bg-white rounded-2xl shadow-sm">
+              <div className="w-12 h-12 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-3">
+                <Heart className="w-6 h-6 text-primary" />
+              </div>
+              <h3 className="font-semibold text-gray-900 text-sm mb-1">24h</h3>
+              <p className="text-xs text-gray-600">Atendimento</p>
+            </div>
           </div>
-          <div className="text-center p-6 bg-white dark:bg-gray-800 rounded-2xl shadow-sm">
-            <div className="w-12 h-12 bg-green-100 dark:bg-slate-700 rounded-full flex items-center justify-center mx-auto mb-3"><Shield className="w-6 h-6 text-primary" /></div>
-            <h3 className="font-semibold text-gray-900 dark:text-white mb-2">100% Seguro</h3>
-            <p className="text-sm text-gray-600 dark:text-gray-400">Seus dados protegidos</p>
-          </div>
-          <div className="text-center p-6 bg-white dark:bg-gray-800 rounded-2xl shadow-sm">
-            <div className="w-12 h-12 bg-green-100 dark:bg-slate-700 rounded-full flex items-center justify-center mx-auto mb-3"><Heart className="w-6 h-6 text-primary" /></div>
-            <h3 className="font-semibold text-gray-900 dark:text-white mb-2">Planos de 49,90</h3>
-            <p className="text-sm text-gray-600 dark:text-gray-400">Planos a partir de R$ 49,90/mês</p>
-          </div>
-        </div>
+        )}
 
-        <p className="text-center text-xs text-gray-500 dark:text-gray-400 mt-8">© 2025 Consultas Médicos Online. Todos os direitos reservados.</p>
+        <p className={`text-center text-xs mt-8 ${isAdminMode ? 'text-slate-500' : 'text-gray-500'}`}>
+          © 2025 Consultas Médicos Online. Todos os direitos reservados.
+        </p>
       </div>
     </div>
   );
