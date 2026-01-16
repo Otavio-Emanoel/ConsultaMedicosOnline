@@ -1,6 +1,6 @@
 import type React from "react"
-
 import { useState } from "react"
+import { Mail, Phone, Building2, User, MessageSquare } from "lucide-react"
 
 export default function Parceiros({ onOpenTermos }: { onOpenTermos: () => void }) {
   const [formData, setFormData] = useState({
@@ -10,7 +10,6 @@ export default function Parceiros({ onOpenTermos }: { onOpenTermos: () => void }
     telefone: "",
     mensagem: "",
   })
-  const [termosAceitos, setTermosAceitos] = useState(false)
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
     const { name, value } = e.target
@@ -22,57 +21,131 @@ export default function Parceiros({ onOpenTermos }: { onOpenTermos: () => void }
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
-    if (!termosAceitos) {
-      alert("Você precisa aceitar os Termos de Aceite para continuar.")
-      return
-    }
-    console.log("[v0] Form submitted:", formData)
-    alert("Formulário enviado! Você será contatado em breve.")
+    console.log("Parceria - Form submitted:", formData)
+    alert("Mensagem enviada! Entraremos em contato em breve.")
     setFormData({ nome: "", empresa: "", email: "", telefone: "", mensagem: "" })
-    setTermosAceitos(false)
   }
 
   return (
-    <section id="parceiros" className="py-16 sm:py-20 lg:py-24">
-      {/* Seção de Parceiros */}
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 mb-16 sm:mb-20 lg:mb-24">
+    <section id="parceria" className="py-16 sm:py-20 lg:py-24 bg-gradient-to-b from-white to-gray-50">
+      <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="text-center mb-12">
-          <h2 className="text-3xl md:text-4xl font-bold text-emerald-900 mb-4">Conheça nossos parceiros</h2>
-          <p className="text-lg text-slate-600 max-w-2xl mx-auto">
-            Empresas líderes que confiam em nossas soluções de telemedicina
+          <span className="inline-block px-4 py-1.5 bg-emerald-100 text-emerald-700 text-sm font-medium rounded-full mb-4">
+            Seja nosso parceiro
+          </span>
+          <h2 className="text-3xl md:text-4xl lg:text-5xl font-bold text-gray-900 mb-4">
+            Faça parte da nossa{" "}
+            <span className="text-emerald-600 relative">
+              rede de parceiros
+              <span className="absolute -bottom-1 left-0 w-full h-1 bg-gradient-to-r from-emerald-600/60 via-emerald-600 to-emerald-600/60 rounded-full" />
+            </span>
+          </h2>
+          <p className="text-gray-600 text-lg max-w-2xl mx-auto">
+            Entre em contato conosco e descubra como podemos crescer juntos
           </p>
         </div>
 
-        <div className="grid gap-12 lg:grid-cols-2 items-center">
-          {/* Regional Certificadora */}
-          <div className="flex flex-col items-center text-center space-y-4 p-8 rounded-2xl border border-emerald-100 bg-gradient-to-br from-white to-emerald-50">
-            <div className="w-full flex justify-center mb-4">
-              <img
-                src="/REGIONAL.png"
-                alt="Regional Certificadora Digital"
-                className="h-24 object-contain"
-              />
-            </div>
-            <h3 className="text-2xl font-bold text-slate-900">Regional Certificadora</h3>
-            <p className="text-slate-600 text-sm leading-relaxed">
-              <strong>Regional Certificadora</strong> - Autoridade de registro de certificados digitais; Emissão de certificados digitais para pessoas físicas e jurídicas nos modelos A1 e A3.
-            </p>
-          </div>
+        <div className="bg-white rounded-2xl shadow-xl border border-gray-100 p-8">
+          <form onSubmit={handleSubmit} className="space-y-6">
+            <div className="grid md:grid-cols-2 gap-6">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Nome completo *
+                </label>
+                <div className="relative">
+                  <User className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
+                  <input
+                    type="text"
+                    name="nome"
+                    value={formData.nome}
+                    onChange={handleChange}
+                    required
+                    className="w-full pl-11 pr-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 transition"
+                    placeholder="Seu nome"
+                  />
+                </div>
+              </div>
 
-          {/* Salas & Negócios */}
-          <div className="flex flex-col items-center text-center space-y-4 p-8 rounded-2xl border border-emerald-100 bg-gradient-to-br from-white to-emerald-50">
-            <div className="w-full flex justify-center mb-4">
-              <img
-                src="/SALAS.png"
-                alt="Salas & Negócios Coworking"
-                className="h-24 object-contain"
-              />
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Empresa *
+                </label>
+                <div className="relative">
+                  <Building2 className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
+                  <input
+                    type="text"
+                    name="empresa"
+                    value={formData.empresa}
+                    onChange={handleChange}
+                    required
+                    className="w-full pl-11 pr-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 transition"
+                    placeholder="Nome da empresa"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  E-mail *
+                </label>
+                <div className="relative">
+                  <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
+                  <input
+                    type="email"
+                    name="email"
+                    value={formData.email}
+                    onChange={handleChange}
+                    required
+                    className="w-full pl-11 pr-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 transition"
+                    placeholder="seu@email.com"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Telefone *
+                </label>
+                <div className="relative">
+                  <Phone className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
+                  <input
+                    type="tel"
+                    name="telefone"
+                    value={formData.telefone}
+                    onChange={handleChange}
+                    required
+                    className="w-full pl-11 pr-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 transition"
+                    placeholder="(00) 00000-0000"
+                  />
+                </div>
+              </div>
             </div>
-            <h3 className="text-2xl font-bold text-slate-900">Salas & Negócios</h3>
-            <p className="text-slate-600 text-sm leading-relaxed">
-              <strong>Salas & Negócios Coworking</strong> - Endereço fiscal para micro e pequenas empresas; Para abertura rápida de empresa. Ative seu endereço em Santa Catarina e desfrute dos benefícios fiscais.
-            </p>
-          </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Mensagem *
+              </label>
+              <div className="relative">
+                <MessageSquare className="absolute left-3 top-3 w-5 h-5 text-gray-400" />
+                <textarea
+                  name="mensagem"
+                  value={formData.mensagem}
+                  onChange={handleChange}
+                  required
+                  rows={4}
+                  className="w-full pl-11 pr-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 transition resize-none"
+                  placeholder="Conte-nos sobre sua empresa e como podemos colaborar..."
+                />
+              </div>
+            </div>
+
+            <button
+              type="submit"
+              className="w-full bg-gradient-to-r from-emerald-600 to-green-600 text-white font-semibold py-4 rounded-lg hover:from-emerald-700 hover:to-green-700 transition-all duration-300 shadow-lg hover:shadow-xl"
+            >
+              Enviar mensagem
+            </button>
+          </form>
         </div>
       </div>
     </section>

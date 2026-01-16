@@ -2,13 +2,13 @@
 
 export default function TermosSection({ onOpenTermos }: { onOpenTermos?: () => void }) {
   return (
-    <section id="termos" className="bg-emerald-700 text-emerald-50 py-12">
+    <section id="termos" className="bg-gradient-to-b from-slate-800 to-slate-900 text-slate-50 py-12">
       <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 text-center space-y-4">
-        <span className="inline-flex items-center gap-2 rounded-full bg-emerald-600/60 px-4 py-1 text-sm font-medium uppercase tracking-wide">
+        <span className="inline-flex items-center gap-2 rounded-full bg-slate-700/60 px-4 py-1 text-sm font-medium uppercase tracking-wide">
           Termos de aceite
         </span>
         <h2 className="text-2xl sm:text-3xl font-bold">Transparência total sobre como cuidamos dos seus dados</h2>
-        <p className="text-sm sm:text-base text-emerald-100">
+        <p className="text-sm sm:text-base text-slate-300">
           Este espaço receberá o conteúdo definitivo enviado pelo cliente. Utilize o botão abaixo para abrir a versão
           de exibição dos termos em um pop-up.
         </p>
