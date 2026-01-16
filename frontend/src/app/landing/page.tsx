@@ -12,6 +12,7 @@ import PlansCards from "@/components/landing/plans-cards"
 import TermosPage from "@/components/landing/termos-page"
 import SectionDivider from "@/components/landing/section-divider"
 import FAQSection from "@/components/landing/faq-section"
+import ScrollReveal from "@/components/ui/scroll-reveal"
 import "@/styles/landing-animations.css"
 
 export default function LandingPage() {
@@ -22,31 +23,56 @@ export default function LandingPage() {
       <Header />
       <Hero />
       <SectionDivider />
-      <Vantagens />
+      
+      <ScrollReveal animation="fade-up">
+        <Vantagens />
+      </ScrollReveal>
+      
       <SectionDivider />
-      <Especialidades />
+      
+      <ScrollReveal animation="fade-up">
+        <Especialidades />
+      </ScrollReveal>
+      
       <SectionDivider />
-      <ComoFunciona />
+      
+      <ScrollReveal animation="fade-up">
+        <ComoFunciona />
+      </ScrollReveal>
+      
       <SectionDivider />
-      <section id="planos" className="py-20 md:py-28 bg-white">
-        <div className="container mx-auto px-5 md:px-4">
-          <div className="text-center mb-14">
-            <h2 className="text-4xl md:text-5xl lg:text-6xl font-bold text-gray-900 mb-4">
-              Nossos <span className="text-emerald-600">Planos</span>
-            </h2>
-            <div className="w-20 h-1 bg-emerald-500 mx-auto rounded-full mb-6" />
-            <p className="text-gray-600 text-lg max-w-2xl mx-auto">
-              Escolha o plano ideal para você e sua família
-            </p>
+      
+      <ScrollReveal animation="scale-in">
+        <section id="planos" className="py-20 md:py-28 bg-white">
+          <div className="container mx-auto px-5 md:px-4">
+            <div className="text-center mb-14">
+              <h2 className="text-4xl md:text-5xl lg:text-6xl font-bold text-gray-900 mb-4">
+                Nossos <span className="text-emerald-600">Planos</span>
+              </h2>
+              <div className="w-20 h-1 bg-emerald-500 mx-auto rounded-full mb-6" />
+              <p className="text-gray-600 text-lg max-w-2xl mx-auto">
+                Escolha o plano ideal para você e sua família
+              </p>
+            </div>
+            <PlansCards {...({ filter: "all" } as any)} />
           </div>
-          <PlansCards {...({ filter: "all" } as any)} />
-        </div>
-      </section>
+        </section>
+      </ScrollReveal>
+      
       <SectionDivider />
-      <Parceiros onOpenTermos={() => setTermosPageOpen(true)} />
+      
+      <ScrollReveal animation="fade-up">
+        <Parceiros onOpenTermos={() => setTermosPageOpen(true)} />
+      </ScrollReveal>
+      
       <SectionDivider />
-      <FAQSection />
+      
+      <ScrollReveal animation="fade-up">
+        <FAQSection />
+      </ScrollReveal>
+      
       <SectionDivider />
+      
       <TermosSection onOpenTermos={() => setTermosPageOpen(true)} />
       <Footer />
       {termosPageOpen && <TermosPage onClose={() => setTermosPageOpen(false)} />}
