@@ -65,6 +65,17 @@ export default function Especialidades() {
   const [showAll, setShowAll] = useState(false)
   const especialidadesExibidas = showAll ? especialidades : especialidades.slice(0, 6)
 
+  const handleToggle = () => {
+    setShowAll(!showAll)
+    // Scroll suave para o início da seção ao fechar
+    if (showAll) {
+      const section = document.getElementById('especialidades')
+      if (section) {
+        section.scrollIntoView({ behavior: 'smooth', block: 'start' })
+      }
+    }
+  }
+
   return (
     <section id="especialidades" className="py-16 md:py-24 bg-gradient-to-b from-white to-gray-50">
       <div className="container mx-auto px-5 md:px-4">
@@ -89,7 +100,7 @@ export default function Especialidades() {
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-4 md:gap-6 transition-all duration-500 ease-out">
           {especialidadesExibidas.map((especialidade, index) => (
             <div
-              key={index}
+              key={`${especialidade.nome}-${index}`}
               className="group flex flex-col items-center bg-white rounded-2xl p-5 md:p-6 border border-gray-100 hover:border-emerald-300 hover:shadow-lg cursor-pointer hover:-translate-y-1 animate-fade-in transition-all duration-300"
               style={{
                 animationDelay: `${index * 50}ms`,
@@ -111,7 +122,7 @@ export default function Especialidades() {
         {/* Ver mais/menos button */}
         <div className="text-center mt-10">
           <button 
-            onClick={() => setShowAll(!showAll)}
+            onClick={handleToggle}
             className="inline-flex items-center gap-2 px-6 py-3 bg-emerald-600 text-white rounded-full font-medium hover:bg-emerald-700 transition-colors"
           >
             {showAll ? "Ver menos" : "Ver todas as especialidades"}
