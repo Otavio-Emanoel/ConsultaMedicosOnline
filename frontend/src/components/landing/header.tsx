@@ -62,7 +62,7 @@ export default function Header() {
           </div>
           <div className="flex items-center gap-2 sm:gap-3">
             <a href="/login" className="px-3 py-1.5 sm:px-4 sm:py-2 rounded-full bg-white/20 hover:bg-white/30 transition font-medium text-xs sm:text-sm">
-              Cliente
+              Área do Cliente
             </a>
             <button onClick={handleParceirosClick} className="px-3 py-1.5 sm:px-4 sm:py-2 rounded-full bg-white/20 hover:bg-white/30 transition font-medium text-xs sm:text-sm">
               Parcerias
