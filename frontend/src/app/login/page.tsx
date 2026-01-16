@@ -136,7 +136,7 @@ export default function HomePage() {
             <Card>
               <CardHeader>1. Escolha seu perfil</CardHeader>
               <CardBody>
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div className={`grid gap-4 ${showAdminLogin ? 'grid-cols-1 md:grid-cols-2' : 'grid-cols-1 max-w-xs mx-auto'}`}>
                   {visibleRoles.map((option) => {
                     const Icon = option.icon;
                     const isSelected = selectedRole === option.role;
