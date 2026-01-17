@@ -84,13 +84,11 @@ export default function Header() {
           <div className="flex items-center justify-between h-16 sm:h-16">
             {/* Logo */}
             <a href="#inicio" className="flex items-center gap-2 cursor-pointer hover:opacity-80 transition duration-300 flex-shrink-0">
-              <div className="w-14 h-14 sm:w-16 sm:h-16 lg:w-20 lg:h-20 relative flex items-center justify-center">
-                <img
-                  src="/logo.png"
-                  alt="Médicos Consultas Online"
-                  className="max-w-full max-h-full object-contain"
-                />
-              </div>
+              <img
+                src="/logo.png"
+                alt="Médicos Consultas Online 24h"
+                className="h-20 md:h-24 w-auto"
+              />
             </a>
 
             {/* Desktop Navigation */}

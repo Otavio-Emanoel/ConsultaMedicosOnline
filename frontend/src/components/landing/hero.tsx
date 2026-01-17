@@ -94,37 +94,53 @@ export default function Hero() {
                   <span className="text-emerald-600">agora!</span>
                 </h1>
 
-                <p className="text-gray-600 text-lg mb-6">
-                  Acesso ilimitado a mais de 11 especialidades médicas, sem carência e sem burocracia. 
-                  Consultas 24 horas por dia, 7 dias por semana, no conforto da sua casa.
+                <p className="text-gray-600 text-lg mb-8">
+                  Fale com médicos de verdade pelo celular. Simples, rápido e sem sair de casa.
                 </p>
 
-                {/* Price Highlight */}
-                <div className="bg-gray-100 rounded-xl p-4 mb-6 inline-block">
-                  <p className="text-sm text-gray-600 mb-1">Planos a partir de</p>
-                  <p className="text-4xl font-bold text-emerald-600">
-                    R$ 29,90
-                    <span className="text-lg font-normal text-gray-600">/mês</span>
-                  </p>
+                {/* Features */}
+                <div className="space-y-4 mb-8">
+                  <div className="flex items-center gap-4">
+                    <div className="w-10 h-10 bg-emerald-100 rounded-full flex items-center justify-center flex-shrink-0">
+                      <Smartphone className="w-5 h-5 text-emerald-600" />
+                    </div>
+                    <p className="text-gray-700">
+                      Atendimento direto pelo celular ou computador
+                    </p>
+                  </div>
+
+                  <div className="flex items-center gap-4">
+                    <div className="w-10 h-10 bg-emerald-100 rounded-full flex items-center justify-center flex-shrink-0">
+                      <Clock className="w-5 h-5 text-emerald-600" />
+                    </div>
+                    <p className="text-gray-700">
+                      Disponível 24 horas, todos os dias
+                    </p>
+                  </div>
+
+                  <div className="flex items-center gap-4">
+                    <div className="w-10 h-10 bg-emerald-100 rounded-full flex items-center justify-center flex-shrink-0">
+                      <Heart className="w-5 h-5 text-emerald-600" />
+                    </div>
+                    <p className="text-gray-700">
+                      Mais de 13 especialidades médicas
+                    </p>
+                  </div>
                 </div>
 
-                <p className="text-gray-900 font-medium text-lg mb-8">
-                  🩺 Cuidar da sua saúde nunca foi tão fácil
-                </p>
-
                 {/* CTA Buttons */}
-                <div className="flex gap-4">
+                <div className="flex flex-row gap-4">
                   <button
                     onClick={handleViewPlans}
                     className="bg-emerald-600 hover:bg-emerald-700 text-white rounded-full px-8 py-3 text-base font-medium transition-colors"
                   >
-                    Ver planos
+                    Conhecer os planos
                   </button>
                   <a
                     href="#como-funciona"
                     className="border-2 border-emerald-600 text-emerald-600 hover:bg-emerald-50 rounded-full px-8 py-3 text-base font-medium transition-colors"
                   >
-                    Entender como funciona
+                    Como funciona?
                   </a>
                 </div>
               </div>
