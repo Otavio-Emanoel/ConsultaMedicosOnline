@@ -117,12 +117,6 @@ export default function Header() {
             </nav>
 
             <div className="hidden md:flex gap-3">
-              <a
-                href="/login"
-                className="px-4 py-2 rounded-full border border-emerald-300 text-emerald-700 font-medium hover:bg-emerald-50 transition duration-300 text-sm lg:text-base"
-              >
-                Cliente
-              </a>
               <button
                 onClick={handlePlansClick}
                 className="px-5 py-2.5 rounded-full bg-gradient-to-r from-emerald-500 to-emerald-600 text-white font-medium shadow-md hover:shadow-lg hover:-translate-y-0.5 transition-all duration-300 text-sm lg:text-base"
