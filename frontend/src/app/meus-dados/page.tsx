@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { Card, CardHeader, CardBody } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
@@ -15,11 +16,14 @@ import {
   Lock,
   Save,
   Globe2,
+  AlertTriangle,
 } from 'lucide-react';
 
 type TabType = 'local' | 'rapidoc' | 'security';
 
 export default function MeusDadosPage() {
+    const router = useRouter();
+    
     // Função para formatar a data de nascimento para exibição
     function formatBirthday(birthday: string) {
       if (!birthday) return '';
@@ -287,6 +291,13 @@ export default function MeusDadosPage() {
           newPassword: '',
           confirmPassword: '',
         });
+
+        // Aguarda 2 segundos antes de deslogar e redirecionar
+        setTimeout(() => {
+          localStorage.removeItem('token');
+          localStorage.removeItem('user');
+          router.push('/login');
+        }, 2000);
       }
 
       if (activeTab === 'local') {
@@ -649,7 +660,6 @@ export default function MeusDadosPage() {
                     icon={<Calendar className="w-5 h-5" />}
                     placeholder="dd/mm/aaaa"
                   />
-
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -704,12 +714,40 @@ export default function MeusDadosPage() {
                     disabled
                   />
                 </div>
+
+                <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 p-4 rounded-xl">
+                  <div className="flex items-start gap-3">
+                    <AlertTriangle className="w-5 h-5 text-amber-600 dark:text-amber-400 mt-0.5 flex-shrink-0" />
+                    <div>
+                      <p className="text-sm font-semibold text-amber-800 dark:text-amber-300 mb-1">
+                        Dados somente leitura
+                      </p>
+                      <p className="text-sm text-amber-700 dark:text-amber-400">
+                        Os dados do Rapidoc são fornecidos automaticamente e não podem ser editados diretamente nesta interface.
+                      </p>
+                    </div>
+                  </div>
+                </div>
               </div>
             )}
 
             {/* Security Tab */}
             {activeTab === 'security' && (
               <div className="space-y-4">
+                <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-xl p-4 mb-6">
+                  <div className="flex items-start gap-3">
+                    <AlertTriangle className="w-5 h-5 text-amber-600 dark:text-amber-400 mt-0.5 flex-shrink-0" />
+                    <div>
+                      <p className="text-sm font-semibold text-amber-800 dark:text-amber-300 mb-1">
+                        Atenção ao alterar sua senha
+                      </p>
+                      <p className="text-sm text-amber-700 dark:text-amber-400">
+                        Você será desconectado automaticamente após alterar sua senha e será necessário fazer login novamente com a nova senha.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
                 <div className="bg-blue-50 dark:bg-blue-900/20 p-4 rounded-xl mb-6">
                   <p className="text-sm text-blue-800 dark:text-blue-300">
                     <strong>Dica:</strong> Use uma senha forte com pelo menos 8
