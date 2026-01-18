@@ -66,19 +66,18 @@ export async function criarAssinaturaAsaas({
 }) {
     if (!ASAAS_API_KEY) throw new Error('Chave da API Asaas não configurada');
     
-    // Texto padrão de aviso que aparece no boleto
-    const avisoInadimplencia = `
-Aviso: Inadimplência poderá resultar em protesto e negativação (SERASA/SPC), conforme arts. 42 e 43 do CDC.
-    `.trim();
+    // Texto padrão de aviso que aparece no boleto (máx 255 caracteres no Asaas)
+    const avisoInadimplencia = 'Aviso: Inadimplência poderá resultar em protesto e negativação (SERASA/SPC), conforme arts. 42 e 43 do CDC.';
     
     const body: any = {
         customer,
         value,
         cycle,
-        description, // Descrição que aparece na fatura
-        observations: avisoInadimplencia, // Observações que aparecem no boleto
+        description: `${description}. ${avisoInadimplencia} `,  
         billingType,
         nextDueDate: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString().split('T')[0], // Próximo vencimento: amanhã
+        // Campo discricionario aparece no boleto PDF
+        discricionario: avisoInadimplencia,
     };
     
     if (externalReference) {
