@@ -80,14 +80,14 @@ export default function Header() {
         }`}
         style={{ zIndex: 45 }}
       >
-        <div className="max-w-7xl mx-auto px-2 sm:px-6 lg:px-8">
-          <div className="flex items-center justify-between h-16 sm:h-16">
+        <div className="max-w-7xl mx-auto px-2 sm:px-6 lg:px-8 py-3 md:py-4">
+          <div className="flex items-center justify-between h-16 md:h-20">
             {/* Logo */}
             <a href="#inicio" className="flex items-center gap-2 cursor-pointer hover:opacity-80 transition duration-300 flex-shrink-0">
               <img
                 src="/logo.png"
                 alt="Médicos Consultas Online 24h"
-                className="h-20 md:h-24 w-auto"
+                className="h-16 md:h-20 lg:h-24 w-auto my-2 md:my-3 lg:my-4"
               />
             </a>
 
