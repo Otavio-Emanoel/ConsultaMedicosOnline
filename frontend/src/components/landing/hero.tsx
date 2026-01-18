@@ -90,8 +90,8 @@ export default function Hero() {
               {/* Content */}
               <div className="p-12 flex flex-col justify-center">
                 <h1 className="text-4xl xl:text-5xl font-bold text-gray-900 leading-tight mb-4">
-                  Tenha atendimento médico online{" "}
-                  <span className="text-emerald-600">agora!</span>
+                  Consultas médicas{" "}
+                  <span className="text-emerald-600">onde você estiver</span>
                 </h1>
 
                 <p className="text-gray-600 text-lg mb-8">
