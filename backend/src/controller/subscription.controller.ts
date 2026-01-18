@@ -391,7 +391,32 @@ export class SubscriptionController {
 
             console.log(`[cancelarPlanoUsuario] 1. Usuário: ${cpfClean} (UID: ${uid})`);
 
-            // 2. Busca Assinaturas Locais
+            // 2. Verificar se possui débitos antes de permitir cancelamento
+            const asaasId = usuarioDoc.exists ? usuarioDoc.data()?.asaasId : undefined;
+            
+            if (asaasId) {
+                console.log(`[cancelarPlanoUsuario] 1.1. Verificando débitos no Asaas: ${asaasId}`);
+                const { verificarFaturasVencidas } = await import('../services/asaas.service.js');
+                
+                try {
+                    const possuiDebitos = await verificarFaturasVencidas(asaasId);
+                    
+                    if (possuiDebitos) {
+                        console.warn(`[cancelarPlanoUsuario] Cancelamento bloqueado: usuário possui débitos.`);
+                        return res.status(402).json({ 
+                            error: 'Cancelamento não permitido. Você possui faturas em aberto. Por favor, regularize seus débitos antes de cancelar o plano.',
+                            code: 'PAYMENT_REQUIRED'
+                        });
+                    }
+                    
+                    console.log(`[cancelarPlanoUsuario] 1.2. Sem débitos. Prosseguindo com cancelamento.`);
+                } catch (verifyError: any) {
+                    console.error('[cancelarPlanoUsuario] Erro ao verificar débitos (prosseguindo):', verifyError.message);
+                    // Se falhar a verificação, prossegue (evita travar o cancelamento por erro técnico)
+                }
+            }
+
+            // 3. Busca Assinaturas Locais
             const assinaturasSnap = await db.collection('assinaturas')
                 .where('cpfUsuario', 'in', [cpfClean, cpfFormatted])
                 .get();
@@ -401,7 +426,7 @@ export class SubscriptionController {
                 return res.status(404).json({ error: 'Nenhuma assinatura vinculada ao seu usuário.' });
             }
 
-            // 3. Verifica no ASAAS qual está ATIVA
+            // 4. Verifica no ASAAS qual está ATIVA
             let assinaturaAtivaId: string | undefined;
             let assinaturaDocLocal: any;
             let periodicidade: string | undefined;
@@ -410,7 +435,7 @@ export class SubscriptionController {
             const ASAAS_API_URL = process.env.ASAAS_BASE_URL || 'https://sandbox.asaas.com/api/v3';
             const ASAAS_API_KEY = process.env.ASAAS_API_KEY;
 
-            console.log(`[cancelarPlanoUsuario] 2. Verificando ${assinaturasSnap.size} assinaturas no Asaas...`);
+            console.log(`[cancelarPlanoUsuario] 4. Verificando ${assinaturasSnap.size} assinaturas no Asaas...`);
 
             for (const doc of assinaturasSnap.docs) {
                 const data = doc.data();
@@ -439,7 +464,7 @@ export class SubscriptionController {
                 return res.status(404).json({ error: 'Nenhuma assinatura ATIVA encontrada no sistema de pagamentos.' });
             }
 
-            // 4. Verificação de Dependentes (Bloqueio)
+            // 5. Verificação de Dependentes (Bloqueio)
             const dependentesSnapshot = await db.collection('beneficiarios')
                 .where('holder', 'in', [cpfClean, cpfFormatted])
                 .get();
@@ -459,7 +484,7 @@ export class SubscriptionController {
                 });
             }
 
-            // 5. Verificar Fidelidade
+            // 6. Verificar Fidelidade
             if (!periodicidade && assinaturaDocLocal.data()?.planoId) {
                 try {
                     const pDoc = await db.collection('planos').doc(assinaturaDocLocal.data().planoId).get();
@@ -479,14 +504,14 @@ export class SubscriptionController {
                 });
             }
 
-            // 6. RAPIDOC: Apagar conta (DELETE)
+            // 7. RAPIDOC: Apagar conta (DELETE)
             const { buscarBeneficiarioRapidocPorCpf, inativarBeneficiarioRapidoc } = await import('../services/rapidoc.service.js');
             try {
                 const beneficiarioResp = await buscarBeneficiarioRapidocPorCpf(cpfClean);
                 const beneficiario = beneficiarioResp?.beneficiary;
                 
                 if (beneficiario && beneficiario.uuid) {
-                    console.log(`[cancelarPlanoUsuario] 4. Apagando no Rapidoc: ${beneficiario.uuid}`);
+                    console.log(`[cancelarPlanoUsuario] 7. Apagando no Rapidoc: ${beneficiario.uuid}`);
                     const rapidocResult = await inativarBeneficiarioRapidoc(beneficiario.uuid);
                     
                     if (rapidocResult && rapidocResult.success === false) {
@@ -501,17 +526,17 @@ export class SubscriptionController {
                 });
             }
 
-            // 7. ASAAS: Cancelar Assinatura
+            // 8. ASAAS: Cancelar Assinatura
             const { cancelarAssinaturaAsaas } = await import('../services/asaas.service.js');
             try {
-                console.log(`[cancelarPlanoUsuario] 5. Cancelando no Asaas: ${assinaturaAtivaId}`);
+                console.log(`[cancelarPlanoUsuario] 8. Cancelando no Asaas: ${assinaturaAtivaId}`);
                 await cancelarAssinaturaAsaas(assinaturaAtivaId);
             } catch (asaasError: any) {
                 console.error('[cancelarPlanoUsuario] Erro Asaas (prosseguindo):', asaasError.message);
             }
 
-            // 8. EXCLUSÃO TOTAL DOS DADOS (Firestore & Auth)
-            console.log(`[cancelarPlanoUsuario] 6. Excluindo dados do banco e autenticação...`);
+            // 9. EXCLUSÃO TOTAL DOS DADOS (Firestore & Auth)
+            console.log(`[cancelarPlanoUsuario] 9. Excluindo dados do banco e autenticação...`);
             
             const batch = db.batch();
 
@@ -538,7 +563,7 @@ export class SubscriptionController {
                 // Não retorna erro aqui para não travar o sucesso da operação, pois o banco já foi limpo
             }
 
-            console.log('[cancelarPlanoUsuario] 7. Sucesso! Conta excluída.');
+            console.log('[cancelarPlanoUsuario] 10. Sucesso! Conta excluída.');
             return res.status(200).json({ 
                 success: true,
                 message: 'Conta e plano excluídos com sucesso.',
