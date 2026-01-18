@@ -132,7 +132,12 @@ function usePlanosLanding() {
   return { planos, loading, erro };
 }
 
-export default function PlansCards() {
+type PlansCardsProps = {
+  hideAvulso?: boolean
+  redirectToCadastro?: boolean
+}
+
+export default function PlansCards({ hideAvulso = false, redirectToCadastro = false }: PlansCardsProps) {
   const [activeTab, setActiveTab] = useState<string>("individual")
   const [visibleCards, setVisibleCards] = useState<boolean[]>([])
   const { planos, loading, erro } = usePlanosLanding()
@@ -152,7 +157,8 @@ export default function PlansCards() {
     }
   }
 
-  const filteredPlanos = filterPlans(planos)
+  const basePlanos = hideAvulso ? planos.filter(p => p.tipo !== "AVULSO") : planos
+  const filteredPlanos = filterPlans(basePlanos)
 
   useEffect(() => {
     if (filteredPlanos.length > 0) {
@@ -167,12 +173,12 @@ export default function PlansCards() {
     <div className="w-full">
       {/* Tabs */}
       <div className="max-w-4xl mx-auto mb-12">
-        <div className="grid grid-cols-4 bg-gray-100 p-1.5 rounded-full">
+        <div className={`grid ${hideAvulso ? 'grid-cols-3' : 'grid-cols-4'} bg-gray-100 p-1.5 rounded-full`}>
           {[
             { id: "individual", label: "Individual" },
             { id: "familiar", label: "Familiar" },
             { id: "psicologia", label: "Psicologia" },
-            { id: "avulso", label: "Avulso" },
+            ...(!hideAvulso ? [{ id: "avulso", label: "Avulso" }] : []),
           ].map((tab) => (
             <button
               key={tab.id}
@@ -283,7 +289,7 @@ export default function PlansCards() {
                 </a>
               ) : (
                 <Link
-                  href={plan.buttonHref}
+                  href={redirectToCadastro ? `/cadastro/${plan.id}` : plan.buttonHref}
                   className="mt-6 sm:mt-7 inline-flex justify-center w-full px-4 py-2.5 sm:py-3 rounded-lg font-medium text-sm sm:text-base transition-all duration-300 active:scale-95 bg-gradient-to-r from-emerald-500 to-emerald-600 text-white shadow-md hover:shadow-lg hover:-translate-y-0.5"
                 >
                   {plan.buttonText}
