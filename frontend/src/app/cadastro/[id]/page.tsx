@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Dialog } from '@/components/ui/Dialog';
 import { useParams, useRouter } from "next/navigation";
 import { ArrowLeft, ArrowRight, Check } from "lucide-react";
@@ -57,6 +57,9 @@ export default function CadastroPage() {
   const [assinaturaId, setAssinaturaId] = useState<string | null>(null);
   const [redirecionamentoTentado, setRedirecionamentoTentado] = useState(false);
   const [aceitouTermos, setAceitouTermos] = useState(false);
+  const [showTermsModal, setShowTermsModal] = useState(false);
+  const [termsScrolledToEnd, setTermsScrolledToEnd] = useState(false);
+  const termsContentRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     if (!planoId) return;
@@ -92,6 +95,31 @@ export default function CadastroPage() {
       return onlyNums.replace(/(\d{2})(\d{4})(\d{0,4})/, "($1) $2-$3");
     }
     return onlyNums.replace(/(\d{2})(\d{5})(\d{0,4})/, "($1) $2-$3");
+  };
+
+  const openTermsModal = (e?: React.MouseEvent | React.ChangeEvent<HTMLInputElement>) => {
+    if (e) {
+      e.preventDefault();
+    }
+    setTermsScrolledToEnd(false);
+    setShowTermsModal(true);
+  };
+
+  const closeTermsModal = () => {
+    setShowTermsModal(false);
+    setTermsScrolledToEnd(false);
+  };
+
+  const handleTermsScroll = () => {
+    const el = termsContentRef.current;
+    if (!el) return;
+    const atBottom = el.scrollTop + el.clientHeight >= el.scrollHeight - 8;
+    setTermsScrolledToEnd(atBottom);
+  };
+
+  const acceptTerms = () => {
+    setAceitouTermos(true);
+    closeTermsModal();
   };
 
   const nextStep = () => {
@@ -610,12 +638,22 @@ export default function CadastroPage() {
                         <input
                           type="checkbox"
                           checked={aceitouTermos}
-                          onChange={(e) => setAceitouTermos(e.target.checked)}
+                          onChange={(e) => {
+                            if (aceitouTermos) {
+                              setAceitouTermos(false);
+                              return;
+                            }
+                            openTermsModal(e);
+                          }}
                           className="mt-1 w-4 h-4 rounded border-gray-300 dark:border-gray-600 text-primary focus:ring-2 focus:ring-primary cursor-pointer"
                         />
-                        <span>
+                        <button
+                          type="button"
+                          onClick={openTermsModal}
+                          className="text-left underline decoration-primary/70 decoration-2 underline-offset-4 hover:text-primary"
+                        >
                           Li e concordo com os Termos de Uso e Política de Privacidade
-                        </span>
+                        </button>
                       </label>
                     </div>
                     <button
@@ -718,6 +756,139 @@ export default function CadastroPage() {
               </button>
             )}
           </div>
+
+          <Dialog
+            open={showTermsModal}
+            onOpenChange={(open) => {
+              setShowTermsModal(open);
+              if (!open) {
+                setTermsScrolledToEnd(false);
+              }
+            }}
+          >
+            <Dialog.Content>
+              <div className="max-w-4xl w-full">
+                <Dialog.Title>Termos de Uso e Política de Privacidade</Dialog.Title>
+                <p className="mt-1 text-sm text-gray-600 dark:text-gray-300">
+                Role até o final para habilitar o aceite.
+              </p>
+
+              <div
+                ref={termsContentRef}
+                onScroll={handleTermsScroll}
+                className="mt-4 max-h-[60vh] overflow-y-auto pr-3 space-y-5 text-sm text-gray-700 dark:text-gray-200"
+              >
+                <section className="space-y-2">
+                  <h4 className="text-base font-semibold text-gray-900 dark:text-white">1. Objeto e Conceitos</h4>
+                  <p>
+                    O atendimento de telemedicina MÉDICOS CONSULTAS ONLINE orienta o beneficiário sobre condutas, dúvidas
+                    gerais e prevenção. Atuamos como plataforma que conecta pacientes e profissionais, sem assumir
+                    responsabilidades por atos dos terceiros envolvidos no atendimento.
+                  </p>
+                  <ul className="list-disc list-inside space-y-1">
+                    <li>Telemedicina – atendimento médico</li>
+                    <li>Psicólogo</li>
+                    <li>Orientação nutricional</li>
+                  </ul>
+                </section>
+
+                <section className="space-y-2">
+                  <h4 className="text-base font-semibold text-gray-900 dark:text-white">2. Instruções de Utilização</h4>
+                  <p>
+                    A efetividade do atendimento depende de dados corretos e atualizados, pagamento em dia e descrição
+                    completa dos sintomas. Após o diagnóstico, o caso pode resultar em autocuidado, busca presencial ou
+                    encaminhamento para consulta eletiva.
+                  </p>
+                </section>
+
+                <section className="space-y-2">
+                  <h4 className="text-base font-semibold text-gray-900 dark:text-white">3. Serviços</h4>
+                  <p>
+                    Telemedicina, consultas psicológicas preliminares e orientação nutricional são serviços pontuais, não
+                    substituem acompanhamento presencial e não constituem diagnóstico definitivo.
+                  </p>
+                </section>
+
+                <section className="space-y-2">
+                  <h4 className="text-base font-semibold text-gray-900 dark:text-white">4. Sigilo, Ética e LGPD</h4>
+                  <p>
+                    As informações são confidenciais, acessadas somente pela equipe necessária ao atendimento. Os dados
+                    são armazenados em ambiente seguro, conforme LGPD e Código de Ética Médica.
+                  </p>
+                </section>
+
+                <section className="space-y-2">
+                  <h4 className="text-base font-semibold text-gray-900 dark:text-white">5. Multa e Cancelamento</h4>
+                  <p>
+                    Rescisões antecipadas antes do período contratado podem gerar multa de 50% sobre valores
+                    remanescentes. O plano é renovado automaticamente; cancelamentos exigem solicitação com 30 dias de
+                    antecedência via WhatsApp ou e-mail.
+                  </p>
+                </section>
+
+                <section className="space-y-2">
+                  <h4 className="text-base font-semibold text-gray-900 dark:text-white">6. Termo de Aceite</h4>
+                  <ul className="list-disc list-inside space-y-1">
+                    <li>Limitações da telemedicina por ausência de exame físico.</li>
+                    <li>Possibilidade de falhas de conexão que exijam remarcação.</li>
+                    <li>Obrigação de testar equipamentos antes da consulta.</li>
+                    <li>Dever de preservar confidencialidade das informações.</li>
+                    <li>Receitas e atestados eletrônicos válidos conforme Portaria MS nº 467.</li>
+                  </ul>
+                </section>
+
+                <section className="space-y-2">
+                  <h4 className="text-base font-semibold text-gray-900 dark:text-white">7. Contrato Empresarial</h4>
+                  <ul className="list-disc list-inside space-y-1">
+                    <li>Mínimo de 5 vidas por CNPJ.</li>
+                    <li>Contrato mínimo de 3 meses por vida.</li>
+                    <li>Pagamento pré-pago para liberação de acesso.</li>
+                  </ul>
+                </section>
+
+                <section className="space-y-2">
+                  <h4 className="text-base font-semibold text-gray-900 dark:text-white">8. Consultas com Especialistas</h4>
+                  <p>
+                    Consultas com especialistas ocorrem por encaminhamento do clínico geral (exceto psicólogos). Sem
+                    encaminhamento, há taxa de R$ 150,00. Cancelamentos ou reagendamentos precisam de 48 horas de
+                    antecedência; consultas excedentes também são cobradas.
+                  </p>
+                </section>
+
+                <section className="space-y-2">
+                  <h4 className="text-base font-semibold text-gray-900 dark:text-white">9. Aceite e Consentimento</h4>
+                  <p>
+                    Declaro estar informado sobre riscos e limitações, autorizando o uso dos serviços e concordando com
+                    o tratamento dos dados conforme descrito acima.
+                  </p>
+                </section>
+              </div>
+
+              <div className="mt-5 flex flex-wrap items-center justify-between gap-3">
+                <button
+                  type="button"
+                  onClick={closeTermsModal}
+                  className="px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700 transition"
+                >
+                  Fechar
+                </button>
+                <button
+                  type="button"
+                  onClick={acceptTerms}
+                  disabled={!termsScrolledToEnd}
+                  className="px-5 py-2 rounded-lg bg-primary hover:bg-green-700 text-white font-semibold shadow-sm disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  Aceitar termos e continuar
+                </button>
+              </div>
+              {!termsScrolledToEnd && (
+                <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">
+                  Role até o final para habilitar o botão de aceite.
+                </p>
+              )}
+              </div>
+            </Dialog.Content>
+          </Dialog>
         </div>
       </div>
     </div>

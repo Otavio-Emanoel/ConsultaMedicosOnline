@@ -68,8 +68,7 @@ export async function criarAssinaturaAsaas({
     
     // Texto padrão de aviso que aparece no boleto
     const avisoInadimplencia = `
-Referente ao plano de Telemedicina.
-Atenção: O não pagamento desta fatura até o vencimento poderá acarretar na suspensão dos serviços e inclusão nos órgãos de proteção ao crédito (SPC/Serasa), conforme termos de uso.
+Aviso: Inadimplência poderá resultar em protesto e negativação (SERASA/SPC), conforme arts. 42 e 43 do CDC.
     `.trim();
     
     const body: any = {
