@@ -47,13 +47,29 @@ function usePlanosLanding() {
         if (!res.ok) throw new Error('Erro ao buscar planos');
         const data = await res.json();
         setPlanos(Array.isArray(data) ? data.map((p: any) => {
-          const tipo = (p.tipo || "INDIVIDUAL").toUpperCase();
-          const isAvulso = tipo === "AVULSO" || p.isSpecial;
+          // Extrair tipo de filtro (INDIVIDUAL, FAMILIAR, PSICOLOGIA, AVULSO)
+          let tipoFiltro = "INDIVIDUAL";
+          if (p.tipo) {
+            const tipoUpper = String(p.tipo).toUpperCase();
+            // Se o tipo é um dos padrões, usa direto
+            if (['INDIVIDUAL', 'FAMILIAR', 'PSICOLOGIA', 'AVULSO'].includes(tipoUpper)) {
+              tipoFiltro = tipoUpper;
+            } else {
+              // Caso contrário, tenta fazer uma busca inteligente no nome descritivo
+              const nomeDesc = String(p.tipo).toLowerCase();
+              if (nomeDesc.includes('familiar') || nomeDesc.includes('família') || nomeDesc.includes('premium')) tipoFiltro = 'FAMILIAR';
+              else if (nomeDesc.includes('psicolog')) tipoFiltro = 'PSICOLOGIA';
+              else if (nomeDesc.includes('avulso') || nomeDesc.includes('consulta avulsa')) tipoFiltro = 'AVULSO';
+              else tipoFiltro = 'INDIVIDUAL';
+            }
+          }
+          
+          const isAvulso = tipoFiltro === "AVULSO" || p.isSpecial;
           return {
             id: p.id,
-            tipo: tipo,
+            tipo: tipoFiltro,
             badge: p.periodicidade ? `PLANO ${p.periodicidade.toUpperCase()}` : "PLANO DISPONÍVEL",
-            name: p.nome || p.internalPlanKey || p.id,
+            name: p.nome || p.name || String(p.tipo) || p.internalPlanKey || p.id,
             subtitle: p.maxBeneficiaries && !isAvulso ? `até ${p.maxBeneficiaries} pessoas` : undefined,
             originalPrice: p.precoOriginal ? `De R$ ${Number(p.precoOriginal).toFixed(2).replace('.', ',')}` : undefined,
             price: isAvulso ? "Por agendamento" : (p.preco ? `R$ ${Number(p.preco).toFixed(2).replace('.', ',')}` : ""),
