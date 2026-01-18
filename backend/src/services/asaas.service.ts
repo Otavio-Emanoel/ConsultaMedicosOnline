@@ -49,19 +49,75 @@ export async function cancelarAssinaturaAsaas(assinaturaId: string): Promise<{ s
     });
     return { status: resp.status, data: resp.data };
 }
-export async function criarAssinaturaAsaas({ customer, value, cycle = 'MONTHLY', description = 'Assinatura Consulta Médicos Online', billingType = 'BOLETO' }: { customer: string, value: number, cycle?: string, description?: string, billingType?: string }) {
+export async function criarAssinaturaAsaas({ 
+    customer, 
+    value, 
+    cycle = 'MONTHLY', 
+    description = 'Assinatura Consulta Médicos Online', 
+    billingType = 'BOLETO',
+    externalReference
+}: { 
+    customer: string, 
+    value: number, 
+    cycle?: string, 
+    description?: string, 
+    billingType?: string,
+    externalReference?: string
+}) {
     if (!ASAAS_API_KEY) throw new Error('Chave da API Asaas não configurada');
+    
+    // Texto padrão de aviso que aparece no boleto
+    const avisoInadimplencia = `
+Referente ao plano de Telemedicina.
+Atenção: O não pagamento desta fatura até o vencimento poderá acarretar na suspensão dos serviços e inclusão nos órgãos de proteção ao crédito (SPC/Serasa), conforme termos de uso.
+    `.trim();
+    
     const body: any = {
         customer,
         value,
         cycle,
-        description,
+        description, // Descrição que aparece na fatura
+        observations: avisoInadimplencia, // Observações que aparecem no boleto
         billingType,
+        nextDueDate: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString().split('T')[0], // Próximo vencimento: amanhã
     };
+    
+    if (externalReference) {
+        body.externalReference = externalReference;
+    }
+    
     const resp = await asaasAxios.post(`${ASAAS_API_URL}/subscriptions`, body, {
         headers: { access_token: ASAAS_API_KEY }
     });
     return resp.data;
+}
+
+/**
+ * Verifica se um cliente possui faturas vencidas (status OVERDUE)
+ * @param customerId ID do cliente no Asaas
+ * @returns true se houver faturas vencidas, false caso contrário
+ */
+export async function verificarFaturasVencidas(customerId: string): Promise<boolean> {
+    if (!ASAAS_API_KEY) throw new Error('Chave da API Asaas não configurada');
+    if (!customerId) return false;
+    
+    try {
+        // Busca cobranças com status 'OVERDUE' (Vencida) para este cliente
+        const response = await asaasAxios.get(`${ASAAS_API_URL}/payments`, {
+            params: {
+                customer: customerId,
+                status: 'OVERDUE',
+                limit: 1
+            },
+            headers: { access_token: ASAAS_API_KEY }
+        });
+        
+        // Se a lista tem dados, tem boleto vencido
+        return response.data.data && response.data.data.length > 0;
+    } catch (error) {
+        console.error('Erro ao verificar faturas vencidas:', error);
+        return false; // Na dúvida, não bloqueia
+    }
 }
 
 export async function criarClienteAsaas({ nome, email, cpf, telefone }: { nome: string, email: string, cpf: string, telefone?: string }) {
