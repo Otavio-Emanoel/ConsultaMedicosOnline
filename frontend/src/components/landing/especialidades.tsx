@@ -4,60 +4,77 @@ import { useState } from "react"
 import { Heart, Sparkles, Activity, User, Flower2, Brain, Baby, Users as UsersIcon, Apple, Smile, HeartPulse } from "lucide-react"
 
 const especialidades = [
-  { 
+  {
     nome: "Cardiologia",
     icon: Heart,
     gradient: "from-red-400 to-rose-500",
   },
-  { 
+  {
     nome: "Dermatologia",
     icon: Sparkles,
     gradient: "from-pink-400 to-fuchsia-500",
   },
-  { 
+  {
     nome: "Endocrinologia",
     icon: Activity,
     gradient: "from-teal-400 to-cyan-500",
   },
-  { 
+  {
     nome: "Geriatria",
     icon: User,
     gradient: "from-amber-400 to-orange-500",
   },
-  { 
+  {
     nome: "Ginecologia",
     icon: Flower2,
     gradient: "from-rose-400 to-pink-500",
   },
-  { 
+  {
     nome: "Neurologia",
     icon: Brain,
     gradient: "from-violet-400 to-purple-500",
   },
-  { 
+  {
     nome: "Pediatria",
     icon: Baby,
     gradient: "from-blue-400 to-cyan-500",
   },
-  { 
+  {
+    nome: "Psiquiatria",
+    icon: HeartPulse,
+    gradient: "from-purple-400 to-indigo-500",
+  },
+  {
+    nome: "Ortopedia",
+    icon: UsersIcon,
+    gradient: "from-orange-400 to-yellow-500",
+  },
+  {
+    nome: "Traumatologia",
+    icon: UsersIcon,
+    gradient: "from-yellow-500 to-orange-400",
+  },
+  {
+    nome: "Otorrinolaringologia",
+    icon: UsersIcon,
+    gradient: "from-teal-500 to-blue-400",
+  },
+  {
     nome: "Urologia",
     icon: UsersIcon,
     gradient: "from-indigo-400 to-blue-500",
   },
-  { 
+  {
     nome: "Nutrição",
     icon: Apple,
     gradient: "from-green-400 to-emerald-500",
+    obs: "1 sessão sem custo a cada 90 dias",
   },
-  { 
+  {
     nome: "Psicologia",
     icon: Smile,
     gradient: "from-yellow-400 to-amber-500",
-  },
-  { 
-    nome: "Psiquiatria",
-    icon: HeartPulse,
-    gradient: "from-purple-400 to-indigo-500",
+    obs: "2x por mês",
   },
 ]
 
@@ -115,6 +132,9 @@ export default function Especialidades() {
               <h3 className="font-semibold text-gray-900 text-sm md:text-base text-center transition-colors duration-200">
                 {especialidade.nome}
               </h3>
+              {especialidade.obs && (
+                <p className="text-emerald-600 text-xs text-center mt-1 font-medium">{especialidade.obs}</p>
+              )}
             </div>
           ))}
         </div>
