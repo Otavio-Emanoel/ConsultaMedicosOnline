@@ -53,6 +53,10 @@ export default function CancelarPlanoPage() {
   const [dataCancelamento, setDataCancelamento] = useState<string | null>(null);
   const [loadingRemoverDep, setLoadingRemoverDep] = useState<string | null>(null); // ID do dependente sendo removido
 
+  // Fidelidade (90 dias)
+  const [fidelidadeBloqueada, setFidelidadeBloqueada] = useState(false);
+  const [diasRestantesFidelidade, setDiasRestantesFidelidade] = useState<number | null>(null);
+
   // Verificar pendências de pagamento
   const [pagamentoEmDia, setPagamentoEmDia] = useState<boolean>(true);
 
@@ -103,6 +107,22 @@ export default function CancelarPlanoPage() {
                 nome: assinatura.plano.tipo || 'Plano',
                 valor: assinatura.plano.preco || 0
             });
+        }
+
+        // Fidelidade: bloqueia cancelamento antes de 90 dias
+        const inicioRaw = assinatura?.createdAt || assinatura?.dataInicio || assinatura?.inicioVigencia || dashboardData?.usuario?.createdAt;
+        if (inicioRaw) {
+          const inicio = new Date(inicioRaw);
+          if (!isNaN(inicio.getTime())) {
+            const hoje = new Date();
+            const diffMs = hoje.getTime() - inicio.getTime();
+            const dias = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+            const restantes = 90 - dias;
+            if (restantes > 0) {
+              setFidelidadeBloqueada(true);
+              setDiasRestantesFidelidade(restantes);
+            }
+          }
         }
 
         // 2. Buscar Dependentes (via endpoint específico ou dashboard)
@@ -343,6 +363,22 @@ export default function CancelarPlanoPage() {
                         </div>
                     )}
 
+                    {/* BLOQUEIO: Fidelidade 90 dias */}
+                    {fidelidadeBloqueada && (
+                      <div className="mb-6 p-4 border border-amber-200 bg-amber-50 dark:bg-amber-900/10 rounded-xl flex items-center gap-3">
+                        <AlertCircle className="w-6 h-6 text-amber-600" />
+                        <div>
+                          <h4 className="font-semibold text-amber-800 dark:text-amber-300">Período de fidelidade ativo</h4>
+                          <p className="text-sm text-amber-700 dark:text-amber-200">
+                            Seu plano possui fidelidade mínima de 90 dias. Restam {diasRestantesFidelidade ?? 0} dia(s) para liberar o cancelamento.
+                          </p>
+                          <p className="text-xs text-amber-600 dark:text-amber-200 mt-2">
+                            Caso precise cancelar antes do prazo, entre em contato com o suporte para avaliar exceções.
+                          </p>
+                        </div>
+                      </div>
+                    )}
+
                     {/* Erros Gerais */}
                     {error && (
                         <div className="mb-4 text-center text-red-600 bg-red-100 p-2 rounded">
@@ -359,8 +395,16 @@ export default function CancelarPlanoPage() {
                       <Button 
                         variant="danger" 
                         onClick={() => setStep('reasons')}
-                        disabled={dependentes.length > 0 || !pagamentoEmDia}
-                        title={dependentes.length > 0 ? "Remova os dependentes primeiro" : ""}
+                        disabled={dependentes.length > 0 || !pagamentoEmDia || fidelidadeBloqueada}
+                        title={
+                          dependentes.length > 0
+                            ? "Remova os dependentes primeiro"
+                            : !pagamentoEmDia
+                              ? "Regularize faturas em atraso"
+                              : fidelidadeBloqueada
+                                ? "Fidelidade de 90 dias ativa"
+                                : ""
+                        }
                       >
                         Continuar Cancelamento
                       </Button>
