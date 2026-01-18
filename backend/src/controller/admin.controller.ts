@@ -103,27 +103,37 @@ export class AdminController {
       // Se quiser salvar nome/descrição do plano Rapidoc junto, pode usar planoRemoto.plan.name etc.
 
       const db = getFirestore(firebaseApp);
-      // Evita duplicidade pelo uuidRapidocPlano
-      const existentesSnap = await db.collection('planos').where('uuidRapidocPlano', '==', uuidRapidocPlano).get();
-      if (!existentesSnap.empty) {
-        return res.status(409).json({ error: 'Já existe plano local vinculado a este uuidRapidocPlano.' });
+      const precoNum = Number(preco);
+      
+      if (isNaN(precoNum) || precoNum < 0) {
+        return res.status(400).json({ error: 'Preço deve ser um número válido maior ou igual a 0.' });
       }
 
-      // Salva todos os campos recebidos, inclusive extras, junto com vínculo Rapidoc e data
+      // Especialidades é opcional
+      const especialidadesArray = Array.isArray(especialidades) ? especialidades : [];
+
+      // Salva plano (permite múltiplos planos com mesmo UUID Rapidoc)
       const planoData = {
-        tipo,
-        periodicidade,
-        descricao,
-        especialidades,
-        preco,
-        uuidRapidocPlano,
+        tipo: String(tipo).trim(),
+        nome: rest.nome ? String(rest.nome).trim() : String(tipo).trim(),
+        periodicidade: String(periodicidade).trim(),
+        descricao: String(descricao).trim(),
+        especialidades: especialidadesArray,
+        preco: precoNum,
+        uuidRapidocPlano: String(uuidRapidocPlano).trim(),
         paymentType: enviado,
         remotePaymentType,
         criadoEm: new Date().toISOString(),
         ...rest
       };
+      
       const planoRef = await db.collection('planos').add(planoData);
-      return res.status(201).json({ message: 'Plano cadastrado com sucesso.', id: planoRef.id });
+      
+      return res.status(201).json({ 
+        message: 'Plano cadastrado com sucesso.',
+        id: planoRef.id,
+        plano: planoData
+      });
     } catch (error: any) {
       return res.status(500).json({ error: error.message || 'Erro ao cadastrar plano.' });
     }
