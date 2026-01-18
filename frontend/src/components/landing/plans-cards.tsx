@@ -95,6 +95,32 @@ function usePlanosLanding() {
             whatsappNumber: p.whatsappNumber || process.env.NEXT_PUBLIC_WHATSAPP_NUMBER || "",
           };
         }) : []);
+
+        // Adicionar plano AVULSO fixo (não vem do banco)
+        const planoAvulso: Plan = {
+          id: "avulso-fixo",
+          tipo: "AVULSO",
+          badge: "CONSULTAS AVULSAS",
+          name: "Consultas Avulsas",
+          price: "Sob consulta",
+          priceInfo: "",
+          fidelity: "Agende pelo WhatsApp",
+          maxBeneficiaries: 1,
+          especialidades: [],
+          features: [
+            { icon: "check", text: "Consultas sob demanda" },
+            { icon: "check", text: "Atendimento rápido" },
+            { icon: "check", text: "Sem mensalidade" },
+            { icon: "check", text: "Agende via WhatsApp" },
+          ],
+          buttonText: "Agendar no WhatsApp",
+          buttonHref: "#",
+          isRecommended: false,
+          isSpecial: true,
+          whatsappNumber: process.env.NEXT_PUBLIC_WHATSAPP_NUMBER,
+        };
+        
+        setPlanos((prev) => [...prev, planoAvulso]);
       } catch (e) {
         setErro("Erro ao carregar planos.");
       } finally {
