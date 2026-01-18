@@ -13,6 +13,7 @@ import TermosPage from "@/components/landing/termos-page"
 import SectionDivider from "@/components/landing/section-divider"
 import FAQSection from "@/components/landing/faq-section"
 import ScrollReveal from "@/components/ui/scroll-reveal"
+import NR1Section from "@/components/landing/nr1-section"
 import "@/styles/landing-animations.css"
 
 export default function LandingPage() {
@@ -27,7 +28,11 @@ export default function LandingPage() {
       <ScrollReveal animation="fade-up">
         <Vantagens />
       </ScrollReveal>
-      
+
+      <ScrollReveal animation="fade-up">
+        <NR1Section />
+      </ScrollReveal>
+
       <SectionDivider />
       
       <ScrollReveal animation="fade-up">
